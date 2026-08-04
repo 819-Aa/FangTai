@@ -1,0 +1,47 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+dist/
+build/
+
+# Frontend
+node_modules/
+frontend/dist/
+.vite/
+
+# Models and runtime state
+.model-cache/
+.runtime/
+*.log
+
+# Local databases and service storage
+mysql-data/
+qdrant-data/
+redis-data/
+
+# Generated data and reports
+data/processed/
+data/releases/
+reports/generated/
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Temporary and downloaded files
+*.tmp
+*.part
+*.downloading
+
