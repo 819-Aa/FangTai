@@ -31,7 +31,7 @@
 
 | 顺序 | 文档 | 状态 | 主要依赖 |
 |---:|---|---|---|
-| B1 | `modules/01-data-engineering.md` | `PLANNED` | 阶段A |
+| B1 | `modules/01-data-engineering.md` | `IN_REVIEW` | 阶段A |
 | B2 | `modules/02-user-health-profile.md` | `PLANNED` | B1 |
 | B3 | `modules/03-recipe-ingredient-processing.md` | `PLANNED` | B1 |
 | B4 | `modules/04-health-rule-engine.md` | `PLANNED` | B2、B3 |
@@ -54,7 +54,7 @@
 | D1 | `modules/11-api-and-sse.md` | `PLANNED` | C3、C4 |
 | D2 | `modules/12-answer-and-frontend.md` | `PLANNED` | C3、D1 |
 | D3 | `modules/13-testing-and-acceptance.md` | `PLANNED` | 阶段B、阶段C、D1、D2 |
-| D4 | `modules/14-release-migration-and-cleanup.md` | `PLANNED` | D3 |
+| D4 | `modules/14-migration-and-cleanup.md` | `PLANNED` | D3 |
 
 ## 已批准的架构记录
 
@@ -77,7 +77,7 @@
 9. 公开接口或模型工具；
 10. 依赖方向；
 11. 异常、错误码与停止条件；
-12. 版本与发布要求；
+12. 构建与初始化要求；
 13. 测试和验收标准；
 14. 旧实现与目标实现的差异；
 15. `REUSE`、`REFACTOR`、`REWRITE`、`REMOVE`或`PENDING`迁移分类；

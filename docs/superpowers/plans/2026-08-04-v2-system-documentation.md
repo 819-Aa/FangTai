@@ -1,5 +1,7 @@
 # V2 System Documentation Implementation Plan
 
+> 历史说明：本计划记录阶段A文档建立时的执行假设，其中关于`release_id`和运行时数据发布的内容已被当前系统总览及DEC-C019、DEC-C020修正，不再作为V2要求。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 建立V2系统总设计及其全局配套文档，形成后续各模块详细设计共同遵守的架构基线。

@@ -26,18 +26,18 @@
 
 | 模块 | 拥有的数据或产物 | 允许读取 | 公开接口类型 | 明确禁止 |
 |---|---|---|---|---|
-| 数据工程 | 清洗产物、标准化映射、构建Manifest、发布候选产物 | 原始输入、参考营养数据、构建配置 | 构建命令、发布产物Schema、质量报告 | 处理在线请求、决定菜单、写会话State |
+| 数据工程 | 清洗产物、标准化映射、食材关系、时间与营养画像、MySQL初始化数据、RAG文档、Qdrant索引输入和质量报告 | 项目内固定原始输入、参考营养数据、构建配置 | 离线构建命令、产物Schema、质量报告 | 管理外部数据来源、处理在线请求、决定菜单、写会话State |
 | 用户健康档案 | 原始健康事实、派生约束、临时健康信号的标准化结果 | 用户档案输入、版本化指标规则 | `HealthProfileService`、健康约束查询接口 | 根据缺失指标推测事实、决定菜品是否安全 |
-| 菜品目录 | 菜品、标准食材、别名、菜品食材、原始步骤和结构化步骤引用 | 数据工程发布产物 | `RecipeCatalogService`、只读Recipe Repository | 保存用户健康信息、根据用户档案删除菜品 |
+| 菜品目录 | 菜品、标准食材、别名、菜品食材、原始步骤和结构化步骤引用 | 数据工程验证通过的固定数据产物 | `RecipeCatalogService`、只读Recipe Repository | 保存用户健康信息、根据用户档案删除菜品 |
 | 健康规则 | 审核食材健康关系、健康评估证据、健康评估领域结果 | 标准食材、用户有效约束、规则版本 | `HealthEvaluationService`、健康审查工具 | 使用RAG分数或营养估算制造硬命中 |
-| RAG检索 | 检索文档、索引映射、检索配置、召回结果和检索证据 | 菜品目录发布视图、QueryPlan中的非健康需求 | `RecipeRetrievalService`、召回和扩展召回工具 | 读取原始健康档案、写健康PASS、执行菜单优化 |
+| RAG检索 | 检索文档、索引映射、检索配置、召回结果和检索证据 | 菜品目录验证通过的只读视图、QueryPlan中的非健康需求 | `RecipeRetrievalService`、召回和扩展召回工具 | 读取原始健康档案、写健康PASS、执行菜单优化 |
 | 营养评分 | 营养匹配结果、内部软评分分解 | 原始食材理论营养、标准食材、健康安全候选 | `NutritionScoringService` | 触发健康硬筛选、向正常回答输出营养数值 |
 | 时间与步骤 | 步骤任务、依赖、设备占用、时间Profile和菜单调度结果 | 菜品目录步骤和设备事实 | `TimePlanningService` | 计算采购量、修改菜品食材、用低置信度时间执行严格排除 |
 | 菜单规划 | 可行菜单、软评分分解、差异约束和`plan_id` | 安全候选、偏好、营养软分、时间结果、菜单硬约束 | `MenuPlanningService`、生成可行菜单工具 | 重新判定健康关系、把不安全菜品加入菜单 |
 | 上下文与记忆 | 已提交会话事实、ConversationEvent、ContextManifest和角色上下文投影 | 永久健康事实引用、当前菜单引用、WorkflowState | `ContextService`、`SessionMemoryService` | 覆盖永久健康事实、静默丢弃核心约束、保存隐藏思维过程 |
 | Agent角色 | 各角色的结构化Artifact和用户可见分析摘要 | 角色ModelContext、允许工具回执 | 角色Node接口、Artifact Schema | 直接写数据库、修改State、跨角色取得工具权限 |
-| 工作流 | Request运行状态、WorkflowState、节点流转、工具回执引用、循环计数 | Artifact、角色策略、发布信息 | `RecommendationWorkflow`、State Reducer、Transition Policy | 复制健康算法、代替模型补调必需工具、绕过最终校验 |
-| Application提交 | 请求幂等结果、最终结果、强制健康审计提交协调 | 最终Artifact链、工具回执、固定版本 | `RecommendationApplicationService`、`ResultCommitService` | 在证据缺失时提交成功、修改领域评估结果 |
+| 工作流 | Request运行状态、WorkflowState、节点流转、工具回执引用、循环计数 | Artifact、角色策略 | `RecommendationWorkflow`、State Reducer、Transition Policy | 复制健康算法、代替模型补调必需工具、绕过最终校验 |
+| Application提交 | 请求幂等结果、最终结果、强制健康审计提交协调 | 最终Artifact链、工具回执 | `RecommendationApplicationService`、`ResultCommitService` | 在证据缺失时提交成功、修改领域评估结果 |
 | API/SSE | API请求适配、事件传输游标和公开响应投影 | Application状态和经过验证的可见事件 | HTTP/SSE Contract | 直接调用数据库、拼装健康结论、SSE断开后重跑请求 |
 | 前端 | 本地展示状态和用户交互输入 | API Schema、SSE公开事件、最终结果 | Vue组件与客户端类型 | 推导健康安全、生成业务说明、展示内部营养和他人健康详情 |
 | 基础设施 | MySQL、Qdrant、Redis、模型供应商和时钟等接口实现 | 对应端口输入 | Repository/Client Adapter | 依赖API Schema、决定业务终态、执行未授权自动重试 |
@@ -69,7 +69,7 @@ flowchart TD
 ```text
 Workflow → HealthEvaluationService
 Health Planner Tool → MenuPlanningService
-RAG Service → RecipeCatalog只读发布视图
+RAG Service → RecipeCatalog验证通过的只读视图
 MenuPlanningService → NutritionScoringService公开评分接口
 MenuPlanningService → TimePlanningService公开调度接口
 Application → ResultCommitService
@@ -138,7 +138,7 @@ QueryPlanArtifact
 最终请求提交由Application层协调：
 
 ```text
-验证最终Artifact链和release_id
+验证最终Artifact链
 → 验证健康证据完整
 → 写最终推荐结果
 → 写强制健康审计
@@ -156,7 +156,7 @@ Redis中的WorkflowState、锁和SSE事件用于运行协调，不替代MySQL最
 
 - 工作流根据当前节点选择角色策略并注入工具集合。
 - 必需、可选和禁止工具由静态角色策略定义，不由模型管理。
-- `request_id`、`session_id`、参与者范围和`release_id`由工作流注入。
+- `request_id`、`session_id`和参与者范围由工作流注入。
 - 工具返回结构化结果、证据引用和回执，不返回未授权的完整健康档案。
 - 模型输出先通过Artifact Schema，再检查证据、权限和必需工具回执，最后才允许State Reducer应用。
 - 统一审查模型可以指出问题，但不能写State、重组菜单或补调其他角色遗漏的工具。

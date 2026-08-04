@@ -22,7 +22,7 @@ stateDiagram-v2
     running --> needs_clarification: 必要信息无法安全推断
     running --> no_safe_menu: 无健康安全菜品
     running --> no_feasible_menu: 安全菜品无法组成可行菜单
-    running --> failed: 工具、权限、证据、版本或完整性失败
+    running --> failed: 工具、权限、证据或完整性失败
     revising --> failed: 修订上限耗尽或再次失败
     accepted --> cancelled: 用户在执行前取消
     running --> cancelled: 节点边界确认取消
@@ -50,7 +50,7 @@ sequenceDiagram
     participant DB as MySQL/Redis
 
     Client->>API: POST recommendation-request + idempotency key
-    API->>DB: 创建accepted请求并固定release_id
+    API->>DB: 创建accepted请求
     API-->>Client: request_id
     WF->>DB: 唯一Worker Claim
     WF->>CTX: 构建SharedWorkflowContext
@@ -151,7 +151,7 @@ flowchart TD
 
 ## 6. 最终健康校验失败后的重新规划
 
-菜单决策模型选择`plan_id`后必须调用最终校验。若最终校验发现菜单哈希、参与者约束、食材证据或版本不一致：
+菜单决策模型选择`plan_id`后必须调用最终校验。若最终校验发现菜单哈希、参与者约束或食材证据不一致：
 
 最终健康失败后的重新规划最多一次，由`health_replan_count`强制限制。
 
@@ -179,7 +179,7 @@ PASS
 
 - 回答依据或表达问题返回回答模型；
 - 菜单选择与已有方案不一致时返回菜单决策模型，并重新执行最终健康校验；
-- 上游健康证据缺失、必需工具漏调、权限越界或发布版本不一致不进入修订，直接失败。
+- 上游健康证据缺失、必需工具漏调或权限越界不进入修订，直接失败。
 
 修订后生成新Artifact版本，旧的用户可见阶段摘要通过`analysis_superseded`标记失效。工作流随后只允许一次复审。复审仍不通过时进入`failed`，错误码为`WORKFLOW_RETRY_LIMIT_EXCEEDED`或审查给出的更具体错误。
 
@@ -200,7 +200,7 @@ PASS
 
 ### 8.2 越权工具调用
 
-角色调用不在白名单中的工具，或试图扩大参与者、会话、请求和发布范围时：
+角色调用不在白名单中的工具，或试图扩大参与者、会话和请求范围时：
 
 ```text
 TOOL_PERMISSION_DENIED
@@ -214,11 +214,9 @@ TOOL_PERMISSION_DENIED
 
 同一节点出现相同工具和相同参数哈希时，只允许第一条有效调用进入回执集合；再次调用违反节点预算并进入`WORKFLOW_RETRY_LIMIT_EXCEEDED`。这不影响用户创建新`request_id`进行显式重试。
 
-## 9. 上下文与发布失败
+## 9. 上下文完整性失败
 
-### 9.1 上下文完整性失败
-
-ContextManifest缺少当前消息、有效健康约束、当前菜单、待澄清事项或版本块，或者核心块哈希不一致时：
+ContextManifest缺少当前消息、有效健康约束、当前菜单或待澄清事项，或者核心块哈希不一致时：
 
 ```text
 CONTEXT_INTEGRITY_FAILED
@@ -226,18 +224,6 @@ CONTEXT_INTEGRITY_FAILED
 ```
 
 如果核心块完整但总Token仍超过预算，返回`CONTEXT_BUDGET_EXCEEDED`。两种情况都不能通过删除健康约束继续。
-
-### 9.2 发布版本不一致
-
-任一节点、工具回执、MySQL事实或Qdrant结果的`release_id`与请求固定版本不一致时：
-
-```text
-RELEASE_VERSION_MISMATCH
-→ 丢弃不一致产物
-→ failed
-```
-
-请求不能在运行中自动切换到新发布，也不能重新读取“当前最新版本”覆盖已经固定的版本。
 
 ## 10. 幂等、并发和用户显式重试
 
@@ -250,7 +236,7 @@ RELEASE_VERSION_MISMATCH
 
 ### 10.2 用户显式重试
 
-用户明确要求重试时创建新的`request_id`，记录`retry_of=<old_request_id>`。新请求重新固定版本和上下文，不修改旧请求的终态，也不复用旧请求未提交的模型输出。
+用户明确要求重试时创建新的`request_id`，记录`retry_of=<old_request_id>`。新请求重新构建上下文，不修改旧请求的终态，也不复用旧请求未提交的模型输出。
 
 ## 11. SSE断开、重连和取消
 
@@ -280,14 +266,14 @@ cancel_requested = true
 
 ## 12. 执行环境中断
 
-当Worker终止、Redis运行状态不可恢复或必要外部状态丢失时，请求进入`interrupted`，而不是自动重跑。恢复机制只能从MySQL已提交的节点边界和完整Artifact引用继续；无法证明上下文和版本完整时保持终态并等待用户显式新建请求。
+当Worker终止、Redis运行状态不可恢复或必要外部状态丢失时，请求进入`interrupted`，而不是自动重跑。恢复机制只能从MySQL已提交的节点边界和完整Artifact引用继续；无法证明上下文完整时保持终态并等待用户显式新建请求。
 
 ## 13. 最终提交失败
 
 最终提交按以下顺序在同一MySQL事务中完成：
 
 ```text
-验证Artifact链和固定release_id
+验证Artifact链
 → 写最终菜单与AnswerArtifact引用
 → 写参与者约束和食材健康证据引用
 → 写FinalValidationArtifact和ReviewArtifact结果
@@ -311,7 +297,7 @@ cancel_requested = true
 - `REQUIRED_TOOL_NOT_CALLED`直接失败；
 - `TOOL_PERMISSION_DENIED`直接失败；
 - `CONTEXT_INTEGRITY_FAILED`不删除健康约束继续；
-- `RELEASE_VERSION_MISMATCH`不自动切换发布；
+- 未通过离线质量门禁的数据产物不能进入在线链路；
 - SSE断开不取消、不重跑；
 - 重连按事件ID续传；
 - 相同幂等键不同载荷返回`IDEMPOTENCY_KEY_REUSED`；
