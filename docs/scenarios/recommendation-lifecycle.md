@@ -214,6 +214,18 @@ TOOL_PERMISSION_DENIED
 
 同一节点出现相同工具和相同参数哈希时，只允许第一条有效调用进入回执集合；再次调用违反节点预算并进入`WORKFLOW_RETRY_LIMIT_EXCEEDED`。这不影响用户创建新`request_id`进行显式重试。
 
+### 8.4 永久健康约束覆盖请求
+
+用户或模型尝试删除、放宽或忽略固定档案中的疾病、过敏、异常指标或其他永久健康硬约束时：
+
+```text
+PERMANENT_CONSTRAINT_OVERRIDE_DENIED
+→ 不修改有效约束集
+→ failed
+```
+
+用户可以撤销当前会话中自己新增的临时约束，但不能把临时撤销扩展到永久档案事实。
+
 ## 9. 上下文完整性失败
 
 ContextManifest缺少当前消息、有效健康约束、当前菜单或待澄清事项，或者核心块哈希不一致时：
@@ -296,6 +308,7 @@ cancel_requested = true
 - 统一审查只定向修订和复审一次；
 - `REQUIRED_TOOL_NOT_CALLED`直接失败；
 - `TOOL_PERMISSION_DENIED`直接失败；
+- `PERMANENT_CONSTRAINT_OVERRIDE_DENIED`不修改永久健康约束；
 - `CONTEXT_INTEGRITY_FAILED`不删除健康约束继续；
 - 未通过离线质量门禁的数据产物不能进入在线链路；
 - SSE断开不取消、不重跑；

@@ -32,7 +32,7 @@
 | 顺序 | 文档 | 状态 | 主要依赖 |
 |---:|---|---|---|
 | B1 | `modules/01-data-engineering.md` | `APPROVED` | 阶段A |
-| B2 | `modules/02-user-health-profile.md` | `PLANNED` | B1 |
+| B2 | `modules/02-user-health-profile.md` | `IN_REVIEW` | B1 |
 | B3 | `modules/03-recipe-ingredient-processing.md` | `PLANNED` | B1 |
 | B4 | `modules/04-health-rule-engine.md` | `PLANNED` | B2、B3 |
 | B5 | `modules/05-time-and-steps.md` | `PLANNED` | B3 |
