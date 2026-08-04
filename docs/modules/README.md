@@ -7,4 +7,4 @@
 ## 当前模块
 
 - [01 数据工程](01-data-engineering.md)（`APPROVED`）
-- [02 用户健康档案](02-user-health-profile.md)（`IN_REVIEW`）
+- [02 用户健康档案](02-user-health-profile.md)（`APPROVED`）

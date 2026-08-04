@@ -1,6 +1,6 @@
 # V2用户健康档案模块设计
 
-- 状态：`IN_REVIEW`
+- 状态：`APPROVED`
 - 日期：2026-08-04
 - 适用项目：`program_v2`
 - 上游依据：[系统总体设计](../00-system-overview.md)、[全局不变量](../contracts/global-invariants.md)、[模块边界](../contracts/module-boundaries.md)、[数据工程模块](01-data-engineering.md)
