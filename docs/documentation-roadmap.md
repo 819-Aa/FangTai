@@ -19,7 +19,7 @@
 
 | 顺序 | 文档 | 状态 | 依赖 |
 |---:|---|---|---|
-| A1 | `00-system-overview.md` | `PLANNED` | ADR-0001及已确认的全局讨论结论 |
+| A1 | `00-system-overview.md` | `IN_REVIEW` | ADR-0001及已确认的全局讨论结论 |
 | A2 | `contracts/global-invariants.md` | `PLANNED` | A1 |
 | A3 | `contracts/module-boundaries.md` | `PLANNED` | A1、A2 |
 | A4 | `scenarios/recommendation-lifecycle.md` | `PLANNED` | A1、A2、A3 |
@@ -92,4 +92,3 @@
 - 用户明确批准后标记为`APPROVED`。
 - 修改已经批准的全局边界时，必须同步检查全部下游模块文档。
 - 不使用百分比或“基本完成”等模糊状态。
-
