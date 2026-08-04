@@ -155,7 +155,7 @@ Redis保存在线WorkflowState、会话锁、SSE事件、短期缓存和运行�
 | 模型角色 | 主要输入 | 主要输出 | 允许的工具类别 | 禁止行为 |
 |---|---|---|---|---|
 | 查询理解模型 | 当前消息、有效会话约束、当前菜单引用 | `QueryPlanArtifact` | 当前会话、参与者引用、当前菜单事实 | 访问原始健康档案、决定健康安全、生成菜单 |
-| 健康与菜单规划模型 | QueryPlan、RAG候选、标准化参与者约束 | `HealthEvaluationArtifact`、`FeasibleMenuArtifact` | 健康约束、食材健康审查、菜单生成、受控证据补充、一次召回扩展 | 绕过食材健康审查、提交最终结果、生成最终回答 |
+| 健康与菜单规划模型 | QueryPlan、RAG候选、标准化参与者约束 | 基于不可改写工具回执形成`HealthEvaluationArtifact`、`FeasibleMenuArtifact` | 健康约束、食材健康审查、菜单生成、受控证据补充、一次召回扩展 | 改写工具健康结论、绕过食材健康审查、提交最终结果、生成最终回答 |
 | 菜单决策模型 | 已存在的多个可行菜单及评分分解 | `MenuDecisionArtifact`、触发`FinalValidationArtifact` | 菜单事实比较、时间步骤事实、所选菜单最终校验 | 重组未验证菜品、自行创造plan_id、修改健康规则 |
 | 回答模型 | 已选择且最终健康校验通过的菜单、公开说明、步骤与时间事实 | `AnswerArtifact` | 最终菜单事实、用户可见健康摘要、步骤和时间 | 新增菜品、改写食材、输出内部营养值、暴露他人健康信息 |
 | 统一审查模型 | 执行轨迹、工具回执、最终校验、AnswerArtifact | `ReviewArtifact` | 只读执行证据、必需工具清单、回答依据 | 直接修改菜单、代替缺失工具调用、提交结果 |
@@ -327,7 +327,7 @@ user_visible_analysis.evidence_refs
 
 它表达已经验证的处理依据，例如先理解了哪些需求、筛掉了哪些冲突类别、比较了哪些菜单差异以及为何选择当前菜单。它不是隐藏思维过程、系统日志或固定模板。
 
-最终回答结论优先，然后说明可验证的选择依据、取舍、菜品、关键食材、时间和制作步骤。回答模型不能增加`MenuDecisionArtifact`之外的菜品，不能修改已经校验的食材和步骤，不能输出内部营养数值、医疗效果或参与者隐私。
+最终回答结论优先，然后说明可验证的选择依据、取舍、菜品、关键食材、时间和制作步骤。回答模型不能增加`MenuDecisionArtifact`所选且经`FinalValidationArtifact`通过的菜单之外的菜品，不能修改已经校验的食材和步骤，不能输出内部营养数值、医疗效果或参与者隐私。
 
 提示词只是表达约束的一部分；Schema、证据引用、工作流校验、统一审查和前端渲染共同保证输出边界。
 
@@ -367,11 +367,6 @@ LangSmith、自建运行详情页、完整Trace表和完整指标平台属于明
 
 ## 25. 文档导航
 
-当前总览的配套文档包括[全局不变量](contracts/global-invariants.md)、[模块边界与数据所有权](contracts/module-boundaries.md)和[推荐请求生命周期](scenarios/recommendation-lifecycle.md)，其余计划路径为：
-
-```text
-docs/decisions/README.md
-docs/documentation-roadmap.md
-```
+当前总览的配套文档包括[全局不变量](contracts/global-invariants.md)、[模块边界与数据所有权](contracts/module-boundaries.md)、[推荐请求生命周期](scenarios/recommendation-lifecycle.md)、[架构决策登记](decisions/README.md)和[文档建设路线图](documentation-roadmap.md)。
 
 模块详细设计的完整顺序和状态见[文档建设路线图](documentation-roadmap.md)。所有模块详设必须引用上述共享文档，并在修改全局边界时回到本文重新审查。

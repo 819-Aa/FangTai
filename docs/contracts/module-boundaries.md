@@ -114,10 +114,12 @@ module_name/
 QueryPlanArtifact
 → RAG产生候选recipe_id和检索证据
 → 菜品目录加载标准菜品与食材事实
-→ 健康规则产生HealthEvaluationArtifact
-→ 菜单规划产生FeasibleMenuArtifact
+→ 健康规则服务产生不可改写的评估结果和证据回执
+→ 健康与菜单规划节点形成HealthEvaluationArtifact
+→ 菜单规划服务产生可行方案结果和回执
+→ 健康与菜单规划节点形成FeasibleMenuArtifact
 → 菜单决策产生MenuDecisionArtifact
-→ 健康规则产生FinalValidationArtifact
+→ 最终健康校验门形成FinalValidationArtifact
 → 回答模型产生AnswerArtifact
 → 统一审查产生ReviewArtifact
 → Application原子提交结果与强制审计

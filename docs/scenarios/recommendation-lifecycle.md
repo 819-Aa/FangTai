@@ -63,10 +63,10 @@ sequenceDiagram
     HP->>HT: get_health_constraints
     HT-->>HP: 标准化全员健康约束
     HP->>HT: evaluate_ingredient_health
-    HT-->>HP: HealthEvaluationArtifact证据
+    HT-->>HP: 不可改写的健康评估结果和证据回执
     HP->>HT: generate_feasible_menus
     HT-->>HP: 3至5个可行plan_id
-    HP->>WF: FeasibleMenuArtifact
+    HP->>WF: HealthEvaluationArtifact + FeasibleMenuArtifact
     WF->>MD: 可行菜单和评分分解
     MD->>HT: validate_selected_menu(plan_id)
     HT-->>MD: FinalValidationArtifact
