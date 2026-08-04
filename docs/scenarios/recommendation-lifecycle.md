@@ -1,6 +1,6 @@
 # V2推荐请求生命周期
 
-- 状态：`IN_REVIEW`
+- 状态：`APPROVED`
 - 日期：2026-08-04
 - 适用范围：WorkflowState、模型节点、工具、API/SSE和最终提交
 

@@ -1,6 +1,6 @@
 # V2文档建设路线图
 
-- 状态：`IN_REVIEW`
+- 状态：`APPROVED`
 - 适用项目：`program_v2`
 - 更新日期：2026-08-04
 
@@ -19,11 +19,11 @@
 
 | 顺序 | 文档 | 状态 | 依赖 |
 |---:|---|---|---|
-| A1 | `00-system-overview.md` | `IN_REVIEW` | ADR-0001及已确认的全局讨论结论 |
-| A2 | `contracts/global-invariants.md` | `IN_REVIEW` | A1 |
-| A3 | `contracts/module-boundaries.md` | `IN_REVIEW` | A1、A2 |
-| A4 | `scenarios/recommendation-lifecycle.md` | `IN_REVIEW` | A1、A2、A3 |
-| A5 | `decisions/README.md` | `IN_REVIEW` | A1至A4 |
+| A1 | `00-system-overview.md` | `APPROVED` | ADR-0001及已确认的全局讨论结论 |
+| A2 | `contracts/global-invariants.md` | `APPROVED` | A1 |
+| A3 | `contracts/module-boundaries.md` | `APPROVED` | A1、A2 |
+| A4 | `scenarios/recommendation-lifecycle.md` | `APPROVED` | A1、A2、A3 |
+| A5 | `decisions/README.md` | `APPROVED` | A1至A4 |
 
 阶段A通过用户审查后，才能进入各模块详细设计。
 
