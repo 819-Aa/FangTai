@@ -130,7 +130,7 @@ API/前端适配
 ← Infrastructure实现
 ```
 
-详细模块所有权将在`docs/contracts/module-boundaries.md`定义。任何模块详设都不得引入反向依赖。
+详细模块所有权将在`docs/contracts/module-boundaries.md`定义。任何模块详设都不得引入反向依赖。跨模块不可破坏的规则见[全局不变量](contracts/global-invariants.md)。
 
 ## 6. 权威事实与数据边界
 
@@ -367,10 +367,9 @@ LangSmith、自建运行详情页、完整Trace表和完整指标平台属于明
 
 ## 25. 文档导航
 
-当前总览的配套文档路径为：
+当前总览的配套文档包括[全局不变量](contracts/global-invariants.md)，其余计划路径为：
 
 ```text
-docs/contracts/global-invariants.md
 docs/contracts/module-boundaries.md
 docs/scenarios/recommendation-lifecycle.md
 docs/decisions/README.md
@@ -378,4 +377,3 @@ docs/documentation-roadmap.md
 ```
 
 模块详细设计的完整顺序和状态见[文档建设路线图](documentation-roadmap.md)。所有模块详设必须引用上述共享文档，并在修改全局边界时回到本文重新审查。
-
