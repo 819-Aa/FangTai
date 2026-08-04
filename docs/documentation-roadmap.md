@@ -23,7 +23,7 @@
 | A2 | `contracts/global-invariants.md` | `IN_REVIEW` | A1 |
 | A3 | `contracts/module-boundaries.md` | `IN_REVIEW` | A1、A2 |
 | A4 | `scenarios/recommendation-lifecycle.md` | `IN_REVIEW` | A1、A2、A3 |
-| A5 | `decisions/README.md` | `PLANNED` | A1至A4 |
+| A5 | `decisions/README.md` | `IN_REVIEW` | A1至A4 |
 
 阶段A通过用户审查后，才能进入各模块详细设计。
 

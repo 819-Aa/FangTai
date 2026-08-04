@@ -21,4 +21,6 @@ docs/
 
 当前已确认的工作区决策见[0001-v2-workspace-and-migration.md](decisions/0001-v2-workspace-and-migration.md)。
 
+全部已确认、明确延期和明确排除的选择见[V2架构决策登记](decisions/README.md)。
+
 文档的建设顺序、依赖关系和审查状态见[V2文档建设路线图](documentation-roadmap.md)。
