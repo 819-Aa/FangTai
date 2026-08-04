@@ -220,7 +220,7 @@ INV-001 最终菜单每道菜通过所有参与者健康审查
 INV-002 RAG结果不构成健康安全结论
 INV-003 未审核食材健康关系不得参与硬排除
 INV-004 低置信度营养只参与软排序
-INV-005 回答不得添加FinalMenuArtifact之外的菜品
+INV-005 回答不得添加MenuDecisionArtifact所选且经FinalValidationArtifact通过的菜单之外的菜品
 INV-006 模型不能直接修改WorkflowState
 INV-007 必需工具漏调必须停止
 INV-008 一次请求全程固定release_id
@@ -438,7 +438,7 @@ RAG负责健康审查
 低置信度营养参与硬筛选
 模型直接修改State
 管理模型分配权限
-回答模型重新生成菜品
+回答模型重新生成或改写MenuDecisionArtifact所选菜单
 缺少工具时继续生成固定回答
 无限重试或无限审查
 烹饪损耗用于当前营养计算
