@@ -21,7 +21,7 @@
 |---:|---|---|---|
 | A1 | `00-system-overview.md` | `IN_REVIEW` | ADR-0001及已确认的全局讨论结论 |
 | A2 | `contracts/global-invariants.md` | `IN_REVIEW` | A1 |
-| A3 | `contracts/module-boundaries.md` | `PLANNED` | A1、A2 |
+| A3 | `contracts/module-boundaries.md` | `IN_REVIEW` | A1、A2 |
 | A4 | `scenarios/recommendation-lifecycle.md` | `PLANNED` | A1、A2、A3 |
 | A5 | `decisions/README.md` | `PLANNED` | A1至A4 |
 
