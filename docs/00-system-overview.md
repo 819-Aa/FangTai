@@ -367,10 +367,9 @@ LangSmith、自建运行详情页、完整Trace表和完整指标平台属于明
 
 ## 25. 文档导航
 
-当前总览的配套文档包括[全局不变量](contracts/global-invariants.md)和[模块边界与数据所有权](contracts/module-boundaries.md)，其余计划路径为：
+当前总览的配套文档包括[全局不变量](contracts/global-invariants.md)、[模块边界与数据所有权](contracts/module-boundaries.md)和[推荐请求生命周期](scenarios/recommendation-lifecycle.md)，其余计划路径为：
 
 ```text
-docs/scenarios/recommendation-lifecycle.md
 docs/decisions/README.md
 docs/documentation-roadmap.md
 ```
