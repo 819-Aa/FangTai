@@ -26,10 +26,10 @@
 
 | 模块 | 拥有的数据或产物 | 允许读取 | 公开接口类型 | 明确禁止 |
 |---|---|---|---|---|
-| 数据工程 | 清洗产物、标准化映射、食材关系、时间与营养画像、MySQL初始化数据、RAG文档、Qdrant索引输入和质量报告 | 项目内固定原始输入、参考营养数据、构建配置 | 离线构建命令、产物Schema、质量报告 | 管理外部数据来源、处理在线请求、决定菜单、写会话State |
+| 数据工程 | 清洗产物、标准化映射、菜品—食材关系、各领域离线构建产物、MySQL初始化数据、RAG文档、Qdrant索引输入和质量报告 | 项目内固定原始输入、参考营养数据、构建配置、各领域构建Schema | 离线构建命令、产物Schema、质量报告 | 管理外部数据来源、处理在线请求、决定菜单、写会话State |
 | 用户健康档案 | 原始健康事实、派生约束、临时健康信号的标准化结果 | 固定用户档案输入、确定性指标规则 | `HealthProfileService`、健康约束查询接口 | 根据缺失指标推测事实、覆盖永久健康硬约束、决定菜品是否安全 |
 | 菜品目录 | 菜品、标准食材、食材族、审核别名、食材出现、选择组、准备项产物、审核组成、原始步骤和步骤引用输入 | 数据工程验证通过的固定数据产物 | `RecipeCatalogService`、`IngredientIdentityResolver`、消费者只读视图 | 保存用户健康信息、判定健康安全、模糊创建食材身份、根据用户档案修改菜品 |
-| 健康规则 | 审核食材健康关系、健康评估证据、健康评估领域结果 | 标准食材、用户有效约束、规则版本 | `HealthEvaluationService`、健康审查工具 | 使用RAG分数或营养估算制造硬命中 |
+| 健康规则 | 审核食材健康关系、约束覆盖状态、健康评估证据、健康评估领域结果 | B2有效约束、B3完整健康食材视图、审核关系和覆盖状态 | `HealthEvaluationService`、候选健康审查工具、最终菜单健康校验工具 | 使用RAG分数、名称推断或营养估算制造硬命中 |
 | RAG检索 | 检索文档、索引映射、检索配置、召回结果和检索证据 | 菜品目录验证通过的只读视图、QueryPlan中的非健康需求 | `RecipeRetrievalService`、召回和扩展召回工具 | 读取原始健康档案、写健康PASS、执行菜单优化 |
 | 营养评分 | 营养匹配结果、内部软评分分解 | 原始食材理论营养、标准食材、健康安全候选 | `NutritionScoringService` | 触发健康硬筛选、向正常回答输出营养数值 |
 | 时间与步骤 | 步骤任务、依赖、设备占用、时间Profile和菜单调度结果 | 菜品目录步骤和设备事实 | `TimePlanningService` | 计算采购量、修改菜品食材、用低置信度时间执行严格排除 |
@@ -67,8 +67,10 @@ flowchart TD
 ### 4.1 允许的协作
 
 ```text
-Workflow → HealthEvaluationService
+Query Understanding Tool → RecipeRetrievalService
+Health Planner Tool → HealthEvaluationService
 Health Planner Tool → MenuPlanningService
+Menu Decision Tool → HealthEvaluationService
 RAG Service → RecipeCatalog验证通过的只读视图
 MenuPlanningService → NutritionScoringService公开评分接口
 MenuPlanningService → TimePlanningService公开调度接口
@@ -112,14 +114,17 @@ module_name/
 
 ```text
 QueryPlanArtifact
+→ 查询理解模型主动调用RAG初次召回工具
 → RAG产生候选recipe_id和检索证据
 → 菜品目录加载标准菜品与食材事实
-→ 健康规则服务产生不可改写的评估结果和证据回执
+→ 健康规划模型主动调用健康规则服务
+→ 健康规则服务基于完整关系覆盖产生不可改写的评估结果和证据回执
 → 健康与菜单规划节点形成HealthEvaluationArtifact
 → 菜单规划服务产生可行方案结果和回执
 → 健康与菜单规划节点形成FeasibleMenuArtifact
 → 菜单决策产生MenuDecisionArtifact
-→ 最终健康校验门形成FinalValidationArtifact
+→ 菜单决策模型主动调用同一健康规则服务重新计算所选plan_id
+→ 最终健康校验形成FinalValidationArtifact
 → 回答模型产生AnswerArtifact
 → 统一审查产生ReviewArtifact
 → Application原子提交结果与强制审计
@@ -141,7 +146,7 @@ QueryPlanArtifact
 验证最终Artifact链
 → 验证健康证据完整
 → 写最终推荐结果
-→ 写强制健康审计
+→ 写参与者约束、食材、关系、覆盖和最终校验的强制健康审计
 → 写请求completed终态
 → 同一MySQL事务提交
 ```
@@ -155,10 +160,10 @@ Redis中的WorkflowState、锁和SSE事件用于运行协调，不替代MySQL最
 ## 8. 模型和工具权限边界
 
 - 工作流根据当前节点选择角色策略并注入工具集合。
-- 必需、可选和禁止工具由静态角色策略定义，不由模型管理。
+- 必需、可选和禁止工具由静态角色策略定义，不由模型管理；模型在该白名单内自主决定调用时机并主动发起调用。
 - `request_id`、`session_id`和参与者范围由工作流注入。
 - 工具返回结构化结果、证据引用和回执，不返回未授权的完整健康档案。
-- 模型输出先通过Artifact Schema，再检查证据、权限和必需工具回执，最后才允许State Reducer应用。
+- “必需工具”是角色成功完成的后置条件，不表示工作流预调用或自动补调用；模型输出先通过Artifact Schema，再检查证据、权限和必需工具回执，最后才允许State Reducer应用。
 - 统一审查模型可以指出问题，但不能写State、重组菜单或补调其他角色遗漏的工具。
 
 ## 9. 数据所有权变更规则

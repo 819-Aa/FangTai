@@ -9,3 +9,4 @@
 - [01 数据工程](01-data-engineering.md)（`APPROVED`）
 - [02 用户健康档案](02-user-health-profile.md)（`APPROVED`）
 - [03 菜品与食材处理](03-recipe-ingredient-processing.md)（`APPROVED`）
+- [04 健康规则与审查引擎](04-health-rule-engine.md)（`IN_REVIEW`）

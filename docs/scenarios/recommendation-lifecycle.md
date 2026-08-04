@@ -56,19 +56,19 @@ sequenceDiagram
     WF->>CTX: 构建SharedWorkflowContext
     CTX-->>WF: ContextManifest + 角色投影
     WF->>Q: 当前消息和有效约束
-    Q->>WF: QueryPlanArtifact
-    WF->>RAG: 非健康检索需求
-    RAG-->>WF: 候选recipe_id和检索证据
-    WF->>HP: QueryPlan + RAG候选 + 参与者引用
+    Q->>RAG: retrieve_recipes(QueryPlan)
+    RAG-->>Q: 候选recipe_id和检索证据
+    Q->>WF: QueryPlanArtifact + RetrievalResult引用
+    WF->>HP: QueryPlan + RetrievalResult + 参与者引用
     HP->>HT: get_health_constraints
     HT-->>HP: 标准化全员健康约束
-    HP->>HT: evaluate_ingredient_health
+    HP->>HT: evaluate_recipe_health
     HT-->>HP: 不可改写的健康评估结果和证据回执
     HP->>HT: generate_feasible_menus
     HT-->>HP: 3至5个可行plan_id
     HP->>WF: HealthEvaluationArtifact + FeasibleMenuArtifact
     WF->>MD: 可行菜单和评分分解
-    MD->>HT: validate_selected_menu(plan_id)
+    MD->>HT: validate_selected_menu_health(plan_id)
     HT-->>MD: FinalValidationArtifact
     MD->>WF: MenuDecisionArtifact + 校验引用
     WF->>ANS: 已选择且校验通过的菜单事实
@@ -83,8 +83,8 @@ sequenceDiagram
 正常链路的强制条件是：
 
 1. QueryPlanArtifact通过Schema和约束合并校验；
-2. RAG完成词法、向量、融合和重排序，且不包含健康结论；
-3. 健康规划模型形成全部必需工具的有效回执；
+2. 查询理解模型主动调用初次RAG工具，RAG完成词法、向量、融合和重排序且不包含健康结论；
+3. 健康规划模型自主发起角色所需工具调用并形成全部有效回执；
 4. FeasibleMenuArtifact只包含全员健康交集中的菜品；
 5. 菜单决策模型选择已有`plan_id`并完成最终健康校验；
 6. AnswerArtifact完全基于所选菜单和证据；
@@ -105,13 +105,15 @@ RAG候选菜品
 → 剩余安全菜品进入菜单规划
 ```
 
-排除证据保存在HealthEvaluationArtifact中，包含`recipe_id`、`ingredient_id`、参与者匿名引用、约束代码、规则引用和规则版本。被排除菜品不能通过偏好、营养、检索分数或模型判断重新进入当前候选菜单。
+排除证据保存在健康工具回执并由`HealthEvaluationArtifact`引用，包含`recipe_id`、`ingredient_id`、参与者匿名引用、`constraint_code`、`relation_id`、覆盖引用和食材证据路径。被排除菜品不能通过偏好、营养、检索分数或模型判断重新进入当前候选菜单。
+
+通用健康`PASS`还要求当前代码已经针对所有可推荐菜品健康视图中的标准食材并集完成离线覆盖。没有关系记录只有在覆盖明确`complete`时才表示未命中；覆盖缺失或不完整进入`failed`。
 
 如果菜品食材集合缺少可选食材、任一替代成员、审核通过的复合组成或对应证据路径，返回`HEALTH_INGREDIENT_SET_INCOMPLETE`并进入`failed`。工作流不能把不完整集合当作健康未命中，也不能让模型选择一个看似安全的配方分支继续。
 
 ### 4.2 无健康安全菜品
 
-如果全部召回候选均命中健康硬约束，并且允许的一次扩展召回已经使用或无法产生新候选批次：
+如果全部召回候选均命中健康硬约束，并且允许的一次扩展召回已经使用、无法产生新候选批次，或模型基于当前任务边界判断没有合法扩展动作：
 
 ```text
 safe_recipe_ids = []
@@ -153,20 +155,24 @@ flowchart TD
 
 ## 6. 最终健康校验失败后的重新规划
 
-菜单决策模型选择`plan_id`后必须调用最终校验。若最终校验发现菜单哈希、参与者约束或食材证据不一致：
+菜单决策模型选择已有`plan_id`后自主发起最终校验工具调用。若同一B4确定性引擎重新计算后形成证据完整的`EXCLUDE`：
 
 最终健康失败后的重新规划最多一次，由`health_replan_count`强制限制。
 
 ```text
-final_validation = FAIL
+FinalValidationArtifact.status = EXCLUDE
 且 health_replan_count = 0
 → health_replan_count = 1
 → 返回健康与菜单规划节点
-→ 使用失败证据重新生成可行菜单
+→ 模型重新调用get_health_constraints取得当前约束回执
+→ 模型对当前候选批次重新调用evaluate_recipe_health
+→ 只使用新safe_recipe_ids生成新plan_id
 → 再次进入菜单决策和最终校验
 ```
 
-第二次最终校验仍失败，或第一次失败无法形成合法的新规划输入时，进入`failed`并返回`FINAL_HEALTH_VALIDATION_FAILED`。不能输出上一次选择的菜单，也不能由回答模型修改冲突菜品。
+原健康回执和`safe_recipe_ids`在回流后不能继续作为新方案依据。重新批量审查后没有安全候选时进入`no_safe_menu`；第二次最终校验仍为`EXCLUDE`，或第一次健康内容冲突无法形成合法的新规划输入时，进入`failed`并返回`FINAL_HEALTH_VALIDATION_FAILED`。不能输出上一次选择的菜单，也不能由回答模型修改冲突菜品。
+
+菜单哈希、参与者范围、约束引用、食材集合、覆盖状态或证据不一致属于系统完整性失败，立即进入`failed`，不消耗健康重新规划次数。工具、数据库、权限和Schema错误同样不能通过重新规划解决。
 
 ## 7. 统一审查的定向修订
 

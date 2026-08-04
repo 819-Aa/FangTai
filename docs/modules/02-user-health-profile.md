@@ -100,7 +100,7 @@
 
 ### 6.2 角色投影视图
 
-- B4视图：标准约束代码、硬软属性、作用域和证据引用；
+- B4视图：全局唯一`constraint_code`、来源类型、硬软属性、作用域和证据引用；
 - 健康规划模型视图：标准化约束摘要和健康工具回执引用；
 - 查询理解模型视图：参与者引用及已存在临时信号的最小摘要；
 - 回答模型与SSE视图：不含疾病名称、原始指标和参与者身份的公开说明。
@@ -171,14 +171,17 @@ TastePreference
 ```text
 constraint_id
 user_id
+constraint_kind: coded
 constraint_type: condition | physiological_status | allergy | metric
-normalized_code
+constraint_code
 effect: hard_exclude
 scope: permanent
 source_refs[]
 ```
 
-固定档案中的疾病、特殊生理阶段、过敏和异常指标一旦形成健康约束，其效果只能是`hard_exclude`，不能在B2或下游被降为软条件。健康目标和口味偏好不会写入`ProfileHealthConstraint`。指标派生规则属于B2确定性配置，它只负责把指标值转换为标准约束代码；该约束对应哪些食材由B4审核关系决定。
+固定档案中的疾病、特殊生理阶段、过敏和异常指标一旦形成健康约束，其效果只能是`hard_exclude`，不能在B2或下游被降为软条件。健康目标和口味偏好不会写入`ProfileHealthConstraint`。指标派生规则属于B2固定确定性配置，它只负责把指标值转换为全局唯一`constraint_code`；该代码对应哪些食材由B4审核关系决定。
+
+`constraint_type`说明约束来源类型，不作为B4选择食材关系的键。疾病事实和异常指标确实对应同一健康限制时可以输出相同`constraint_code`，B4只执行一套食材关系，同时保留B2提供的全部约束ID和来源证据；如果两者对应的食材限制不同，则必须使用不同代码。
 
 ### 7.4 临时信号候选
 
@@ -202,13 +205,17 @@ TemporaryHealthSignalCandidate
 TemporaryHealthConstraint
 ├── constraint_id
 ├── participant_ref
+├── constraint_kind: coded | explicit_food_taboo
 ├── constraint_type
-├── normalized_code或ingredient_id
+├── constraint_code | null
+├── ingredient_id | null
 ├── effect: hard_exclude
 ├── scope: turn | session
 ├── source_ref
 └── created_from_signal_id
 ```
+
+`constraint_kind=coded`时必须且只能提供`constraint_code`；`constraint_kind=explicit_food_taboo`时必须且只能提供B3严格解析后的`ingredient_id`。两者同时存在、同时为空或类型与字段不一致都不能形成已验证临时约束。
 
 对话中的疾病、过敏和指标默认作用于当前会话；明确“这顿不能吃”的食材禁忌默认只作用于当前请求。用户明确说明持续范围时，B2在允许范围内调整。任何对话信号都不能升级为永久档案事实。
 
@@ -275,16 +282,16 @@ TemporaryHealthConstraint
 ∪ 本轮临时硬约束
 ```
 
-去重键至少包括：
+同一来源类型中的重复约束按以下身份键去重：
 
 ```text
 participant_ref
 constraint_type
-normalized_code或ingredient_id
+constraint_code或ingredient_id
 effect
 ```
 
-重复约束只执行一次，但保留所有`source_refs`。固定疾病与异常指标产生相同约束时不得互相覆盖。
+同一身份键的重复约束合并为一条并保留所有`source_refs`。不同`constraint_type`产生相同`constraint_code`时，B2可以保留各自`constraint_id`以维持来源和撤销语义；B4以`constraint_code`作为唯一食材关系匹配键，只执行一次关系集合并保留全部约束引用。固定疾病与异常指标不得互相覆盖，临时来源也不能使永久来源可撤销。
 
 ### 9.4 撤销临时约束
 
@@ -302,8 +309,8 @@ effect
 - 异常状态由项目确定的阈值配置计算，不由模型或自然语言提示词计算；
 - 疾病事实与指标分类相互独立，正常指标不能移除疾病约束；
 - 指标值异常可以生成标准指标约束，即使档案中没有同名疾病标签；
-- B2只生成标准约束代码，不推断禁忌食材；
-- 没有B4审核食材关系的指标约束保留在约束集中，但不能凭空排除菜品。
+- B2只生成全局唯一`constraint_code`，不推断禁忌食材；
+- B2允许输出的通用硬约束代码必须由B4完成固定健康食材全集覆盖；覆盖缺失时保留约束但健康链路进入`failed`，不能凭空排除菜品，也不能把没有关系误判为`PASS`。
 
 ## 11. 临时信号语义
 
@@ -378,7 +385,7 @@ project_health_context(role, constraint_sets)
 get_health_constraints(participant_refs)
 ```
 
-工具只接收工作流注入的当前参与者范围，输出匿名参与者约束集、硬软类型、作用域、证据引用和未解决信号状态。缺少有效工具回执时遵守`REQUIRED_TOOL_NOT_CALLED`并停止。
+工具只接收工作流注入的当前参与者范围，输出匿名参与者约束集、硬软类型、作用域、证据引用和未解决信号状态。模型在角色白名单内自主决定调用时机并主动发起调用；“必需”表示成功完成健康规划角色的后置条件，不表示工作流预调用或自动补调用。缺少有效工具回执时遵守`REQUIRED_TOOL_NOT_CALLED`并停止。
 
 ## 14. 异常、终态与停止条件
 
@@ -413,7 +420,7 @@ Repository、指标评估、临时信号校验和上下文投影失败不自动�
 - 确定性异常指标形成对应约束；
 - 正常指标不形成异常指标约束；
 - 疾病不会被正常指标抵消；
-- 疾病和指标生成同一约束时只生效一次并保留多条证据；
+- 疾病和指标生成相同`constraint_code`时，B4只执行一套食材关系并保留全部约束与证据；
 - 健康目标和口味保持软条件；
 - B2输出中不存在菜品安全`PASS`。
 
@@ -425,6 +432,7 @@ Repository、指标评估、临时信号校验和上下文投影失败不自动�
 - 永久约束不能被撤销、放宽或忽略；
 - 模糊参与者、指标和食材身份进入澄清；
 - 临时食材禁忌未得到标准`ingredient_id`前不能生效；
+- 通用临时约束与明确食材禁忌满足`constraint_code`和`ingredient_id`严格互斥；
 - 本轮约束按请求边界失效，会话约束按会话边界失效。
 
 ### 15.4 多人与隐私
@@ -441,6 +449,8 @@ Repository、指标评估、临时信号校验和上下文投影失败不自动�
 - B1产物能够完整初始化B2固定表；
 - B3能够通过公开端口解析临时食材禁忌；
 - B4只通过`ParticipantHealthConstraintSet`读取健康约束；
+- `constraint_code`是B2与B4之间唯一的通用食材关系匹配键，`constraint_type`只表示来源；
+- B2允许代码与B4覆盖记录完整对应，缺失覆盖不能生成健康`PASS`；
 - 上下文模块只保存B2已经验证的临时约束；
 - Agent工具漏调不会生成成功健康规划Artifact。
 
@@ -487,7 +497,7 @@ B1固定档案产物
 
 - `03-recipe-ingredient-processing.md`提供临时明确食材禁忌的标准身份解析；
 - `04-health-rule-engine.md`消费B2约束并判断标准食材是否命中；
-- `09-agent-workflow.md`注入参与者范围并强制`get_health_constraints`工具回执；
+- `09-agent-workflow.md`注入参与者范围并把`get_health_constraints`回执设为模型角色完成条件，模型自主发起调用，工作流不代为调用；
 - `10-memory-and-context.md`保存已验证的临时约束并执行角色投影；
 - `11-api-and-sse.md`和`12-answer-and-frontend.md`只能消费隐私安全公开视图。
 

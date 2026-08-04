@@ -516,6 +516,16 @@ composition_expansion_status
 
 该视图包含必需、可选、替代和审核复合组成的并集，不含营养值、RAG分数或用户信息。B4据此关联审核健康关系并生成评估证据。
 
+`composition_expansion_status`使用固定枚举：
+
+- `atomic`：当前视图没有应用任何审核完整组成；复合食材以自身原子`ingredient_id`保留。存在`partial`或`unresolved`候选组成不改变该运行语义；
+- `complete`：至少应用一个`verified`组成，并且所有适用的审核组成成员和证据路径均完整展开；
+- `invalid`：已声明应应用的审核组成缺少成员、路径冲突、出现循环或无法完整展开。
+
+B4只接受`atomic`和`complete`。`invalid`视图不得作为可推荐菜品正式产物；运行时发现时返回`HEALTH_INGREDIENT_SET_INCOMPLETE`。同一道菜同时含有原子复合食材和已完整展开复合食材时，只要全部已声明审核组成都完整，状态为`complete`。
+
+B4在离线构建时对全部`catalog_eligibility=eligible`视图中的`ingredient_ids`取去重并集，形成固定健康食材全集并完成每个允许`constraint_code`的覆盖审核。该全集只作为离线门禁，不形成运行时版本机制。B3新增或修正任何可推荐菜品食材、可选项、替代成员或审核组成后，B1必须重新执行B3与B4的完整构建，不能继续使用旧覆盖结果。
+
 ### 11.3 B5步骤绑定视图
 
 包含原始步骤、食材Occurrence顺序、标准显示名、审核别名和形态属性。B5可以使用标准ID、审核别名和最长精确匹配建立步骤引用，但不能修改B3食材事实或用宽泛子串制造关键步骤缺失。
@@ -622,6 +632,7 @@ Qdrant元数据不能代替B3权威事实。WorkflowState保存稳定ID、Artifa
 - RAG文档的`recipe_id`集合等于B3可推荐菜品集合；
 - RAG文档不包含健康关系、过敏原、风险标签和内部营养值；
 - B4视图食材并集与Occurrence、ChoiceGroup和审核组成一致；
+- B4固定健康食材全集等于全部可推荐菜品健康视图中`ingredient_ids`的去重并集；
 - B5步骤引用只指向当前菜品存在的Occurrence；
 - B6输入只包含可食食材；
 - PublicRecipeView不能增加、删除或替换食材；
@@ -712,6 +723,7 @@ Repository、存储和目录查询失败不自动重试，不切换旧数据，�
 - 未确认烧烤酱等不会由名称自动生成配方；
 - 部分组成不能冒充完整组成；
 - 循环组成在构建阶段失败。
+- `atomic`复合食材按自身标准ID进入B4，`complete`包含全部审核成员，`invalid`不能进入健康评估；
 
 ### 15.6 跨模块与失败
 

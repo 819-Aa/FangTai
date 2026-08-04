@@ -6,7 +6,7 @@ V2文档采用“系统总览、模块详设、共享契约、跨模块场景、
 docs/
 ├── 00-system-overview.md   # 系统总设计与全局架构入口
 ├── modules/                # 各业务与工程模块的详细设计
-├── contracts/              # WorkflowState、Artifact、工具、错误码和版本契约
+├── contracts/              # WorkflowState、Artifact、工具、错误码和证据契约
 ├── scenarios/              # 关键端到端场景与节点时序
 └── decisions/              # 已确认的架构选择及其理由
 ```
