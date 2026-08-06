@@ -1,6 +1,6 @@
 # V2健康规则与审查引擎设计
 
-- 状态：`IN_REVIEW`
+- 状态：`APPROVED`
 - 日期：2026-08-04
 - 适用项目：`program_v2`
 - 上游依据：[系统总体设计](../00-system-overview.md)、[全局不变量](../contracts/global-invariants.md)、[模块边界](../contracts/module-boundaries.md)、[推荐请求生命周期](../scenarios/recommendation-lifecycle.md)、[数据工程模块](01-data-engineering.md)、[用户健康档案模块](02-user-health-profile.md)、[菜品与食材处理模块](03-recipe-ingredient-processing.md)
