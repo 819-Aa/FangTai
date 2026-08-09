@@ -203,3 +203,42 @@ class PipelineRun:
     status: str                        # passed | failed
     elapsed_ms: float = 0
     stages: list[PipelineStage] = field(default_factory=list)
+
+
+class ClassificationReview(StrEnum):
+    """分类审核状态：发布门禁要求 pending=0。"""
+    APPROVED = "approved"
+    PENDING = "pending"
+    REJECTED = "rejected"
+
+
+@dataclass
+class SourceRecipeRow:
+    """固定源单行的事实记录（recipe_id 严格等于行号 1..2000）。"""
+    recipe_id: int                     # row_index，禁止名称排序/变体重编号
+    source_row_number: int             # 源文件中的行号
+    name: str
+    ingredients_raw: str
+    steps_raw: str
+    labels_raw: str
+    row_sha256: str                    # 源行规范散列（审计/守恒证明）
+
+
+@dataclass
+class RecipeClassification:
+    """单行菜品分类：封闭类型 + 规则证据 + 审核状态。"""
+    recipe_id: int
+    record_type: RecordType            # dish|preparation|meal_bundle|cooking_program|test_record
+    rule_evidence: list[str] = field(default_factory=list)
+    confidence: str = "high"           # high | medium | low
+    review_status: ClassificationReview = ClassificationReview.APPROVED
+
+
+@dataclass
+class ClassificationOverride:
+    """人工对争议分类的签名覆盖。"""
+    recipe_id: int
+    record_type: RecordType
+    reason: str
+    reviewer: str
+    reviewed_at: str

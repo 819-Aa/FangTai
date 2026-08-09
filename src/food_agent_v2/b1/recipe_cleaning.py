@@ -11,11 +11,11 @@ from __future__ import annotations
 import csv
 import json
 from collections import Counter
-from difflib import SequenceMatcher
 from pathlib import Path
 
-from food_agent_v2.core.paths import RECIPES_RAW, CLEANED_RECIPES, PROJECT_ROOT, PIPELINE_REPORTS_DIR
 from food_agent_v2.b1.schemas import RecipeCleaningOutput
+from food_agent_v2.b1.source_manifest import canonical_source_manifest, load_verified_recipe_source
+from food_agent_v2.core.paths import CLEANED_RECIPES, PIPELINE_REPORTS_DIR, RECIPES_RAW
 
 
 def _normalize_for_comparison(value: str) -> str:
@@ -44,15 +44,15 @@ def _audit_duplicates(rows: list[dict[str, str]]) -> dict:
         if not name or len(items) < 2:
             continue
         exact_pairs = 0
-        for l in range(len(items)):
-            for r in range(l + 1, len(items)):
+        for left in range(len(items)):
+            for right in range(left + 1, len(items)):
                 left_sig = (
-                    _normalize_for_comparison(items[l][1].get("食材清单", "")),
-                    _normalize_for_comparison(items[l][1].get("烹饪步骤", "")),
+                    _normalize_for_comparison(items[left][1].get("食材清单", "")),
+                    _normalize_for_comparison(items[left][1].get("烹饪步骤", "")),
                 )
                 right_sig = (
-                    _normalize_for_comparison(items[r][1].get("食材清单", "")),
-                    _normalize_for_comparison(items[r][1].get("烹饪步骤", "")),
+                    _normalize_for_comparison(items[right][1].get("食材清单", "")),
+                    _normalize_for_comparison(items[right][1].get("烹饪步骤", "")),
                 )
                 if left_sig == right_sig:
                     exact_pairs += 1
@@ -70,7 +70,6 @@ def _audit_duplicates(rows: list[dict[str, str]]) -> dict:
 
 
 def audit_raw(rows: list[dict[str, str]], fields: list[str]) -> dict:
-    name_field = fields[0]
     return {
         "row_count": len(rows),
         "fields": fields,
@@ -120,9 +119,16 @@ def _write_jsonl(path: Path, records: list[dict]) -> None:
 
 
 def clean_recipes() -> tuple[list[dict], dict]:
-    """主入口。返回 (清洗后的菜品列表, 汇总报告)。"""
+    """主入口。返回 (清洗后的菜品列表, 汇总报告)。
+
+    V2 变更：进入清洗前先按固定 SourceManifest 核验源文件事实，任何
+    byte_size/sha256/编码/表头/行数不匹配在解析业务行之前抛
+    SOURCE_MANIFEST_MISMATCH。
+    """
     CLEANED_RECIPES.parent.mkdir(parents=True, exist_ok=True)
     PIPELINE_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+
+    load_verified_recipe_source(RECIPES_RAW, canonical_source_manifest())
 
     rows, fields, encoding = load_raw_recipes(RECIPES_RAW)
     audit = audit_raw(rows, fields)
