@@ -1,12 +1,15 @@
-"""B1 食材解析器（T06）—— 固定源食材清单的唯一解析入口。
+"""B1 食材解析器（T06 修复）—— 固定源食材清单的唯一解析入口。
 
-自 b3/ingredient_parser.py 迁移并增强，覆盖黄金用例：
+自 b3/ingredient_parser.py 迁移并增强，覆盖黄金用例与数量/单位解析：
 - 组分前缀（主料/辅料/A料/B料/C料）；
-- 数量与单位（前缀/后缀，"梨肉1000g"）；
+- 数量与单位：分数（1/2t）、英文单位（mL/t/T/tsp/g/kg/oz/lb）、中文计数/
+  包装单位（片/个/粒/盒/罐/袋/包/瓶/根/只/朵…）、重复单位（"2片片"）、
+  前缀/中缀/后缀位置；只剥离"数字+单位"，保留 T55面粉 等合法数字名；
 - 括号处理语（切块/压碎/浸泡/干重/约2g）——不得进入食材名；
 - 可选（可选/选配/选用）与替代（A或B）；
 - 组合引用（酱料见/馅料见/酱汁见）；
-- 处理语后缀（丝/片/段/末/蓉/丁）在身份层识别，不在解析层进入新身份。
+- 切配形态（丝/片/末/丁/蓉/块/粒/段/花/碎）作为 form 属性记录，
+  是否合并由 crosswalk/H02 决定，解析层不自动合并。
 
 B3/B4/B5/B6/C1 不得重复解析原始食材字符串（INV-008/INV-023）。
 """
@@ -38,28 +41,55 @@ COMPOSITION_PATTERN = re.compile(
     r"(?:酱料|馅料|酱汁|蘸料|浇汁|淋酱|料汁|卤汁)\s*见\s*[（(]\s*([^)）]+?)\s*[)）]"
 )
 
-#: 数量+单位前缀
-QTY_UNIT_PATTERN = re.compile(
-    r"^(?:约|大约|适量|少许|少量|若干|足量)?\s*"
-    r"(?:\d+(?:\.\d+)?(?:\s*[-–—~～]\s*\d+(?:\.\d+)?)?)\s*"
-    r"(?:克|g|千克|kg|公斤|毫克|mg|毫升|ml|升|l|L|"
-    r"茶匙|汤匙|大匙|小匙|勺|大勺|小勺|杯|碗|"
-    r"片|瓣|颗|个|块|段|根|只|条|张|把|"
-    r"茶勺|汤勺|量杯|英寸|寸|尺|厘米|cm|毫米|mm)?\s*"
+#: 数量数字：整数/小数/分数
+_NUMBER = r"\d+(?:[./]\d+)*(?:\.\d+)?"
+#: 度量单位（重量/体积/勺子/英文）——前缀位置也剥离。
+_MEASURE_UNIT = (
+    r"(?:克|千克|公斤|毫克|g|kg|mg|毫升|ml|mL|升|l|L|"
+    r"磅|盎司|oz|lb|斤|两|"
+    r"茶匙|汤匙|大匙|小匙|勺|大勺|小勺|茶勺|汤勺|量杯|t|T|tsp|Tbsp|h)"
 )
-
-#: 数量+单位后缀（"梨肉1000g（（切块））"）
-QTY_UNIT_SUFFIX_PATTERN = re.compile(
-    r"\s*(?:约|大约|适量|少许|少量|若干|足量)?\s*"
-    r"\d+(?:\.\d+)?(?:\s*[-–—~～]\s*\d+(?:\.\d+)?)?\s*"
-    r"(?:克|g|千克|kg|公斤|毫克|mg|毫升|ml|升|l|L|"
-    r"茶匙|汤匙|大匙|小匙|勺|大勺|小勺|杯|碗|"
-    r"片|瓣|颗|个|块|段|根|只|条|张|把|"
-    r"茶勺|汤勺|量杯|英寸|寸|尺|厘米|cm|毫米|mm)\s*$"
+#: 计数/包装/时间/温度单位——仅后缀位置剥离（避免误删 80头/1号 等产品级名）。
+_COUNT_UNIT = (
+    r"(?:人份|小块|小片|小粒|小撮|小把|小个|"
+    r"杯|碗|片|瓣|颗|个|块|段|根|只|条|张|把|朵|粒|枚|支|截|"
+    r"盒|罐|袋|包|瓶|捆|扎|打|撮|滴|束|对|副|"
+    r"盏|节|方|枝|棵|份|套|串|米|头|"
+    r"英寸|寸|尺|厘米|cm|毫米|mm|"
+    r"小时|分钟|秒|度|℃)"
 )
+_UNIT = rf"(?:{_MEASURE_UNIT}|{_COUNT_UNIT})"
 
-#: 括号内处理语（切块/压碎/浸泡/干重/约2g 等），不得进入食材名
+#: 前缀度量数量："200g鸡胸肉"（只剥度量单位，不剥 80头 等计数前缀）。
+_QTY_PREFIX = re.compile(rf"^(?:约|大约|适量|少许|少量|若干|足量)?\s*{_NUMBER}\s*{_MEASURE_UNIT}\s*")
+#: 后缀数量（可重复单位 "2片片"）："红泡椒50g" / "米2人份" / "姜2片片"。
+_QTY_SUFFIX = re.compile(rf"(?:约|大约|适量|少许|少量|若干|足量)?\s*{_NUMBER}\s*{_UNIT}(?:\s*{_UNIT})?\s*$")
+#: 范围+单位后缀："鲜活蛤蜊10~15个"
+_RANGE_WITH_UNIT = re.compile(rf"{_NUMBER}\s*[~\-—]\s*{_NUMBER}\s*{_UNIT}\s*$")
+#: 范围后缀："土豆400~" / "冰糖5-" / "糖15—"
+_RANGE_SUFFIX = re.compile(rf"{_NUMBER}\s*[~\-—]\s*\d*\s*$")
+#: 时间/温度后缀："冷冻4小时" / "冬35度"
+_TIME_SUFFIX = re.compile(rf"{_NUMBER}\s*(?:小时|分钟|秒|度|℃)\s*$")
+#: 切分处理后缀："1切4" / "1开2"
+_PROCESS_SUFFIX = re.compile(rf"{_NUMBER}\s*(?:切|开|分|掰)\s*\d*\s*$")
+#: 近似词后缀："50克左右"
+_APPROX_SUFFIX = re.compile(r"(?:左右|上下|以内|以上)$")
+#: 尾部裸数字（"淀粉3" / "黄油95"）
+_BARE_DIGIT_SUFFIX = re.compile(rf"{_NUMBER}\s*$")
+#: 未配对括号残留 / 尾部括号
+_PAREN_OPEN_UNMATCHED = re.compile(r"[（(][^）)]*$")
+_PAREN_CLOSE_TAIL = re.compile(r"[）)]+$")
+
+#: 尾部量词（无数字）
+_QTY_WORDS = ("适量", "少许", "少量", "若干", "足量")
+
+#: 括号内处理语，反复去掉最内层括号
 _PAREN_GROUP_RE = re.compile(r"[（(][^（()）]*[)）]")
+
+#: 切配形态后缀（form 属性）
+FORM_SUFFIXES = ("丝", "片", "末", "蓉", "丁", "花", "碎", "块", "粒", "段", "条", "泥")
+#: 以形态字符结尾但本身是完整食材名的整名（不按形态处理）
+_WHOLE_NAMES_WITH_FORM_CHAR = {"丝瓜", "蒜苔", "豆苗", "西红柿", "马齿苋", "蟹味菇"}
 
 #: 非食材说明标记
 NOTE_MARKERS = ("适量", "少许", "少量", "若干", "足量", "根据", "见", "备", "待用")
@@ -78,6 +108,7 @@ class ParsedOccurrence:
     choice_group_id: int | None = None
     alternatives: list[str] = field(default_factory=list)
     composition_ref: str | None = None
+    form: str | None = None
     is_note: bool = False
 
 
@@ -93,39 +124,7 @@ def _check_optional(text: str) -> bool:
     return any(marker.search(text) for marker in OPTIONAL_MARKERS)
 
 
-_QTY_WORDS = ("适量", "少许", "少量", "若干", "足量")
-
-
-def _extract_qty_name(text: str) -> tuple[str, str | None, str | None]:
-    """提取 (食材名, 数量, 单位)。优先前缀数量；再处理后缀；最后剥离量词。"""
-    qty_match = QTY_UNIT_PATTERN.match(text)
-    if qty_match:
-        qty_raw = qty_match.group().strip()
-        rest = text[qty_match.end():].strip()
-        unit_match = re.search(
-            r"^(克|g|千克|kg|公斤|毫克|mg|毫升|ml|升|l|L|"
-            r"茶匙|汤匙|大匙|小匙|勺|大勺|小勺|杯|碗|"
-            r"片|瓣|颗|个|块|段|根|只|条|张|把)",
-            rest,
-        )
-        if unit_match:
-            return rest[unit_match.end():].strip(), qty_raw, unit_match.group()
-        return rest, qty_raw, None
-    # 后缀数量："梨肉1000g"
-    suffix_match = QTY_UNIT_SUFFIX_PATTERN.search(text)
-    if suffix_match:
-        qty_raw = suffix_match.group().strip()
-        name = text[: suffix_match.start()].strip()
-        unit_match = re.search(r"(克|g|千克|kg|毫升|ml|升|l|L|个|只|条|根|片|瓣|颗|块|段|张|把)$", qty_raw)
-        return name, qty_raw, unit_match.group() if unit_match else None
-    # 尾部量词："盐适量"、"葱少许"
-    for qty_word in _QTY_WORDS:
-        if text.endswith(qty_word) and len(text) > len(qty_word):
-            return text[: -len(qty_word)].strip(), qty_word, None
-    return text, None, None
-
-
-def _strip_parens_processing(name: str) -> str:
+def _strip_parens(name: str) -> str:
     """反复去掉最内层括号及其内容（处理语/说明）。可选标记已先行判定。"""
     cleaned = name
     while True:
@@ -134,6 +133,72 @@ def _strip_parens_processing(name: str) -> str:
             break
         cleaned = cleaned[: match.start()] + cleaned[match.end():]
     return cleaned.strip()
+
+
+def _strip_quantities(name: str) -> str:
+    """剥离数量/单位/范围/时间/处理语/括号残留；保留 T55面粉、80头干瑶柱 等合法数字名。
+
+    只剥"数字+度量单位"前缀与"数字+单位"后缀；中段数字（T55、80头）不剥。
+    每次迭代先剥尾部括号/分隔符/近似词残留，使后缀数量可再次匹配。
+    """
+    cleaned = name
+    changed = True
+    while changed:
+        changed = False
+        # 先剥尾部残留，让后缀数量可再匹配
+        for pattern in (_PAREN_CLOSE_TAIL, _APPROX_SUFFIX, re.compile(r"[~\-—/+]+$")):
+            stripped = pattern.sub("", cleaned).strip()
+            if stripped != cleaned:
+                cleaned = stripped
+                changed = True
+        prefix = _QTY_PREFIX.match(cleaned)
+        if prefix:
+            cleaned = cleaned[prefix.end():].strip()
+            changed = True
+        for pattern in (_QTY_SUFFIX, _RANGE_WITH_UNIT, _RANGE_SUFFIX, _TIME_SUFFIX, _PROCESS_SUFFIX):
+            stripped = pattern.sub("", cleaned)
+            if stripped != cleaned:
+                cleaned = stripped
+                changed = True
+        stripped = _PAREN_OPEN_UNMATCHED.sub("", cleaned)
+        if stripped != cleaned:
+            cleaned = stripped
+            changed = True
+    # 尾部裸数字/不完整分数
+    cleaned = _BARE_DIGIT_SUFFIX.sub("", cleaned).strip()
+    cleaned = re.sub(r"[（(]?\d+\/\s*$", "", cleaned).strip()
+    # 纯量词
+    cleaned = re.sub(r"^(?:约|大约|适量|少许|少量|若干|足量)\s*", "", cleaned).strip()
+    for qty_word in _QTY_WORDS:
+        if cleaned.endswith(qty_word) and len(cleaned) > len(qty_word):
+            cleaned = cleaned[: -len(qty_word)].strip()
+    return cleaned.strip("，,;；。/ ")
+
+
+def _extract_qty_name(text: str) -> tuple[str, str | None, str | None]:
+    """返回 (食材名, 数量原文, 单位原文)。"""
+    suffix = _QTY_SUFFIX.search(text)
+    prefix = _QTY_PREFIX.match(text)
+    qty_raw = None
+    if suffix:
+        qty_raw = suffix.group().strip()
+    elif prefix:
+        qty_raw = prefix.group().strip()
+    unit_raw = None
+    if qty_raw:
+        unit_match = re.search(rf"({_UNIT})$", qty_raw)
+        unit_raw = unit_match.group() if unit_match else None
+    return _strip_quantities(text), qty_raw, unit_raw
+
+
+def _detect_form(name: str) -> tuple[str, str | None]:
+    """返回 (名称, 切配形态)。整名如 丝瓜/蒜苔 不视为形态变体。"""
+    if name in _WHOLE_NAMES_WITH_FORM_CHAR:
+        return name, None
+    for suffix in FORM_SUFFIXES:
+        if name.endswith(suffix) and len(name) - len(suffix) >= 1:
+            return name[: -len(suffix)], suffix
+    return name, None
 
 
 def _split_alternatives(text: str) -> list[str]:
@@ -169,7 +234,6 @@ def parse_ingredients(ingredients_raw: str) -> list[ParsedOccurrence]:
     for fragment in split_ingredient_text(ingredients_raw):
         group, body = _detect_group(fragment)
 
-        # 组合引用：酱料见（X）→ 引用指向其身份（非纯说明，保留 composition_ref）
         composition = COMPOSITION_PATTERN.search(body)
         if composition:
             occurrences.append(
@@ -182,7 +246,6 @@ def parse_ingredients(ingredients_raw: str) -> list[ParsedOccurrence]:
             )
             continue
 
-        # 非食材说明：只有量词/描述词，无具体食材
         if body in NOTE_MARKERS:
             occurrences.append(
                 ParsedOccurrence(raw_text=fragment, name_clean=body, group=group, is_note=True)
@@ -196,7 +259,11 @@ def parse_ingredients(ingredients_raw: str) -> list[ParsedOccurrence]:
             gid = choice_group_counter
             choice_group_counter += 1
             for alt in alternatives:
-                clean_name, qty, unit = _extract_qty_name(_strip_parens_processing(alt))
+                cleaned = _strip_parens(alt)
+                clean_name, qty, unit = _extract_qty_name(cleaned)
+                if not clean_name:
+                    continue  # 纯处理语残留（如"1切4"），不是食材
+                base, form = _detect_form(clean_name)
                 occurrences.append(
                     ParsedOccurrence(
                         raw_text=alt,
@@ -207,10 +274,15 @@ def parse_ingredients(ingredients_raw: str) -> list[ParsedOccurrence]:
                         is_optional=is_optional,
                         choice_group_id=gid,
                         alternatives=[a for a in alternatives if a != alt],
+                        form=form,
                     )
                 )
         else:
-            clean_name, qty, unit = _extract_qty_name(_strip_parens_processing(body))
+            cleaned = _strip_parens(body)
+            clean_name, qty, unit = _extract_qty_name(cleaned)
+            if not clean_name:
+                continue  # 纯处理语残留，不是食材
+            base, form = _detect_form(clean_name)
             occurrences.append(
                 ParsedOccurrence(
                     raw_text=fragment,
@@ -219,6 +291,7 @@ def parse_ingredients(ingredients_raw: str) -> list[ParsedOccurrence]:
                     quantity_raw=qty,
                     unit_raw=unit,
                     is_optional=is_optional,
+                    form=form,
                 )
             )
 

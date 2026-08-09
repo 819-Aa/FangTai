@@ -63,3 +63,30 @@ class TestParserGolden:
     def test_name_boundary_vegetarian_oyster(self) -> None:
         # 素蚝油 是一个整体，不能被拆成 素/蚝油。
         assert names("素蚝油10克") == ["素蚝油"]
+
+    def test_fraction_unit_stripped(self) -> None:
+        assert names("酱油1/2t") == ["酱油"]
+
+    def test_english_units_stripped(self) -> None:
+        assert names("橄榄油30mL") == ["橄榄油"]
+        assert names("食用油1.5T") == ["食用油"]
+
+    def test_package_and_count_units_stripped(self) -> None:
+        assert names("内酯豆腐1盒") == ["内酯豆腐"]
+        assert names("枸杞10粒") == ["枸杞"]
+        assert names("香菇8朵") == ["香菇"]
+
+    def test_doubled_unit_stripped(self) -> None:
+        assert names("姜2片片") == ["姜"]
+
+    def test_incomplete_fraction_remnant_stripped(self) -> None:
+        assert names("高汤块1/") == ["高汤块"]
+
+    def test_legal_digit_name_preserved(self) -> None:
+        # T55面粉 是真实名称，数字不是数量，必须保留。
+        assert names("T55面粉300克") == ["T55面粉"]
+
+    def test_form_attribute_detected(self) -> None:
+        occs = parse_ingredients("姜丝5克")
+        assert occs[0].name_clean == "姜丝"
+        assert occs[0].form == "丝"
