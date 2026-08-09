@@ -7,11 +7,20 @@ B1 的 Schema 关注输出结构、跨域引用一致性和数据质量元数据
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
+# ---- 固定 2,000 条源数据的权威常量（data-artifact-contracts.md §2.1）----
+SOURCE_ID = "fixed-recipes-2000"
+SOURCE_ENCODING = "GBK"
+SOURCE_RELATIVE_PATH = "data/raw/recipes_sample_2000.csv"
+SOURCE_BYTE_SIZE = 1_138_083
+SOURCE_SHA256 = "B2177DC6CDCAE24FC5671C8DADA44295228F4301E3CE620ED11D51B1ABFE4371"
+SOURCE_ROW_COUNT = 2_000
+SOURCE_HEADERS = ("名称", "食材清单", "烹饪步骤", "label")
 
-class RecordType(str, Enum):
+
+class RecordType(StrEnum):
     """B1 识别的记录分类。详情归 B3 定义。"""
     DISH = "dish"
     PREPARATION = "preparation"
@@ -21,32 +30,32 @@ class RecordType(str, Enum):
     UNKNOWN = "unknown"
 
 
-class StepType(str, Enum):
+class StepType(StrEnum):
     ACTIVE = "active"        # 切配等需要人主动操作
     EQUIPMENT = "equipment"  # 炒、煎、烤、蒸等占用设备
     PASSIVE = "passive"      # 醒面、冷藏、腌制等不占用人与设备
 
 
-class MatchMethod(str, Enum):
+class MatchMethod(StrEnum):
     EXACT = "exact"          # ingredient_id 精确匹配
     ALIAS = "alias"          # 审核别名匹配
     ESTIMATE = "estimate"    # 可解释估算
     NOT_FOUND = "not_found"  # 无匹配
 
 
-class IngredientIdentity(str, Enum):
+class IngredientIdentity(StrEnum):
     RESOLVED = "resolved"
     AMBIGUOUS = "ambiguous"
     NOT_FOUND = "not_found"
 
 
-class CompositionStatus(str, Enum):
+class CompositionStatus(StrEnum):
     ATOMIC = "atomic"        # 无复合组成，或全部子项已独立解析
     COMPLETE = "complete"    # 所有子项身份已解析
     INVALID = "invalid"      # 存在循环引用或不可解析的子项
 
 
-class RelationReview(str, Enum):
+class RelationReview(StrEnum):
     APPROVED = "approved"
     PENDING = "pending"
     REJECTED = "rejected"
