@@ -81,6 +81,44 @@ class TestParserGolden:
     def test_doubled_unit_stripped(self) -> None:
         assert names("姜2片片") == ["姜"]
 
+    @pytest.mark.parametrize(
+        ("fragment", "expected_name", "expected_quantity"),
+        [
+            ("菠萝半个", "菠萝", "半个"),
+            ("胡萝卜小半根", "胡萝卜", "小半根"),
+            ("葱两根", "葱", "两根"),
+            ("姜片两片", "姜片", "两片"),
+            ("料酒一勺", "料酒", "一勺"),
+            ("鲜松茸两个", "鲜松茸", "两个"),
+        ],
+    )
+    def test_chinese_number_quantity_suffix_stripped(
+        self,
+        fragment: str,
+        expected_name: str,
+        expected_quantity: str,
+    ) -> None:
+        occurrence = parse_ingredients(fragment)[0]
+        assert occurrence.name_clean == expected_name
+        assert occurrence.quantity_raw == expected_quantity
+
+    @pytest.mark.parametrize("fragment", ["白糖各", "水淀粉各", "缤纷果蔬粉各"])
+    def test_group_quantifier_suffix_is_not_part_of_identity(self, fragment: str) -> None:
+        assert names(fragment) == [fragment.removesuffix("各")]
+
+    @pytest.mark.parametrize(
+        ("fragment", "expected"),
+        [
+            ("芝士少許", "芝士"),
+            ("寿司紫菜数张", "寿司紫菜"),
+            ("饺子皮数张", "饺子皮"),
+        ],
+    )
+    def test_traditional_and_indefinite_quantity_suffix_stripped(
+        self, fragment: str, expected: str
+    ) -> None:
+        assert names(fragment) == [expected]
+
     def test_incomplete_fraction_remnant_stripped(self) -> None:
         assert names("高汤块1/") == ["高汤块"]
 
@@ -106,6 +144,14 @@ class TestParserGolden:
 
     @pytest.mark.parametrize("fragment", ["冷冻4小时)", "根和叶分开））"])
     def test_standalone_state_instruction_is_not_an_ingredient(self, fragment: str) -> None:
+        assert names(fragment) == []
+
+    @pytest.mark.parametrize("fragment", ["去虾须））", "去脚））", "取净肉））"])
+    def test_malformed_standalone_action_is_not_an_ingredient(self, fragment: str) -> None:
+        assert names(fragment) == []
+
+    @pytest.mark.parametrize("fragment", ["辅料：包子皮材料", "肉馅材料"])
+    def test_fixed_source_group_heading_is_not_an_ingredient(self, fragment: str) -> None:
         assert names(fragment) == []
 
     def test_qualitative_count_suffix_is_not_part_of_identity(self) -> None:

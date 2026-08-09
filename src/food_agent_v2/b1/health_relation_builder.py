@@ -403,6 +403,158 @@ CONSTRAINT_INGREDIENT_PATTERNS: dict[str, list[str]] = {
     "indicator_high_bp": ["高盐", "咸", "腌", "腊", "味精", "鸡精"],
 }
 
+# 2026-08-10 独立审核策略校准：这里只保留能落到具体食材身份的保守候选。
+# “建议限制摄入”不等于“任何用量都必须硬排除”；依赖份量、烹饪状态、疾病分期或
+# 化验结果的规则不能在 B1 靠食材名称变成全局硬关系。
+_ADDED_SUGAR_PATTERNS = ["白糖", "白砂糖", "冰糖", "红糖", "蜂蜜", "糖浆", "果酱", "麦芽糖"]
+_HIGH_SODIUM_PATTERNS = [
+    "咸菜",
+    "酸菜",
+    "泡菜",
+    "腊肉",
+    "腊肠",
+    "火腿",
+    "咸鱼",
+    "榨菜",
+    "酱菜",
+    "腐乳",
+    "豆豉",
+    "味精",
+    "鸡精",
+    "高盐",
+    "重盐",
+]
+_SATURATED_FAT_PATTERNS = ["猪油", "肥肉", "奶油", "黄油", "油炸", "酥皮", "动物内脏"]
+_HIGH_PURINE_PATTERNS = [
+    "动物内脏",
+    "猪肝",
+    "猪心",
+    "猪腰",
+    "鸡肝",
+    "鸭肝",
+    "牛百叶",
+    "毛肚",
+    "黄喉",
+    "腰花",
+    "沙丁鱼",
+    "凤尾鱼",
+    "鱼子",
+    "虾",
+    "蟹",
+    "贝",
+    "干贝",
+    "瑶柱",
+    "牡蛎",
+    "啤酒",
+]
+_ALCOHOL_PATTERNS = [
+    "酒精",
+    "啤酒",
+    "白酒",
+    "红酒",
+    "黄酒",
+    "料酒",
+    "米酒",
+    "酒酿",
+    "醪糟",
+    "葡萄酒",
+    "朗姆酒",
+    "威士忌",
+    "白兰地",
+    "绍兴酒",
+]
+
+CONSTRAINT_INGREDIENT_PATTERNS.update(
+    {
+        "allergy_pineapple": ["菠萝", "凤梨"],
+        "disease_hyperglycemia": _ADDED_SUGAR_PATTERNS,
+        "disease_diabetes": _ADDED_SUGAR_PATTERNS,
+        "indicator_high_glucose": _ADDED_SUGAR_PATTERNS,
+        "disease_hypercholesterolemia": _SATURATED_FAT_PATTERNS,
+        "disease_hyperlipidemia": _SATURATED_FAT_PATTERNS,
+        "indicator_high_cholesterol": _SATURATED_FAT_PATTERNS,
+        "disease_hyperuricemia": _HIGH_PURINE_PATTERNS,
+        "disease_gout": _HIGH_PURINE_PATTERNS,
+        "indicator_high_uric_acid": _HIGH_PURINE_PATTERNS,
+        "disease_hypertension": _HIGH_SODIUM_PATTERNS,
+        "indicator_high_bp": _HIGH_SODIUM_PATTERNS,
+        "disease_kidney": _HIGH_SODIUM_PATTERNS,
+        "disease_chd": _HIGH_SODIUM_PATTERNS + _SATURATED_FAT_PATTERNS,
+        "group_pregnancy": _ALCOHOL_PATTERNS,
+        "group_lactation": [],
+        "group_child": [],
+        "group_elderly": [],
+        "disease_fatty_liver": [],
+        "disease_obesity": [],
+        "disease_anemia": [],
+        "disease_osteoporosis": [],
+        "disease_hyperthyroidism": [],
+        "disease_hypothyroidism": [],
+    }
+)
+
+_FDA_ALLERGEN_EVIDENCE = (
+    "https://www.fda.gov/food/buy-store-serve-safe-food/food-allergies-what-you-need-know"
+)
+_WHO_HYPERTENSION_EVIDENCE = "https://www.who.int/news-room/fact-sheets/detail/hypertension"
+_CDC_DIABETES_EVIDENCE = "https://www.cdc.gov/diabetes/healthy-eating/diabetes-meal-planning.html"
+_CDC_CHOLESTEROL_EVIDENCE = "https://www.cdc.gov/cholesterol/prevention/index.html"
+_NIDDK_KIDNEY_EVIDENCE = (
+    "https://www.niddk.nih.gov/health-information/kidney-disease/"
+    "chronic-kidney-disease-ckd/healthy-eating-adults-chronic-kidney-disease"
+)
+_NIDDK_FATTY_LIVER_EVIDENCE = (
+    "https://www.niddk.nih.gov/health-information/liver-disease/nafld-nash/treatment"
+)
+_CDC_PREGNANCY_EVIDENCE = "https://www.cdc.gov/alcohol-pregnancy/about/index.html"
+_CDC_LACTATION_EVIDENCE = (
+    "https://www.cdc.gov/breastfeeding-special-circumstances/hcp/"
+    "diet-micronutrients/maternal-diet.html"
+)
+_NHS_GOUT_EVIDENCE = (
+    "https://www.ruh.nhs.uk/patients/services/clinical_depts/dietetics/"
+    "documents/Dietary_Advice_For_Gout.pdf"
+)
+_GENERAL_DIET_EVIDENCE = "https://www.who.int/news-room/fact-sheets/detail/healthy-diet"
+
+CONSTRAINT_EVIDENCE_REFS = {
+    **{
+        code: _FDA_ALLERGEN_EVIDENCE
+        for code in ALLOWED_CONSTRAINT_CODES
+        if code.startswith("allergy_")
+    },
+    "disease_hypertension": _WHO_HYPERTENSION_EVIDENCE,
+    "indicator_high_bp": _WHO_HYPERTENSION_EVIDENCE,
+    "disease_hyperglycemia": _CDC_DIABETES_EVIDENCE,
+    "disease_diabetes": _CDC_DIABETES_EVIDENCE,
+    "indicator_high_glucose": _CDC_DIABETES_EVIDENCE,
+    "disease_hyperlipidemia": _CDC_CHOLESTEROL_EVIDENCE,
+    "disease_hypercholesterolemia": _CDC_CHOLESTEROL_EVIDENCE,
+    "indicator_high_cholesterol": _CDC_CHOLESTEROL_EVIDENCE,
+    "disease_chd": _CDC_CHOLESTEROL_EVIDENCE,
+    "disease_hyperuricemia": _NHS_GOUT_EVIDENCE,
+    "disease_gout": _NHS_GOUT_EVIDENCE,
+    "indicator_high_uric_acid": _NHS_GOUT_EVIDENCE,
+    "disease_kidney": _NIDDK_KIDNEY_EVIDENCE,
+    "disease_fatty_liver": _NIDDK_FATTY_LIVER_EVIDENCE,
+    "group_pregnancy": _CDC_PREGNANCY_EVIDENCE,
+    "group_lactation": _CDC_LACTATION_EVIDENCE,
+    **{
+        code: _GENERAL_DIET_EVIDENCE
+        for code in ALLOWED_CONSTRAINT_CODES
+        if code
+        in {
+            "disease_obesity",
+            "disease_anemia",
+            "disease_osteoporosis",
+            "disease_hyperthyroidism",
+            "disease_hypothyroidism",
+            "group_child",
+            "group_elderly",
+        }
+    },
+}
+
 
 # 适合单字宽松子串匹配的"高精度"字符（海鲜类）：
 # 经真实数据核对，含这些字的可食用食材几乎全部是真实的对应海鲜，
@@ -433,6 +585,8 @@ def _ingredient_matches_pattern(name_canonical: str, keywords: list[str]) -> boo
     """
     for kw in keywords:
         if len(kw) >= 2:
+            if kw == "松子" and "杜松子" in name_canonical:
+                continue
             if kw in name_canonical:
                 return True
         else:
@@ -490,17 +644,20 @@ def generate_health_relation_candidates(
     candidates: list[HealthRelationCandidate] = []
     for code in allowed_constraint_codes:
         patterns = CONSTRAINT_INGREDIENT_PATTERNS.get(code, [])
+        authority_ref = CONSTRAINT_EVIDENCE_REFS[code]
         for ingredient in health_ingredients:
             name = ingredient["name_canonical"]
-            matched_patterns = _matching_patterns(name, patterns)
+            matched_patterns = _matching_patterns(code, name, patterns)
             if matched_patterns:
                 suggestion = "hard_exclude"
-                reason = "unverified_legacy_name_pattern"
-                evidence = f"legacy-pattern:{code}:{'|'.join(matched_patterns)}"
+                reason = "project_conservative_candidate_requires_review"
+                evidence = (
+                    f"authority={authority_ref};matched_patterns={'|'.join(matched_patterns)}"
+                )
             else:
                 suggestion = "no_hard_relation"
-                reason = "no_curated_rule_candidate"
-                evidence = f"candidate-gap:{code}:no-pattern-match"
+                reason = "no_reviewed_direct_hard_exclusion_candidate"
+                evidence = f"authority={authority_ref};matched_patterns=none"
             candidates.append(
                 HealthRelationCandidate(
                     constraint_code=code,
@@ -564,7 +721,44 @@ def build_approved_health_relation_artifacts(
     )
 
 
-def _matching_patterns(name: str, patterns: list[str]) -> tuple[str, ...]:
+_SEAFOOD_CONDIMENT_GUARDS = ("豉油", "鼓油", "调料", "料包")
+_NON_FISH_SEAFOOD_MARKERS = (
+    "鲍",
+    "鱿鱼",
+    "章鱼",
+    "墨鱼",
+    "目鱼",
+    "贝",
+    "蛤",
+    "蛏",
+    "蚝",
+    "蚌",
+    "螺",
+    "牡蛎",
+    "扇贝",
+    "青口",
+    "花甲",
+)
+
+
+def _relation_name_guarded(constraint_code: str, name: str) -> bool:
+    """Reject name-only matches whose wording denotes another food class or a recipe condiment."""
+    if constraint_code in {"allergy_alcohol", "group_pregnancy"} and (
+        "醋" in name or "无酒精" in name
+    ):
+        return True
+    if constraint_code in {"allergy_fish", "allergy_seafood", "allergy_shrimp"} and any(
+        marker in name for marker in _SEAFOOD_CONDIMENT_GUARDS
+    ):
+        return True
+    return constraint_code == "allergy_fish" and any(
+        marker in name for marker in _NON_FISH_SEAFOOD_MARKERS
+    )
+
+
+def _matching_patterns(code: str, name: str, patterns: list[str]) -> tuple[str, ...]:
+    if _relation_name_guarded(code, name):
+        return ()
     return tuple(pattern for pattern in patterns if _ingredient_matches_pattern(name, [pattern]))
 
 

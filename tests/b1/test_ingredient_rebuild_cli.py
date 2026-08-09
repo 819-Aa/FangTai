@@ -11,7 +11,7 @@ def test_run_ingredient_stage_uses_signed_fixed_source(tmp_path: Path) -> None:
 
     assert report["status"] == "passed"
     assert report["row_count"] == 2000
-    assert report["registry_count"] == 1855
+    assert report["registry_count"] == 1781
     assert report["pending_decision_count"] == 0
     for artifact in (
         "ingredient_registry.jsonl",

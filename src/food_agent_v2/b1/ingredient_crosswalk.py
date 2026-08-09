@@ -28,10 +28,13 @@ PROCESSING_SUFFIXES = ("丝", "片", "末", "蓉", "丁", "花", "碎", "块", "
 PROCESSING_PREFIXES = (
     "半成品",
     "罐装",
+    "融化的",
+    "洗好的",
     "洗净的",
     "新鲜生",
     "蒸熟",
     "煮熟",
+    "打发",
     "去皮",
     "泡发",
     "切丁",
@@ -41,6 +44,7 @@ PROCESSING_PREFIXES = (
     "装饰",
     "新鲜",
     "冷冻",
+    "熟的",
     "熟",
     "干",
 )
@@ -93,7 +97,7 @@ def processing_variant(
         current, prefix_forms, suffix_forms, depth = queue.pop(0)
         for prefix in PROCESSING_PREFIXES:
             if current.startswith(prefix) and len(current) > len(prefix):
-                stripped = current[len(prefix):]
+                stripped = current[len(prefix) :]
                 if stripped not in seen:
                     seen.add(stripped)
                     next_prefixes = (*prefix_forms, prefix)
@@ -128,12 +132,16 @@ def processing_prefix_variant(name: str) -> tuple[str, str] | None:
     forms: list[str] = []
     while True:
         prefix = next(
-            (item for item in PROCESSING_PREFIXES if current.startswith(item) and len(current) > len(item)),
+            (
+                item
+                for item in PROCESSING_PREFIXES
+                if current.startswith(item) and len(current) > len(item)
+            ),
             None,
         )
         if prefix is None:
             break
-        current = current[len(prefix):]
+        current = current[len(prefix) :]
         forms.append(prefix)
     if not forms:
         return None
@@ -201,7 +209,12 @@ def generate_crosswalk_decisions(
 
     # 固定源中无法由通用前后缀安全表达的状态/形态词（例如温水、鸡蛋液）。
     for source, (target, form) in form_variants.items():
-        if source in name_set and target in name_set and source != target and source not in decision_sources:
+        if (
+            source in name_set
+            and target in name_set
+            and source != target
+            and source not in decision_sources
+        ):
             decisions.append(
                 CrosswalkDecision(
                     source_key=source,
@@ -216,7 +229,12 @@ def generate_crosswalk_decisions(
 
     # merge：同义词归一到规范名（仅当目标也在候选名中）。
     for source, target in synonyms.items():
-        if source in name_set and target in name_set and source != target and source not in decision_sources:
+        if (
+            source in name_set
+            and target in name_set
+            and source != target
+            and source not in decision_sources
+        ):
             decisions.append(
                 CrosswalkDecision(
                     source_key=source,
@@ -246,10 +264,14 @@ def load_approved_decisions(path: Path) -> dict[str, CrosswalkDecision]:
             reviewed_at = (row.get("reviewed_at") or "").strip()
             status = (row.get("review_status") or "approved").strip().lower()
             if status not in ("approved", "rejected"):
-                raise ValueError(f"{row.get('source_key')} 的 review_status 必须是 approved|rejected")
+                raise ValueError(
+                    f"{row.get('source_key')} 的 review_status 必须是 approved|rejected"
+                )
             if not reviewer or not reviewed_at:
                 raise ValueError(f"{row.get('source_key')} 的决策缺少 reviewer/reviewed_at 签名")
-            targets = tuple(int(x) for x in (row.get("target_ingredient_ids") or "").split(";") if x.strip())
+            targets = tuple(
+                int(x) for x in (row.get("target_ingredient_ids") or "").split(";") if x.strip()
+            )
             decisions[row["source_key"]] = CrosswalkDecision(
                 source_key=row["source_key"],
                 operation=row["operation"],  # type: ignore[arg-type]

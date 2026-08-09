@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from food_agent_v2.b1.ingredient_identity import (
+    _quality_leakage,
     build_old_to_new_diff,
     rebuild_ingredient_identities,
 )
@@ -20,9 +21,7 @@ from food_agent_v2.b1.source_manifest import canonical_source_manifest, load_ver
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SOURCE_CSV = REPO_ROOT / "data" / "raw" / "recipes_sample_2000.csv"
-OLD_REGISTRY = (
-    REPO_ROOT / "data" / "migration" / "legacy_ingredient_registry_3326.jsonl"
-)
+OLD_REGISTRY = REPO_ROOT / "data" / "migration" / "legacy_ingredient_registry_3326.jsonl"
 OVERRIDES = REPO_ROOT / "data" / "review" / "ingredient_identity_overrides.csv"
 
 
@@ -52,11 +51,15 @@ def read_jsonl(path: Path) -> list[dict]:
 
 
 class TestIdentityRebuild:
+    def test_quality_gate_detects_chinese_quantity_suffixes(self) -> None:
+        assert _quality_leakage(["菠萝半个", "白糖各", "T55面粉", "盐"]) == [
+            "白糖各",
+            "菠萝半个",
+        ]
+
     def test_builds_registry(self, tmp_path: Path) -> None:
         rows = make_rows([(1, "菜1", "盐2克；猪肉300克"), (2, "菜2", "盐适量；牛肉200克")])
-        report = rebuild_ingredient_identities(
-            rows, tmp_path / "overrides.csv", tmp_path / "out"
-        )
+        report = rebuild_ingredient_identities(rows, tmp_path / "overrides.csv", tmp_path / "out")
         assert report["registry_count"] == 3  # 盐、猪肉、牛肉
         assert report["unresolved_count"] == 0
 
@@ -90,7 +93,9 @@ class TestIdentityRebuild:
         rows = make_rows([(1, "菜1", "盐2克；竹签2根")])
         rebuild_ingredient_identities(rows, tmp_path / "overrides.csv", tmp_path / "out")
         crosswalk = read_jsonl(tmp_path / "out" / "ingredient_crosswalk.jsonl")
-        discard = [d for d in crosswalk if d["operation"] == "discard" and d["source_key"] == "竹签"]
+        discard = [
+            d for d in crosswalk if d["operation"] == "discard" and d["source_key"] == "竹签"
+        ]
         assert len(discard) == 1
         assert discard[0]["review_status"] == "pending"
 
@@ -264,7 +269,9 @@ class TestRejectedAndForms:
         ]
         assert report["gates"]["alias_unique"] is True
 
-    def test_merge_chain_resolves_every_reference_to_terminal_identity(self, tmp_path: Path) -> None:
+    def test_merge_chain_resolves_every_reference_to_terminal_identity(
+        self, tmp_path: Path
+    ) -> None:
         overrides = tmp_path / "overrides.csv"
         overrides.write_text(
             "source_key,operation,target_ingredient_ids,reason_code,form,review_status,reviewer,reviewed_at\n"
@@ -304,9 +311,7 @@ class TestRejectedAndForms:
         report = rebuild_ingredient_identities(rows, tmp_path / "overrides.csv", tmp_path / "out")
 
         with Path(report["h02_candidates_path"]).open(encoding="utf-8", newline="") as handle:
-            candidates = [
-                row for row in csv.DictReader(handle) if row["source_key"] == "干辣椒段"
-            ]
+            candidates = [row for row in csv.DictReader(handle) if row["source_key"] == "干辣椒段"]
 
         assert len(candidates) == 1
         assert candidates[0]["reason_code"] == "processing_variant"
@@ -316,7 +321,13 @@ class TestRejectedAndForms:
 
     def test_prefix_and_state_forms_generate_terminal_candidates(self, tmp_path: Path) -> None:
         rows = make_rows(
-            [(1, "菜1", "南瓜10克；去皮新鲜南瓜20克；花生10克；熟花生20克；番茄10克；罐装去皮番茄20克")]
+            [
+                (
+                    1,
+                    "菜1",
+                    "南瓜10克；去皮新鲜南瓜20克；花生10克；熟花生20克；番茄10克；罐装去皮番茄20克",
+                )
+            ]
         )
         report = rebuild_ingredient_identities(rows, tmp_path / "overrides.csv", tmp_path / "out")
 
@@ -356,6 +367,56 @@ class TestRejectedAndForms:
         assert candidates["新鲜牡蛎"]["suggested_target_ingredient_id"] == "1"
         assert candidates["新鲜牡蛎"]["form"] == "新鲜"
 
+    def test_washed_state_targets_synthetic_food_identity(self, tmp_path: Path) -> None:
+        rows = make_rows([(1, "菜1", "洗好的秋刀鱼2个")])
+        report = rebuild_ingredient_identities(rows, tmp_path / "overrides.csv", tmp_path / "out")
+
+        with Path(report["h02_candidates_path"]).open(encoding="utf-8", newline="") as handle:
+            candidates = {row["source_key"]: row for row in csv.DictReader(handle)}
+
+        assert candidates["洗好的秋刀鱼"]["suggested_target_name"] == "秋刀鱼"
+        assert candidates["洗好的秋刀鱼"]["form"] == "洗好的"
+
+    def test_curated_preparation_states_target_food_identities(self, tmp_path: Path) -> None:
+        rows = make_rows(
+            [
+                (
+                    1,
+                    "菜1",
+                    "红枣10克；去核红枣10克；枸杞10克；泡水枸杞10克；"
+                    "鹌鹑蛋2个；去壳熟鹌鹑蛋2个；鸡腿100克；去骨鸡腿排100克",
+                )
+            ]
+        )
+        report = rebuild_ingredient_identities(rows, tmp_path / "overrides.csv", tmp_path / "out")
+
+        with Path(report["h02_candidates_path"]).open(encoding="utf-8", newline="") as handle:
+            candidates = {row["source_key"]: row for row in csv.DictReader(handle)}
+
+        assert candidates["去核红枣"]["suggested_target_name"] == "红枣"
+        assert candidates["泡水枸杞"]["suggested_target_name"] == "枸杞"
+        assert candidates["去壳熟鹌鹑蛋"]["suggested_target_name"] == "鹌鹑蛋"
+        assert candidates["去骨鸡腿排"]["suggested_target_name"] == "鸡腿"
+
+    def test_whitespace_free_state_prefixes_target_base_food(self, tmp_path: Path) -> None:
+        rows = make_rows(
+            [
+                (
+                    1,
+                    "菜1",
+                    "淡奶油10克；打发淡奶油10克；黄油10克；融化的黄油10克；熟的六月黄母蟹100克",
+                )
+            ]
+        )
+        report = rebuild_ingredient_identities(rows, tmp_path / "overrides.csv", tmp_path / "out")
+
+        with Path(report["h02_candidates_path"]).open(encoding="utf-8", newline="") as handle:
+            candidates = {row["source_key"]: row for row in csv.DictReader(handle)}
+
+        assert candidates["打发淡奶油"]["suggested_target_name"] == "淡奶油"
+        assert candidates["融化的黄油"]["suggested_target_name"] == "黄油"
+        assert candidates["熟的六月黄母蟹"]["suggested_target_name"] == "六月黄母蟹"
+
     def test_curated_temperature_form_is_not_a_synonym(self, tmp_path: Path) -> None:
         overrides = tmp_path / "overrides.csv"
         overrides.write_text(
@@ -388,9 +449,9 @@ class TestFullScale:
         rows = load_verified_recipe_source(SOURCE_CSV, canonical_source_manifest())
         report = rebuild_ingredient_identities(rows, OVERRIDES, tmp_path / "out")
         gates = report["gates"]
-        assert report["registry_count"] == 1855
-        assert report["occurrence_count"] == 17526
-        assert report["form_count"] == 365
+        assert report["registry_count"] == 1781
+        assert report["occurrence_count"] == 17521
+        assert report["form_count"] == 381
         assert report["alias_count"] == 21
         assert report["pending_decision_count"] == 0
         assert report["row_count"] == 2000
@@ -404,14 +465,16 @@ class TestFullScale:
         relations = read_jsonl(tmp_path / "out" / "recipe_ingredient_relations.jsonl")
         forms = read_jsonl(tmp_path / "out" / "ingredient_forms.jsonl")
         aliases = read_jsonl(tmp_path / "out" / "ingredient_aliases.jsonl")
-        assert len(occurrences) == 17526
-        assert sum(item["consumption_role"] == "non_edible" for item in occurrences) == 15
-        assert len(relations) == 17511
+        assert len(occurrences) == 17521
+        assert sum(item["consumption_role"] == "non_edible" for item in occurrences) == 16
+        assert len(relations) == 17505
         assert len({(item["ingredient_id"], item["form"]) for item in forms}) == len(forms)
         assert len({item["alias"] for item in aliases}) == len(aliases)
         assert "姜丝" not in {item["alias"] for item in aliases}
         # 文档化家族案例
-        family = {r["name_canonical"]: r["family_name"] for r in read_jsonl(tmp_path / "out" / "ingredient_registry.jsonl")}
+        registry = read_jsonl(tmp_path / "out" / "ingredient_registry.jsonl")
+        family = {r["name_canonical"]: r["family_name"] for r in registry}
+        category = {r["name_canonical"]: r["category"] for r in registry}
         assert {
             "切",
             "切丝",
@@ -423,8 +486,41 @@ class TestFullScale:
             "葱姜",
             "姜葱",
             "青红椒",
+            "去虾须",
+            "去脚",
+            "取净肉",
+            "洗好的秋刀鱼",
+            "去核红枣",
+            "泡水枸杞",
+            "去籽山楂",
+            "去芯莲子",
+            "去壳熟鹌鹑蛋",
+            "去蒂香菇",
+            "去芯鲜莲子",
+            "炒香黑芝麻",
+            "去骨鸡腿排",
+            "芝士少許",
+            "寿司紫菜数张",
+            "饺子皮数张",
+            "包子皮材料",
+            "肉馅材料",
+            "的六月黄母蟹",
+            "打发淡奶油",
+            "打发鲜奶油",
+            "打发奶油",
+            "融化的黄油",
         }.isdisjoint(family)
-        assert {"咖喱块", "高汤块", "燕麦片", "干葱", "小米椒", "小葱", "香葱", "陈醋", "白醋"} <= set(family)
+        assert {
+            "咖喱块",
+            "高汤块",
+            "燕麦片",
+            "干葱",
+            "小米椒",
+            "小葱",
+            "香葱",
+            "陈醋",
+            "白醋",
+        } <= set(family)
         assert family["小龙虾"] == "虾族"
         assert family["基围虾"] == "虾族"
         assert family["对虾"] == "虾族"
@@ -432,6 +528,16 @@ class TestFullScale:
         assert family["中筋面粉"] == "小麦粉族"
         assert family["高筋面粉"] == "小麦粉族"
         assert family["梨肉"] == "水果族"
+        assert family["蒸鱼豉油"] == "调味品族"
+        assert family["鲍鱼"] == "贝族"
+        assert family["鱿鱼"] == "头足类族"
+        assert category["蒸鱼豉油"] == "调料"
+        assert category["蚝油"] == "调料"
+        assert category["笋壳鱼"] == "水产"
+        assert "鲍鱼壳" not in family
+        abalone_shell = next(item for item in occurrences if item["name_clean"] == "鲍鱼壳")
+        assert abalone_shell["consumption_role"] == "non_edible"
+        assert abalone_shell["resolved_ingredient_id"] is None
 
     def test_old_to_new_diff(self, tmp_path: Path) -> None:
         rows = load_verified_recipe_source(SOURCE_CSV, canonical_source_manifest())

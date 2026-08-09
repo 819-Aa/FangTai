@@ -35,20 +35,98 @@ from food_agent_v2.core.paths import CLEANED_DIR, PIPELINE_REPORTS_DIR
 
 # ---- 遗留 API（T06 前，随 T09/T22 迁移清理）----
 
-NON_EDIBLE_KEYWORDS = {"棉线", "荷叶", "粽叶", "竹签", "锡纸", "保鲜膜", "牙签",
-                        "食品蜡纸", "食品用蜡纸", "纱布", "厨房用纸", "烘焙纸", "竹筒",
-                        "竹叶", "蒸笼纸", "冰袋", "竹网", "竹垫", "一次性手套",
-                        "食品级硅胶垫", "蒸布", "火腿肠衣", "肠衣", "竹制蒸笼垫",
-                        "竹篮", "木炭", "果木炭", "烧烤炭"}
+NON_EDIBLE_KEYWORDS = {
+    "棉线",
+    "荷叶",
+    "粽叶",
+    "竹签",
+    "锡纸",
+    "保鲜膜",
+    "牙签",
+    "食品蜡纸",
+    "食品用蜡纸",
+    "纱布",
+    "厨房用纸",
+    "烘焙纸",
+    "竹筒",
+    "竹叶",
+    "蒸笼纸",
+    "冰袋",
+    "竹网",
+    "竹垫",
+    "一次性手套",
+    "食品级硅胶垫",
+    "蒸布",
+    "火腿肠衣",
+    "肠衣",
+    "竹制蒸笼垫",
+    "竹篮",
+    "木炭",
+    "果木炭",
+    "烧烤炭",
+    "鲍鱼壳",
+}
 
-BASIC_PANTRY = {"盐", "白糖", "白砂糖", "冰糖", "红糖", "蜂蜜", "生抽", "老抽",
-                "酱油", "醋", "陈醋", "白醋", "料酒", "黄酒", "蚝油", "味精",
-                "鸡精", "胡椒粉", "花椒", "花椒粉", "八角", "桂皮", "香叶",
-                "干辣椒", "辣椒", "生姜", "姜", "蒜", "大蒜", "葱", "小葱",
-                "大葱", "洋葱", "香菜", "食用油", "花生油", "菜籽油", "香油",
-                "芝麻油", "橄榄油", "猪油", "玉米油", "大豆油", "葵花籽油",
-                "淀粉", "玉米淀粉", "土豆淀粉", "红薯淀粉", "生粉", "水淀粉",
-                "清水", "水", "冷水", "热水", "温水", "开水", "沸水", "纯净水"}
+BASIC_PANTRY = {
+    "盐",
+    "白糖",
+    "白砂糖",
+    "冰糖",
+    "红糖",
+    "蜂蜜",
+    "生抽",
+    "老抽",
+    "酱油",
+    "醋",
+    "陈醋",
+    "白醋",
+    "料酒",
+    "黄酒",
+    "蚝油",
+    "味精",
+    "鸡精",
+    "胡椒粉",
+    "花椒",
+    "花椒粉",
+    "八角",
+    "桂皮",
+    "香叶",
+    "干辣椒",
+    "辣椒",
+    "生姜",
+    "姜",
+    "蒜",
+    "大蒜",
+    "葱",
+    "小葱",
+    "大葱",
+    "洋葱",
+    "香菜",
+    "食用油",
+    "花生油",
+    "菜籽油",
+    "香油",
+    "芝麻油",
+    "橄榄油",
+    "猪油",
+    "玉米油",
+    "大豆油",
+    "葵花籽油",
+    "淀粉",
+    "玉米淀粉",
+    "土豆淀粉",
+    "红薯淀粉",
+    "生粉",
+    "水淀粉",
+    "清水",
+    "水",
+    "冷水",
+    "热水",
+    "温水",
+    "开水",
+    "沸水",
+    "纯净水",
+}
 
 QTY_PATTERN = re.compile(
     r"^[（(]?\s*"
@@ -75,6 +153,13 @@ QTY_SUFFIX_PATTERN = re.compile(
     r"打|撮|滴|束|包|盒|袋|罐|瓶|"
     r"英寸|寸|尺|英尺|厘米|cm|毫米|mm|"
     r"磅|盎司|oz|lb)"
+)
+
+_IDENTITY_CHINESE_QTY_SUFFIX = re.compile(
+    r"(?:小?半|[一二两三四五六七八九十百]+|数|數|几|幾)"
+    r"(?:克|毫克|千克|公斤|毫升|升|勺|大勺|小勺|茶匙|汤匙|"
+    r"片|瓣|颗|个|块|段|根|只|条|张|把|朵|粒|枚|支|截|份|串|头|"
+    r"包|盒|袋|罐|瓶)$"
 )
 
 
@@ -122,14 +207,16 @@ def build_ingredient_registry(cleaned_recipes: list[dict]) -> tuple[list[dict], 
     registry: list[dict] = []
     registry_path = CLEANED_DIR / "ingredient_registry.jsonl"
     for idx, (name, count) in enumerate(sorted_names, start=1):
-        registry.append({
-            "ingredient_id": idx,
-            "name_canonical": name,
-            "is_edible": not is_non_edible(name),
-            "is_basic_pantry": is_basic_pantry(name),
-            "occurrence_count": count,
-            "appears_in_recipes": list(OrderedDict.fromkeys(name_to_recipes[name]))[:50],
-        })
+        registry.append(
+            {
+                "ingredient_id": idx,
+                "name_canonical": name,
+                "is_edible": not is_non_edible(name),
+                "is_basic_pantry": is_basic_pantry(name),
+                "occurrence_count": count,
+                "appears_in_recipes": list(OrderedDict.fromkeys(name_to_recipes[name]))[:50],
+            }
+        )
     with registry_path.open("w", encoding="utf-8") as f:
         for rec in registry:
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
@@ -150,45 +237,285 @@ def build_ingredient_registry(cleaned_recipes: list[dict]) -> tuple[list[dict], 
 
 #: 类别规则（粗分类）。特定类别在前，肉类不含裸"肉"（梨肉应归水果）。
 _CATEGORY_RULES: list[tuple[str, tuple[str, ...]]] = [
-    ("水果", ("梨", "苹果", "橙", "柠檬", "芒果", "草莓", "蓝莓", "桃", "葡萄",
-              "西瓜", "香蕉", "菠萝", "火龙果", "猕猴桃", "石榴", "桂圆", "荔枝",
-              "枣", "樱桃", "杏", "枇杷", "山楂", "柿", "果")),
-    ("蔬菜", ("菜", "萝卜", "土豆", "番茄", "黄瓜", "茄子", "青椒", "辣椒", "洋葱",
-              "冬瓜", "南瓜", "西葫芦", "豆角", "菠菜", "白菜", "青菜", "生菜",
-              "芹菜", "茼蒿", "芦笋", "藕", "山药", "玉米", "胡萝卜", "丝瓜", "苦瓜",
-              "秋葵", "百合", "木耳", "笋", "豆芽", "苋菜", "韭菜")),
+    (
+        "水果",
+        (
+            "梨",
+            "苹果",
+            "橙",
+            "柠檬",
+            "芒果",
+            "草莓",
+            "蓝莓",
+            "桃",
+            "葡萄",
+            "西瓜",
+            "香蕉",
+            "菠萝",
+            "火龙果",
+            "猕猴桃",
+            "石榴",
+            "桂圆",
+            "荔枝",
+            "枣",
+            "樱桃",
+            "杏",
+            "枇杷",
+            "山楂",
+            "柿",
+            "果",
+        ),
+    ),
+    (
+        "蔬菜",
+        (
+            "菜",
+            "萝卜",
+            "土豆",
+            "番茄",
+            "黄瓜",
+            "茄子",
+            "青椒",
+            "辣椒",
+            "洋葱",
+            "冬瓜",
+            "南瓜",
+            "西葫芦",
+            "豆角",
+            "菠菜",
+            "白菜",
+            "青菜",
+            "生菜",
+            "芹菜",
+            "茼蒿",
+            "芦笋",
+            "藕",
+            "山药",
+            "玉米",
+            "胡萝卜",
+            "丝瓜",
+            "苦瓜",
+            "秋葵",
+            "百合",
+            "木耳",
+            "笋",
+            "豆芽",
+            "苋菜",
+            "韭菜",
+        ),
+    ),
     ("菌菇", ("香菇", "蘑菇", "杏鲍菇", "金针菇", "茶树菇", "猴头菇", "蟹味菇", "口蘑", "菇")),
     ("坚果", ("花生", "核桃", "杏仁", "芝麻", "腰果", "松子", "瓜子", "开心果", "栗子", "榛子")),
     ("蛋奶", ("鸡蛋", "蛋", "牛奶", "奶油", "芝士", "奶酪", "黄油", "酸奶", "奶粉")),
     ("豆制品", ("豆腐", "豆干", "腐竹", "豆浆", "香干", "千张", "豆皮")),
-    ("谷物", ("米", "面", "面粉", "小麦", "糯米", "玉米面", "燕麦", "红豆", "绿豆", "薏米", "粉", "饼")),
-    ("水产", ("鱼", "虾", "蟹", "蛤", "蛏", "蚝", "鲍", "鱿鱼", "墨鱼", "扇贝", "贝",
-              "海参", "带鱼", "鲈鱼", "鳕鱼", "三文鱼", "牡蛎", "蟹肉", "鱼丸", "螺")),
-    ("肉禽", ("猪肉", "猪", "牛", "羊", "鸡", "鸭", "鹅", "排骨", "腊肉", "火腿",
-              "培根", "香肠", "内脏", "肝", "肚", "蹄", "骨", "五花肉", "里脊", "肉末", "肉丝", "鸡胸", "鸡腿", "鸡翅", "鸡爪", "肉丸")),
-    ("调料", ("酱油", "生抽", "老抽", "蚝油", "醋", "料酒", "盐", "糖", "冰糖", "蜂蜜",
-               "胡椒粉", "花椒", "八角", "桂皮", "香叶", "蒜", "姜", "葱", "香菜",
-               "油", "淀粉", "生粉", "酱", "汁", "味精", "鸡精", "香油", "芝麻油")),
+    (
+        "谷物",
+        ("米", "面", "面粉", "小麦", "糯米", "玉米面", "燕麦", "红豆", "绿豆", "薏米", "粉", "饼"),
+    ),
+    (
+        "水产",
+        (
+            "鱼",
+            "虾",
+            "蟹",
+            "蛤",
+            "蛏",
+            "蚝",
+            "鲍",
+            "鱿鱼",
+            "墨鱼",
+            "扇贝",
+            "贝",
+            "海参",
+            "带鱼",
+            "鲈鱼",
+            "鳕鱼",
+            "三文鱼",
+            "牡蛎",
+            "蟹肉",
+            "鱼丸",
+            "螺",
+        ),
+    ),
+    (
+        "肉禽",
+        (
+            "猪肉",
+            "猪",
+            "牛",
+            "羊",
+            "鸡",
+            "鸭",
+            "鹅",
+            "排骨",
+            "腊肉",
+            "火腿",
+            "培根",
+            "香肠",
+            "内脏",
+            "肝",
+            "肚",
+            "蹄",
+            "骨",
+            "五花肉",
+            "里脊",
+            "肉末",
+            "肉丝",
+            "鸡胸",
+            "鸡腿",
+            "鸡翅",
+            "鸡爪",
+            "肉丸",
+        ),
+    ),
+    (
+        "调料",
+        (
+            "酱油",
+            "生抽",
+            "老抽",
+            "蚝油",
+            "醋",
+            "料酒",
+            "盐",
+            "糖",
+            "冰糖",
+            "蜂蜜",
+            "胡椒粉",
+            "花椒",
+            "八角",
+            "桂皮",
+            "香叶",
+            "蒜",
+            "姜",
+            "葱",
+            "香菜",
+            "油",
+            "淀粉",
+            "生粉",
+            "酱",
+            "汁",
+            "味精",
+            "鸡精",
+            "香油",
+            "芝麻油",
+        ),
+    ),
 ]
 
 #: 食材族规则（细分类）。小龙虾/基围虾/对虾 → 虾族；低/中/高筋面粉 → 小麦粉族。
 _FAMILY_RULES: list[tuple[str, tuple[str, ...]]] = [
-    ("调味品族", ("酱油", "生抽", "老抽", "蚝油", "醋", "料酒", "黄酒", "盐", "糖",
-                 "冰糖", "红糖", "蜂蜜", "味精", "鸡精", "胡椒粉", "花椒", "八角",
-                 "桂皮", "香叶", "香油", "芝麻油", "橄榄油", "食用油", "花生油",
-                 "菜籽油", "猪油", "玉米油", "大豆油", "葵花籽油", "淀粉", "生粉",
-                 "豆瓣酱", "辣酱", "沙茶酱", "叉烧酱", "番茄酱", "烧烤酱", "韩式辣酱")),
+    (
+        "调味品族",
+        (
+            "酱油",
+            "生抽",
+            "老抽",
+            "蚝油",
+            "醋",
+            "料酒",
+            "黄酒",
+            "盐",
+            "糖",
+            "冰糖",
+            "红糖",
+            "蜂蜜",
+            "味精",
+            "鸡精",
+            "胡椒粉",
+            "花椒",
+            "八角",
+            "桂皮",
+            "香叶",
+            "香油",
+            "芝麻油",
+            "橄榄油",
+            "食用油",
+            "花生油",
+            "菜籽油",
+            "猪油",
+            "玉米油",
+            "大豆油",
+            "葵花籽油",
+            "淀粉",
+            "生粉",
+            "豆瓣酱",
+            "辣酱",
+            "沙茶酱",
+            "叉烧酱",
+            "番茄酱",
+            "烧烤酱",
+            "韩式辣酱",
+        ),
+    ),
     ("小麦粉族", ("面粉", "低筋", "中筋", "高筋")),
     ("虾族", ("虾",)),
-    ("猪肉族", ("猪肉", "五花肉", "排骨", "里脊", "肉末", "肉丝", "肉片", "肉丁",
-                "培根", "火腿", "香肠", "腊肉", "叉烧", "卤肉", "扣肉", "烧肉", "肉丸", "肉糜")),
-    ("鸡鸭鹅族", ("鸡肉", "鸡胸", "鸡腿", "鸡翅", "鸡爪", "鸡胗", "鸡块", "鸭肉", "鸭腿", "鹅肉", "鸡", "鸭", "鹅", "鸽子", "鹌鹑")),
+    (
+        "猪肉族",
+        (
+            "猪肉",
+            "五花肉",
+            "排骨",
+            "里脊",
+            "肉末",
+            "肉丝",
+            "肉片",
+            "肉丁",
+            "培根",
+            "火腿",
+            "香肠",
+            "腊肉",
+            "叉烧",
+            "卤肉",
+            "扣肉",
+            "烧肉",
+            "肉丸",
+            "肉糜",
+        ),
+    ),
+    (
+        "鸡鸭鹅族",
+        (
+            "鸡肉",
+            "鸡胸",
+            "鸡腿",
+            "鸡翅",
+            "鸡爪",
+            "鸡胗",
+            "鸡块",
+            "鸭肉",
+            "鸭腿",
+            "鹅肉",
+            "鸡",
+            "鸭",
+            "鹅",
+            "鸽子",
+            "鹌鹑",
+        ),
+    ),
     ("牛羊族", ("牛肉", "牛腩", "牛腱", "羊肉", "羊排", "牛", "羊")),
     ("鱼族", ("鱼", "鲈", "鳕", "三文", "带鱼", "黄鱼", "鲫鱼", "鲳鱼", "鳗", "鳜", "鲟", "鲷")),
     ("蟹族", ("蟹",)),
     ("贝族", ("蛤", "蛏", "蚝", "鲍", "扇贝", "牡蛎", "海蛎", "贝")),
     ("蛋奶族", ("鸡蛋", "牛奶", "奶油", "奶酪", "芝士", "黄油", "酸奶", "奶粉", "炼乳", "蛋")),
-    ("稻米杂粮族", ("米", "米饭", "糯米", "大米", "糙米", "紫米", "小米", "燕麦", "藜麦", "红豆", "绿豆", "薏米", "玉米面")),
+    (
+        "稻米杂粮族",
+        (
+            "米",
+            "米饭",
+            "糯米",
+            "大米",
+            "糙米",
+            "紫米",
+            "小米",
+            "燕麦",
+            "藜麦",
+            "红豆",
+            "绿豆",
+            "薏米",
+            "玉米面",
+        ),
+    ),
     ("豆制品族", ("豆腐", "豆浆", "腐竹", "香干", "千张", "豆干", "豆皮")),
     ("菌菇族", ("菇", "蘑菇", "香菇", "杏鲍菇", "金针菇", "木耳", "口蘑", "茶树菇", "蟹味菇")),
     ("葱族", ("葱",)),
@@ -196,10 +523,70 @@ _FAMILY_RULES: list[tuple[str, tuple[str, ...]]] = [
     ("蒜族", ("蒜",)),
     ("根茎菜族", ("萝卜", "土豆", "山药", "红薯", "芋", "藕", "胡萝卜", "竹笋", "芦笋", "荸荠")),
     ("瓜茄菜族", ("番茄", "茄子", "黄瓜", "南瓜", "冬瓜", "丝瓜", "苦瓜", "西葫芦", "瓠瓜")),
-    ("叶菜族", ("白菜", "生菜", "菠菜", "青菜", "芹菜", "茼蒿", "油麦菜", "芥蓝", "菜心", "娃娃菜", "香菜", "韭菜", "苋菜", "空心菜")),
+    (
+        "叶菜族",
+        (
+            "白菜",
+            "生菜",
+            "菠菜",
+            "青菜",
+            "芹菜",
+            "茼蒿",
+            "油麦菜",
+            "芥蓝",
+            "菜心",
+            "娃娃菜",
+            "香菜",
+            "韭菜",
+            "苋菜",
+            "空心菜",
+        ),
+    ),
     ("辣椒族", ("辣椒", "青椒", "彩椒", "尖椒", "泡椒", "红椒")),
-    ("水果族", ("苹果", "梨", "橙", "柠檬", "芒果", "草莓", "蓝莓", "桃", "葡萄", "西瓜", "香蕉", "菠萝", "火龙果", "猕猴桃", "石榴", "桂圆", "荔枝", "枣", "樱桃", "杏", "枇杷", "山楂", "柿")),
-    ("坚果籽族", ("花生", "核桃", "杏仁", "芝麻", "腰果", "松子", "瓜子", "开心果", "栗子", "核桃仁", "榛子")),
+    (
+        "水果族",
+        (
+            "苹果",
+            "梨",
+            "橙",
+            "柠檬",
+            "芒果",
+            "草莓",
+            "蓝莓",
+            "桃",
+            "葡萄",
+            "西瓜",
+            "香蕉",
+            "菠萝",
+            "火龙果",
+            "猕猴桃",
+            "石榴",
+            "桂圆",
+            "荔枝",
+            "枣",
+            "樱桃",
+            "杏",
+            "枇杷",
+            "山楂",
+            "柿",
+        ),
+    ),
+    (
+        "坚果籽族",
+        (
+            "花生",
+            "核桃",
+            "杏仁",
+            "芝麻",
+            "腰果",
+            "松子",
+            "瓜子",
+            "开心果",
+            "栗子",
+            "核桃仁",
+            "榛子",
+        ),
+    ),
 ]
 
 #: 审核同义词（源 -> 规范名）。仅当两者都在候选名中时生成候选。
@@ -247,6 +634,17 @@ _FORM_VARIANTS: dict[str, tuple[str, str]] = {
     "姜汁": ("姜", "汁"),
     "核桃仁": ("核桃", "去壳"),
     "软化黄油": ("黄油", "软化"),
+    "去核红枣": ("红枣", "去核"),
+    "泡水枸杞": ("枸杞", "泡水"),
+    "去籽山楂": ("山楂", "去籽"),
+    "去芯莲子": ("莲子", "去芯"),
+    "烤花生": ("花生", "烤"),
+    "去骨大鸡腿": ("大鸡腿", "去骨"),
+    "去壳熟鹌鹑蛋": ("鹌鹑蛋", "去壳+熟"),
+    "去蒂香菇": ("香菇", "去蒂"),
+    "去芯鲜莲子": ("莲子", "去芯+鲜"),
+    "炒香黑芝麻": ("黑芝麻", "炒香"),
+    "去骨鸡腿排": ("鸡腿", "去骨+排"),
 }
 
 #: 合法数字名（数量/单位解析后仍保留数字的整名白名单）。
@@ -256,8 +654,21 @@ _LEGIT_DIGIT_NAMES = {"100%纯可可", "80头干瑶柱", "NFC100%椰子水", "T4
 _CATEGORY_COVERAGE_THRESHOLD = 0.70
 _FAMILY_COVERAGE_THRESHOLD = 0.90
 
-_CATEGORY_EXACT = {"油条": "谷物"}
-_FAMILY_EXACT = {"油条": "谷物通用"}
+_CATEGORY_EXACT = {"油条": "谷物", "笋壳鱼": "水产"}
+_FAMILY_EXACT = {"油条": "谷物通用", "笋壳鱼": "鱼族"}
+
+_CONDIMENT_NAME_MARKERS = (
+    "酱油",
+    "豉油",
+    "鼓油",
+    "蚝油",
+    "鲍鱼汁",
+    "鲜贝露",
+    "调料包",
+    "小龙虾调料",
+)
+_CEPHALOPOD_MARKERS = ("鱿鱼", "墨鱼", "章鱼", "目鱼")
+_MOLLUSK_MARKERS = ("蛤", "蛏", "蚝", "鲍", "扇贝", "牡蛎", "海蛎", "贝", "螺")
 
 
 class IngredientIdentityError(Exception):
@@ -276,10 +687,13 @@ def enforce_quality_gates(gates: dict, *, registry_size: int) -> None:
     """
     if gates["qty_leakage_count"]:
         raise IngredientIdentityError(
-            "QTY_UNIT_LEAKAGE", f"数量/单位泄漏 {gates['qty_leakage_count']} 项: {gates['qty_leakage_names']}"
+            "QTY_UNIT_LEAKAGE",
+            f"数量/单位泄漏 {gates['qty_leakage_count']} 项: {gates['qty_leakage_names']}",
         )
     if gates["unresolved_count"]:
-        raise IngredientIdentityError("INGREDIENT_UNRESOLVED", f"未解析出现 {gates['unresolved_count']} 项")
+        raise IngredientIdentityError(
+            "INGREDIENT_UNRESOLVED", f"未解析出现 {gates['unresolved_count']} 项"
+        )
     if not gates["alias_unique"]:
         raise IngredientIdentityError("ALIAS_NOT_UNIQUE", "别名存在多目标映射")
     if registry_size >= 20:
@@ -296,12 +710,16 @@ def enforce_quality_gates(gates: dict, *, registry_size: int) -> None:
     if not gates["rejected_not_merged"]:
         raise IngredientIdentityError("REJECTED_CANDIDATE_MERGED", "被拒绝的候选仍被合并")
     if gates["dangling_reference_count"]:
-        raise IngredientIdentityError("DANGLING_REFERENCE", f"悬空引用 {gates['dangling_reference_count']} 项")
+        raise IngredientIdentityError(
+            "DANGLING_REFERENCE", f"悬空引用 {gates['dangling_reference_count']} 项"
+        )
 
 
 def _classify(name: str) -> str:
     if name in _CATEGORY_EXACT:
         return _CATEGORY_EXACT[name]
+    if any(marker in name for marker in _CONDIMENT_NAME_MARKERS):
+        return "调料"
     for category, keywords in _CATEGORY_RULES:
         if any(keyword in name for keyword in keywords):
             return category
@@ -312,6 +730,12 @@ def _assign_family(name: str) -> str:
     """分配食材族；未命中具体族的按粗类别兜底，保证 family_id 不为空（issue 1）。"""
     if name in _FAMILY_EXACT:
         return _FAMILY_EXACT[name]
+    if any(marker in name for marker in _CONDIMENT_NAME_MARKERS):
+        return "调味品族"
+    if any(marker in name for marker in _CEPHALOPOD_MARKERS):
+        return "头足类族"
+    if any(marker in name for marker in _MOLLUSK_MARKERS):
+        return "贝族"
     for family, keywords in _FAMILY_RULES:
         if any(keyword in name for keyword in keywords):
             return family
@@ -354,15 +778,30 @@ def _occurrence_evidence(occurrences: list[dict]) -> dict[str, dict]:
             {"occurrence_count": 0, "sample_recipe_ids": [], "sample_fragments": []},
         )
         entry["occurrence_count"] += 1
-        if len(entry["sample_recipe_ids"]) < 5 and occ["recipe_id"] not in entry["sample_recipe_ids"]:
+        if (
+            len(entry["sample_recipe_ids"]) < 5
+            and occ["recipe_id"] not in entry["sample_recipe_ids"]
+        ):
             entry["sample_recipe_ids"].append(occ["recipe_id"])
-        if len(entry["sample_fragments"]) < 3 and occ["source_fragment"] not in entry["sample_fragments"]:
+        if (
+            len(entry["sample_fragments"]) < 3
+            and occ["source_fragment"] not in entry["sample_fragments"]
+        ):
             entry["sample_fragments"].append(occ["source_fragment"])
     return evidence
 
 
 def _quality_leakage(names: list[str]) -> list[str]:
-    return sorted(n for n in names if any(c.isdigit() for c in n) and n not in _LEGIT_DIGIT_NAMES)
+    return sorted(
+        name
+        for name in names
+        if name not in _LEGIT_DIGIT_NAMES
+        and (
+            any(character.isdigit() for character in name)
+            or _IDENTITY_CHINESE_QTY_SUFFIX.search(name)
+            or name.endswith("各")
+        )
+    )
 
 
 def _resolve_terminal_targets(
@@ -423,7 +862,13 @@ def rebuild_ingredient_identities(
     for name in source_names:
         existing_variant = processing_variant(name, direct_name_set)
         prefix_variant = processing_prefix_variant(name)
-        base = existing_variant[0] if existing_variant else prefix_variant[0] if prefix_variant else None
+        base = (
+            existing_variant[0]
+            if existing_variant
+            else prefix_variant[0]
+            if prefix_variant
+            else None
+        )
         if base and base not in canonical_seen:
             canonical_seen.add(base)
             canonical_names.append(base)
@@ -513,7 +958,9 @@ def rebuild_ingredient_identities(
                 "family_name": _assign_family(name),
                 "review_status": "pending",
                 "occurrence_count": evidence.get(name, {}).get("occurrence_count", 0),
-                "appears_in_recipes": sorted({o["recipe_id"] for o in occurrences if o["name_clean"] == name}),
+                "appears_in_recipes": sorted(
+                    {o["recipe_id"] for o in occurrences if o["name_clean"] == name}
+                ),
             }
         )
 
@@ -521,8 +968,11 @@ def rebuild_ingredient_identities(
     family_names = sorted({r["family_name"] for r in registry if r["family_name"]})
     family_id_by_name = {fn: idx for idx, fn in enumerate(family_names, start=1)}
     families = [
-        {"family_id": family_id_by_name[fn], "family_name": fn,
-         "member_names": [r["name_canonical"] for r in registry if r["family_name"] == fn]}
+        {
+            "family_id": family_id_by_name[fn],
+            "family_name": fn,
+            "member_names": [r["name_canonical"] for r in registry if r["family_name"] == fn],
+        }
         for fn in family_names
     ]
 
@@ -648,10 +1098,18 @@ def rebuild_ingredient_identities(
     # “别名唯一”约束的是一个 alias 不能出现多行/多目标；多个不同 alias
     # 合法地指向同一个标准身份（如姜丝、姜片都指向姜）。
     alias_unique = len(alias_names) == len(set(alias_names))
-    category_coverage = sum(1 for r in registry if r["category"] != "其他") / len(registry) if registry else 0
-    family_coverage = sum(1 for r in registry if r["family_name"]) / len(registry) if registry else 0
+    category_coverage = (
+        sum(1 for r in registry if r["category"] != "其他") / len(registry) if registry else 0
+    )
+    family_coverage = (
+        sum(1 for r in registry if r["family_name"]) / len(registry) if registry else 0
+    )
     registry_ids = {r["ingredient_id"] for r in registry}
-    dangling = [rel["ingredient_id"] for rel in recipe_ingredient_relations if rel["ingredient_id"] not in registry_ids]
+    dangling = [
+        rel["ingredient_id"]
+        for rel in recipe_ingredient_relations
+        if rel["ingredient_id"] not in registry_ids
+    ]
 
     gates = {
         "qty_leakage_count": len(leakage),
@@ -789,6 +1247,11 @@ _OLD_IDENTITY_REVIEW: dict[str, tuple[str, tuple[str, ...]]] = {
     "冷冻4小时)": ("discard", ()),
     "去内脏洗净": ("discard", ()),
     "去皮））": ("discard", ()),
+    "去脚））": ("discard", ()),
+    "去虾须））": ("discard", ()),
+    "取净肉））": ("discard", ()),
+    "包子皮材料": ("discard", ()),
+    "肉馅材料": ("discard", ()),
     "根和叶分开））": ("discard", ()),
     "洗净": ("discard", ()),
     "洗净切)）": ("discard", ()),

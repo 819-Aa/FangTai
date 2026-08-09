@@ -61,9 +61,16 @@ _COUNT_UNIT = (
 _UNIT = rf"(?:{_MEASURE_UNIT}|{_COUNT_UNIT})"
 
 #: 前缀度量数量："200g鸡胸肉"（只剥度量单位，不剥 80头 等计数前缀）。
-_QTY_PREFIX = re.compile(rf"^(?:约|大约|适量|少许|少量|若干|足量)?\s*{_NUMBER}\s*{_MEASURE_UNIT}\s*")
+_QTY_PREFIX = re.compile(
+    rf"^(?:约|大约|适量|少许|少量|若干|足量)?\s*{_NUMBER}\s*{_MEASURE_UNIT}\s*"
+)
 #: 后缀数量（可重复单位 "2片片"）："红泡椒50g" / "米2人份" / "姜2片片"。
-_QTY_SUFFIX = re.compile(rf"(?:约|大约|适量|少许|少量|若干|足量)?\s*{_NUMBER}\s*{_UNIT}(?:\s*{_UNIT})?\s*$")
+_QTY_SUFFIX = re.compile(
+    rf"(?:约|大约|适量|少许|少量|若干|足量)?\s*{_NUMBER}\s*{_UNIT}(?:\s*{_UNIT})?\s*$"
+)
+#: 中文数字数量后缀："菠萝半个" / "葱两根" / "胡萝卜小半根"。
+_CHINESE_NUMBER = r"(?:小?半|[一二两三四五六七八九十百]+|数|數|几|幾)"
+_CHINESE_QTY_SUFFIX = re.compile(rf"{_CHINESE_NUMBER}\s*{_UNIT}\s*$")
 #: 范围+单位后缀："鲜活蛤蜊10~15个"
 _RANGE_WITH_UNIT = re.compile(rf"{_NUMBER}\s*[~\-—]\s*{_NUMBER}\s*{_UNIT}\s*$")
 #: 范围后缀："土豆400~" / "冰糖5-" / "糖15—"
@@ -85,7 +92,7 @@ _PAREN_OPEN_UNMATCHED = re.compile(r"[（(][^）)]*$")
 _PAREN_CLOSE_TAIL = re.compile(r"[）)]+$")
 
 #: 尾部量词（无数字）
-_QTY_WORDS = ("适量", "少许", "少量", "若干", "足量")
+_QTY_WORDS = ("适量", "少许", "少許", "少量", "若干", "足量")
 
 #: 括号内处理语，反复去掉最内层括号
 _PAREN_GROUP_RE = re.compile(r"[（(][^（()）]*[)）]")
@@ -114,6 +121,11 @@ _INSTRUCTION_ONLY_RE = re.compile(
     r"|去内脏洗净"
     r"|冷冻\d+(?:\.\d+)?小时"
     r"|根和叶分开"
+    r"|去虾须"
+    r"|去脚"
+    r"|取净肉"
+    r"|包子皮材料"
+    r"|肉馅材料"
     r")[）)]*$"
 )
 
@@ -125,6 +137,7 @@ _FIXED_COMPOUND_SPLITS: dict[str, tuple[tuple[str, str | None], ...]] = {
     "葱姜": (("葱", None), ("姜", None)),
     "姜葱": (("姜", None), ("葱", None)),
     "姜葱末": (("姜", "末"), ("葱", "末")),
+    "葱姜蒜": (("葱", None), ("姜", None), ("蒜", None)),
     "葱姜蒜各": (("葱", None), ("姜", None), ("蒜", None)),
     "葱姜汁": (("葱", "汁"), ("姜", "汁")),
     "葱姜水": (("葱", None), ("姜", None), ("水", None)),
@@ -155,7 +168,7 @@ def _detect_group(fragment: str) -> tuple[str | None, str]:
     match = GROUP_PREFIX_RE.match(fragment)
     if match:
         group = match.group(0).rstrip("：:")
-        return group, fragment[match.end():].strip()
+        return group, fragment[match.end() :].strip()
     return None, fragment
 
 
@@ -170,7 +183,7 @@ def _strip_parens(name: str) -> str:
         match = _PAREN_GROUP_RE.search(cleaned)
         if not match:
             break
-        cleaned = cleaned[: match.start()] + cleaned[match.end():]
+        cleaned = cleaned[: match.start()] + cleaned[match.end() :]
     return cleaned.strip()
 
 
@@ -192,10 +205,11 @@ def _strip_quantities(name: str) -> str:
                 changed = True
         prefix = _QTY_PREFIX.match(cleaned)
         if prefix:
-            cleaned = cleaned[prefix.end():].strip()
+            cleaned = cleaned[prefix.end() :].strip()
             changed = True
         for pattern in (
             _QTY_SUFFIX,
+            _CHINESE_QTY_SUFFIX,
             _QUALITATIVE_QTY_SUFFIX,
             _RANGE_WITH_UNIT,
             _RANGE_SUFFIX,
@@ -214,20 +228,25 @@ def _strip_quantities(name: str) -> str:
     cleaned = _BARE_DIGIT_SUFFIX.sub("", cleaned).strip()
     cleaned = re.sub(r"[（(]?\d+\/\s*$", "", cleaned).strip()
     # 纯量词
-    cleaned = re.sub(r"^(?:约|大约|适量|少许|少量|若干|足量)\s*", "", cleaned).strip()
+    cleaned = re.sub(r"^(?:约|大约|适量|少许|少許|少量|若干|足量)\s*", "", cleaned).strip()
     for qty_word in _QTY_WORDS:
         if cleaned.endswith(qty_word) and len(cleaned) > len(qty_word):
             cleaned = cleaned[: -len(qty_word)].strip()
+    # 固定源用“各”表达同组共用数量（白糖各/水淀粉各），不属于食材身份。
+    cleaned = cleaned.removesuffix("各").strip()
     return cleaned.strip("，,;；。/ ")
 
 
 def _extract_qty_name(text: str) -> tuple[str, str | None, str | None]:
     """返回 (食材名, 数量原文, 单位原文)。"""
     suffix = _QTY_SUFFIX.search(text)
+    chinese_suffix = _CHINESE_QTY_SUFFIX.search(text)
     prefix = _QTY_PREFIX.match(text)
     qty_raw = None
     if suffix:
         qty_raw = suffix.group().strip()
+    elif chinese_suffix:
+        qty_raw = chinese_suffix.group().strip()
     elif prefix:
         qty_raw = prefix.group().strip()
     unit_raw = None

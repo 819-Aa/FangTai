@@ -3,6 +3,7 @@ import json
 
 from food_agent_v2.b1.health_relation_builder import (
     ALLOWED_CONSTRAINT_CODES,
+    CONSTRAINT_EVIDENCE_REFS,
     build_approved_health_relation_artifacts,
     generate_health_relation_candidates,
     run_health_relation_stage,
@@ -17,6 +18,7 @@ def test_allowed_constraint_registry_is_closed_and_complete() -> None:
     assert "disease_kidney" in ALLOWED_CONSTRAINT_CODES
     assert "indicator_high_bp" in ALLOWED_CONSTRAINT_CODES
     assert "group_pregnancy" in ALLOWED_CONSTRAINT_CODES
+    assert set(CONSTRAINT_EVIDENCE_REFS) == set(ALLOWED_CONSTRAINT_CODES)
 
 
 def test_candidates_are_exact_product_and_always_pending() -> None:
@@ -52,6 +54,69 @@ def test_candidates_are_exact_product_and_always_pending() -> None:
         ).suggested_decision
         == "no_hard_relation"
     )
+
+
+def test_calibrated_policy_avoids_legacy_overreach() -> None:
+    codes = (
+        "allergy_pineapple",
+        "allergy_tree_nut",
+        "disease_kidney",
+        "group_pregnancy",
+        "group_lactation",
+    )
+    ingredients = (
+        {"ingredient_id": 1, "name_canonical": "凤梨"},
+        {"ingredient_id": 2, "name_canonical": "杜松子"},
+        {"ingredient_id": 3, "name_canonical": "咸菜"},
+        {"ingredient_id": 4, "name_canonical": "螃蟹"},
+        {"ingredient_id": 5, "name_canonical": "辣椒"},
+    )
+    candidates = {
+        (item.constraint_code, item.ingredient_id): item
+        for item in generate_health_relation_candidates(codes, ingredients)
+    }
+
+    assert candidates[("allergy_pineapple", 1)].suggested_decision == "hard_exclude"
+    assert candidates[("allergy_tree_nut", 2)].suggested_decision == "no_hard_relation"
+    assert candidates[("disease_kidney", 3)].suggested_decision == "hard_exclude"
+    assert candidates[("group_pregnancy", 4)].suggested_decision == "no_hard_relation"
+    assert candidates[("group_lactation", 5)].suggested_decision == "no_hard_relation"
+    assert all("authority=https://" in item.suggested_evidence for item in candidates.values())
+
+
+def test_name_guards_prevent_cross_category_and_condiment_false_positives() -> None:
+    codes = (
+        "allergy_fish",
+        "allergy_seafood",
+        "allergy_shellfish",
+        "allergy_alcohol",
+        "group_pregnancy",
+    )
+    ingredients = (
+        {"ingredient_id": 1, "name_canonical": "蒸鱼豉油"},
+        {"ingredient_id": 2, "name_canonical": "鲍鱼"},
+        {"ingredient_id": 3, "name_canonical": "鱿鱼"},
+        {"ingredient_id": 4, "name_canonical": "红酒醋"},
+        {"ingredient_id": 5, "name_canonical": "无酒精啤酒"},
+        {"ingredient_id": 6, "name_canonical": "小龙虾调料包"},
+    )
+    candidates = {
+        (item.constraint_code, item.ingredient_id): item.suggested_decision
+        for item in generate_health_relation_candidates(codes, ingredients)
+    }
+
+    assert candidates[("allergy_fish", 1)] == "no_hard_relation"
+    assert candidates[("allergy_seafood", 1)] == "no_hard_relation"
+    assert candidates[("allergy_fish", 2)] == "no_hard_relation"
+    assert candidates[("allergy_fish", 3)] == "no_hard_relation"
+    assert candidates[("allergy_seafood", 2)] == "hard_exclude"
+    assert candidates[("allergy_seafood", 3)] == "hard_exclude"
+    assert candidates[("allergy_shellfish", 2)] == "hard_exclude"
+    assert candidates[("allergy_alcohol", 4)] == "no_hard_relation"
+    assert candidates[("group_pregnancy", 4)] == "no_hard_relation"
+    assert candidates[("allergy_alcohol", 5)] == "no_hard_relation"
+    assert candidates[("group_pregnancy", 5)] == "no_hard_relation"
+    assert candidates[("allergy_seafood", 6)] == "no_hard_relation"
 
 
 def test_freeze_preserves_negative_decisions_and_builds_complete_coverage() -> None:
