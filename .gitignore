@@ -30,9 +30,11 @@ qdrant-data/
 redis-data/
 
 # Generated data and reports
-data/processed/
-data/releases/
-reports/generated/
+data/cleaned/
+reports/data_pipeline/
+data/profiles/
+data/knowledge_base/
+data/database/
 
 # Editors and operating systems
 .idea/

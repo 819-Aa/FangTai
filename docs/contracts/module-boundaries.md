@@ -1,7 +1,7 @@
 # V2模块边界与数据所有权
 
 - 状态：`APPROVED`
-- 日期：2026-08-04
+- 日期：2026-08-09
 - 架构形式：模块化单体
 
 ## 1. 文档目的
@@ -21,6 +21,10 @@
 - API和前端只适配输入输出，不重建领域判断。
 - 跨模块事务由Application层协调，领域模块不互相写表。
 - Artifact和WorkflowState属于共享契约，不能在单个模块内私自扩展同名字段。
+- B1 是原始 CSV、食材字符串和步骤字符串的唯一解析者；B3/B4/B5/B6/C1 不得重复解析。
+- 在线应用只能通过 Repository 消费已初始化事实，禁止导入或读取 `data/raw`、构建 JSONL 和离线解析器。
+- 所有领域 Artifact 必须携带并校验同一 `build_id` 与 `source_manifest_hash`，不允许跨构建拼接。
+- 不可用的软证据必须显式禁用；消费者不得用默认分数伪装数据已经存在。
 
 ## 3. 模块所有权总表
 
@@ -147,11 +151,12 @@ QueryPlanArtifact
 → 验证健康证据完整
 → 写最终推荐结果
 → 写参与者约束、食材、关系、覆盖和最终校验的强制健康审计
+→ 写会话事实与按序 transactional outbox
 → 写请求completed终态
 → 同一MySQL事务提交
 ```
 
-任一步失败均回滚，返回`AUDIT_COMMIT_FAILED`或更具体的提交错误，不留下成功终态。
+任一步失败均回滚，返回`AUDIT_COMMIT_FAILED`或更具体的提交错误，不留下成功终态。`answer_ready` 和 `result_committed` 只能由 outbox dispatcher 在事务提交后发布；二者均引用已经提交的不可变结果。
 
 ### 7.3 非事务运行状态
 

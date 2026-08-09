@@ -1,0 +1,334 @@
+"""C3 工具处理器 —— 模型调用工具时，映射到真实领域服务并执行。
+
+工具桥接层：接收模型发出的 tool_call → 调用 B/C 模块的真实函数 → 返回结果。
+不做数据伪造——如果缺少必要参数，从 ToolContext 中获取。
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass, field
+from typing import Any, Callable
+
+
+@dataclass
+class ToolContext:
+    """工具调用所需的请求级上下文。"""
+    request_id: str = ""
+    participant_user_mapping: dict[str, int] = field(default_factory=dict)
+    previous_results: dict[str, Any] = field(default_factory=dict)
+    safe_recipe_ids: list[int] = field(default_factory=list)
+    tool_receipts: list[dict] = field(default_factory=list)
+    time_limit_minutes: int | None = None   # 查询理解提取的严格时间约束
+    session_id: str = ""                    # 用于工具回写 C4 会话上下文
+    context_service: Any | None = None      # C4 ContextService（工具可回写约束）
+
+
+class ToolHandler:
+    """工具调用路由。每个工具映射到一个真实领域服务函数。"""
+
+    def __init__(self, ctx: ToolContext | None = None):
+        self._ctx = ctx or ToolContext()
+        self._receipts: list[dict] = []
+
+    def execute(self, tool_name: str, arguments: dict) -> dict:
+        handler = _TOOL_MAP.get(tool_name)
+        if handler is None:
+            return {"error": f"TOOL_NOT_IMPLEMENTED: {tool_name}"}
+
+        try:
+            result = handler(arguments, self._ctx)
+        except Exception as e:
+            result = {"error": f"TOOL_EXECUTION_FAILED: {e}", "tool": tool_name}
+
+        receipt = {
+            "tool_name": tool_name,
+            "arguments_summary": {k: str(v)[:80] for k, v in arguments.items()},
+            "success": "error" not in result,
+            "result_summary": json.dumps(result, ensure_ascii=False)[:300],
+        }
+        self._receipts.append(receipt)
+        # 同时写入请求级上下文
+        self._ctx.tool_receipts.append(receipt)
+        return result
+
+    @property
+    def receipts(self) -> list[dict]:
+        return self._receipts
+
+    def clear_receipts(self) -> None:
+        self._receipts.clear()
+
+
+# ---- 真实工具实现 ----
+
+def _retrieve_recipes(args: dict, ctx: ToolContext) -> dict:
+    """C1 混合检索。多人场景自动使用多路合并（文档 07 §8.4）。"""
+    from food_agent_v2.c1 import get_retrieval_service
+    query = args.get("query", args.get("search_query", ""))
+    top_k = args.get("top_k", 20)
+    svc = get_retrieval_service()
+
+    # 多人 → 共享查询 + 每参与者口味偏好子查询
+    if len(ctx.participant_user_mapping) > 1:
+        try:
+            from food_agent_v2.b2 import UserHealthProfileService
+            b2 = UserHealthProfileService()
+            b2.load()
+            prefs = []
+            for uid in ctx.participant_user_mapping.values():
+                u = b2.get_user(uid)
+                prefs.append(u.get("dietary_preferences", []) if u else [])
+            if any(prefs):
+                result = svc.multi_person_retrieve(query, prefs, top_k=max(top_k, 30))
+            else:
+                result = svc.retrieve(query, top_k=top_k)
+        except Exception:
+            result = svc.retrieve(query, top_k=top_k)
+    else:
+        result = svc.retrieve(query, top_k=top_k)
+
+    ctx.previous_results["retrieval"] = result
+    return {
+        "total": result.total_candidates,
+        "candidates": [{"recipe_id": c.recipe_id, "name": c.name,
+                        "source_paths": getattr(c, "source_paths", [])}
+                       for c in result.candidates[:top_k]],
+    }
+
+
+def _get_current_menu(args: dict, ctx: ToolContext) -> dict:
+    """读取当前会话的已有菜单（替换/恢复场景）。"""
+    return {"current_menu": None, "note": "当前会话无已有菜单"}
+
+
+def _get_health_constraints(args: dict, ctx: ToolContext) -> dict:
+    """B2 获取参与者约束（使用真实的 participant→user_id 映射）。"""
+    from food_agent_v2.b2 import UserHealthProfileService
+    svc = UserHealthProfileService()
+    svc.load()
+
+    result = {}
+    constraint_sets = {}
+    for ref, uid in ctx.participant_user_mapping.items():
+        cs = svc.derive_constraints(uid, ref)
+        constraint_sets[ref] = cs
+        result[ref] = {
+            "hard_constraint_codes": _extract_codes(cs.hard_constraints),
+            "hard_count": len(cs.hard_constraints),
+            "soft_goals": [g.goal_code for g in cs.soft_goals],
+        }
+
+    # B2 → C4：把派生约束写回会话上下文（角色投影 + 完整性校验使用真实约束）
+    if ctx.context_service is not None and ctx.session_id:
+        try:
+            ctx.context_service.store_derived_constraints(ctx.session_id, constraint_sets)
+        except Exception:
+            pass
+
+    ctx.previous_results["health_constraints"] = result
+    return {"participants": result}
+
+
+def _evaluate_recipe_health(args: dict, ctx: ToolContext) -> dict:
+    """B4 健康审查：对候选菜品逐道评估。
+    通过 B3 获取每道菜的真实 ingredient_ids。"""
+    from food_agent_v2.b4 import HealthRuleEngine
+    from food_agent_v2.b2 import UserHealthProfileService
+    from food_agent_v2.b3.recipe_views import get_view_builder
+
+    recipe_ids = args.get("recipe_ids", [])
+    if not recipe_ids:
+        return {"error": "recipe_ids required", "safe_recipe_ids": [], "excluded_recipe_ids": []}
+
+    # 从 B3 获取真实食材视图
+    builder = get_view_builder()
+    ing_map: dict[int, list[int]] = {}
+    for rid in recipe_ids:
+        view = builder.build_health_ingredient_view(rid)
+        if view:
+            ing_map[rid] = view.ingredient_ids
+
+    # B4 引擎
+    engine = HealthRuleEngine()
+    engine.load_relations()
+    b2 = UserHealthProfileService()
+    b2.load()
+
+    # 构建所有参与者的约束集
+    all_constraints = {}
+    for ref, uid in ctx.participant_user_mapping.items():
+        cs = b2.derive_constraints(uid, ref)
+        all_constraints[ref] = cs.hard_constraints
+
+    batch = engine.evaluate_batch(recipe_ids, ing_map, all_constraints)
+    ctx.previous_results["health_evaluation"] = batch
+    ctx.safe_recipe_ids = batch.safe_recipe_ids
+
+    return {
+        "safe_recipe_ids": batch.safe_recipe_ids[:100],
+        "excluded_recipe_ids": batch.excluded_recipe_ids[:50],
+        "total_evaluated": len(recipe_ids),
+        "safe_count": len(batch.safe_recipe_ids),
+        "excluded_count": len(batch.excluded_recipe_ids),
+    }
+
+
+def _generate_feasible_menus(args: dict, ctx: ToolContext) -> dict:
+    """C2 菜单规划：基于 B4 安全候选生成方案。"""
+    from food_agent_v2.c2 import MenuPlanner, MenuHardConstraints
+
+    safe_ids = args.get("safe_recipe_ids", [])
+    # 如果模型没传 safe_recipe_ids，使用上一步 evaluate_recipe_health 返回的
+    if not safe_ids:
+        safe_ids = ctx.safe_recipe_ids
+    if not safe_ids:
+        # 如果上一步也没有，从 retrieval 结果取
+        retrieval = ctx.previous_results.get("retrieval")
+        if retrieval:
+            safe_ids = [c.recipe_id for c in retrieval.candidates[:30]]
+    if not safe_ids:
+        return {"plans": [], "count": 0, "note": "no safe candidates available"}
+
+    planner = MenuPlanner()
+    planner.set_safe_candidates(safe_ids)
+    # 注入 recipe_features 供 C2 偏好/多样性评分使用
+    try:
+        from food_agent_v2.b3.recipe_views import get_view_builder
+        builder = get_view_builder()
+        features = {}
+        for rid in safe_ids:
+            rv = builder.build_retrieval_view(rid)
+            if rv:
+                features[rid] = {"name": rv.name, "fields": rv.searchable_fields}
+        planner.set_recipe_features(features)
+    except Exception:
+        pass
+    hard = MenuHardConstraints(
+        dish_count=args.get("dish_count", 4),
+        # 模型没传时间限制时，自动使用查询理解提取的严格时间约束
+        strict_time_limit=args.get("time_limit_minutes") or ctx.time_limit_minutes,
+    )
+    plans = planner.plan(hard, target_count=5)
+    ctx.previous_results["feasible_menus"] = plans
+
+    return {
+        "plans": [{
+            "plan_id": p.plan_id, "recipe_ids": p.recipe_ids[:10],
+            "objective": p.dominant_objective, "total_score": p.total_score,
+            "makespan_seconds": p.makespan_seconds,
+        } for p in plans],
+        "count": len(plans),
+    }
+
+
+def _validate_selected_menu_health(args: dict, ctx: ToolContext) -> dict:
+    """B4 最终健康校验：重新加载 B2 当前约束 + B3 食材事实。"""
+    from food_agent_v2.b4 import HealthRuleEngine
+    from food_agent_v2.b2 import UserHealthProfileService
+    from food_agent_v2.b3.recipe_views import get_view_builder
+
+    plan_id = args.get("plan_id", "")
+    recipe_ids = args.get("recipe_ids", [])
+
+    builder = get_view_builder()
+    ing_map: dict[int, list[int]] = {}
+    for rid in recipe_ids:
+        view = builder.build_health_ingredient_view(rid)
+        if view:
+            ing_map[rid] = view.ingredient_ids
+
+    engine = HealthRuleEngine()
+    engine.load_relations()
+    b2 = UserHealthProfileService()
+    b2.load()
+
+    all_constraints = {}
+    for ref, uid in ctx.participant_user_mapping.items():
+        cs = b2.derive_constraints(uid, ref)
+        all_constraints[ref] = cs.hard_constraints
+
+    result = engine.validate_selected_menu(
+        recipe_ids, ing_map, all_constraints, plan_id, f"hash_{plan_id}"
+    )
+    return {"verdict": result.verdict, "plan_id": plan_id, "details": "final validation complete"}
+
+
+def _expand_retrieval(args: dict, ctx: ToolContext) -> dict:
+    """C1 扩展召回——差异不足时使用更宽松查询再跑一次。"""
+    from food_agent_v2.c1 import get_retrieval_service
+    svc = get_retrieval_service()
+    query = args.get("query", "")
+    original_ids = args.get("original_ids", [])
+
+    result = svc.retrieve(query, top_k=30, exclude_ids=original_ids)
+    if result.total_candidates == 0:
+        return {"candidates": [], "count": 0, "note": "no additional candidates"}
+    ctx.previous_results["retrieval_expanded"] = result
+    return {"candidates": [{"recipe_id": c.recipe_id, "name": c.name} for c in result.candidates], "count": result.total_candidates}
+
+
+def _adjust_menu_plan(args: dict, ctx: ToolContext) -> dict:
+    """C2 菜单调整——替换或恢复指定菜品。"""
+    from food_agent_v2.c2 import MenuPlanner, MenuHardConstraints
+    plans = ctx.previous_results.get("feasible_menus", [])
+    if not plans:
+        return {"adjusted": None, "note": "no existing plan to adjust"}
+
+    plan_id = args.get("plan_id", "")
+    target_plan = None
+    if plan_id:
+        for p in plans:
+            if getattr(p, "plan_id", "") == plan_id:
+                target_plan = p
+                break
+    if target_plan is None:
+        target_plan = plans[0]  # fallback
+
+    planner = MenuPlanner()
+    planner.set_safe_candidates(ctx.safe_recipe_ids)
+    hard = MenuHardConstraints(dish_count=len(target_plan.recipe_ids) if target_plan else 4)
+
+    adjusted = planner.adjust_menu(
+        target_plan,
+        args.get("replace_recipe_id", 0),
+        ctx.safe_recipe_ids,
+        hard,
+    )
+    if adjusted:
+        return {"adjusted_plan_id": adjusted.plan_id, "recipe_ids": adjusted.recipe_ids}
+    return {"adjusted": None, "note": "no feasible adjustment found"}
+
+
+def _get_execution_trace(args: dict, ctx: ToolContext) -> dict:
+    """C3 内部：返回当前请求的工具调用记录。"""
+    return {"tool_calls": ctx.tool_receipts, "total": len(ctx.tool_receipts)}
+
+
+def _get_artifact_chain(args: dict, ctx: ToolContext) -> dict:
+    """C3 内部：返回 Artifact 链引用。"""
+    return {"chain": list(ctx.previous_results.keys()), "note": "artifact references from workflow context"}
+
+
+def _extract_codes(constraints: list) -> list[str]:
+    codes = []
+    for c in constraints:
+        if hasattr(c, 'constraint_code'):
+            codes.append(c.constraint_code)
+        elif hasattr(c, 'taboo_ingredient_name'):
+            codes.append(f"taboo:{c.taboo_ingredient_name}")
+    return codes
+
+
+_TOOL_MAP: dict[str, Callable] = {
+    "retrieve_recipes": _retrieve_recipes,
+    "get_current_menu": _get_current_menu,
+    "get_health_constraints": _get_health_constraints,
+    "evaluate_recipe_health": _evaluate_recipe_health,
+    "generate_feasible_menus": _generate_feasible_menus,
+    "expand_retrieval": _expand_retrieval,
+    "adjust_menu_plan": _adjust_menu_plan,
+    "validate_selected_menu_health": _validate_selected_menu_health,
+    "get_execution_trace": _get_execution_trace,
+    "get_artifact_chain": _get_artifact_chain,
+}

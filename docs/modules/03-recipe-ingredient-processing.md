@@ -1,9 +1,17 @@
 # V2菜品与食材处理模块设计
 
 - 状态：`APPROVED`
-- 日期：2026-08-04
+- 日期：2026-08-09
 - 适用项目：`program_v2`
 - 上游依据：[系统总体设计](../00-system-overview.md)、[全局不变量](../contracts/global-invariants.md)、[模块边界](../contracts/module-boundaries.md)、[数据工程模块](01-data-engineering.md)、[用户健康档案模块](02-user-health-profile.md)
+
+## 0. 2026-08-09 批准的实现基线
+
+- B3 不读取 CSV，也不解析食材/步骤原文；只接收 B1 同一构建发布的 `recipe_classifications`、`ingredient_occurrences`、注册表、crosswalk 和关系 Artifact。
+- 当前 3,326 条食材身份不作为基线。重建必须消除数量、单位、处理语、组合句和准备说明造成的伪身份，并为每次 merge/split/discard 保留审核证据。
+- 2,000 条记录全部拥有唯一封闭分类；旧 `program` 的分类数量仅用于差异审查，不是必须复制的目标配额。
+- 推荐视图、健康食材闭包、时间步骤视图、营养输入视图和 RAG 构建视图必须从同一标准事实投影，不能各自解释原始字符串。
+- 构建门禁要求：推荐食材出现零未解析、身份零歧义、孤儿引用为零、未知分类为零、所有消费者视图共享相同 `build_id/source_manifest_hash`。
 
 ## 1. 模块目的
 
@@ -540,6 +548,7 @@ B4在离线构建时对全部`catalog_eligibility=eligible`视图中的`ingredie
 
 - `recipe_id`和菜名；
 - 标准食材显示名；
+- `ingredient_family_ids[]`：每道菜涉及的标准食材族 ID 列表（用于 C2 多样性评分中的食材族维度）；
 - 审核后的非健康检索字段候选；
 - 原始步骤摘要输入和时间引用；
 - 构建RAG文档所需的只读事实引用。

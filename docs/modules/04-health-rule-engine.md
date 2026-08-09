@@ -1,9 +1,17 @@
 # V2健康规则与审查引擎设计
 
 - 状态：`APPROVED`
-- 日期：2026-08-04
+- 日期：2026-08-09
 - 适用项目：`program_v2`
 - 上游依据：[系统总体设计](../00-system-overview.md)、[全局不变量](../contracts/global-invariants.md)、[模块边界](../contracts/module-boundaries.md)、[推荐请求生命周期](../scenarios/recommendation-lifecycle.md)、[数据工程模块](01-data-engineering.md)、[用户健康档案模块](02-user-health-profile.md)、[菜品与食材处理模块](03-recipe-ingredient-processing.md)
+
+## 0. 2026-08-09 批准的实现基线
+
+- 健康关系的审核全集严格等于封闭 `constraint_code` 集合与 B3 健康食材全集的笛卡尔积；每个键恰好有一个 `hard_exclude/no_hard_relation` 人工批准决定。
+- 算法、旧系统、类别/食材族规则和 DeepSeek 只能生成待审候选，不能写入 `review_status=approved` 或伪造审核者。
+- B4 评估必须校验约束代码、食材集合、关系矩阵、证据、作用域、`build_id` 和散列。任何缺失、未知或跨构建拼接都是系统失败，不得当作未命中或安全。
+- 候选审查与最终菜单复核调用同一纯确定性核心；最终复核重新计算并绑定 `plan_id/menu_hash`，不复用旧 PASS。
+- 对外结论仍只有 `PASS/EXCLUDE`；系统错误用独立失败码表达，不能混进菜单重新规划或被模型覆盖。
 
 ## 1. 模块目的
 
@@ -149,9 +157,9 @@ B4离线输入包括：
 
 - B2允许输出的全局唯一健康约束代码注册表；
 - B3生成的全部可推荐菜品健康食材视图；
-- 待审核食材健康关系；
-- 关系审核状态和证据引用；
-- 约束覆盖审核结果。
+- B1离线生成的待审核食材健康关系；
+- B1离线生成的关系审核状态和证据引用；
+- B1离线生成的约束覆盖审核结果。
 
 外部数据来源获取不属于本模块；B4只规定关系进入正式健康链路前必须满足的结构、审核和完整性条件。
 
@@ -165,7 +173,7 @@ HealthEvaluationReceipt
 ├── request_id
 ├── retrieval_result_ref
 ├── constraint_set_refs[]
-├── recipe_results[]
+├── participant_recipe_results[]
 ├── safe_recipe_ids[]
 ├── excluded_recipe_ids[]
 ├── input_fingerprint

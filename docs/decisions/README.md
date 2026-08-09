@@ -1,7 +1,7 @@
 # V2架构决策登记
 
 - 状态：`APPROVED`
-- 日期：2026-08-04
+- 日期：2026-08-09
 - 适用项目：`program_v2`
 
 ## 1. 状态定义
@@ -11,6 +11,7 @@
 | `CONFIRMED` | 已进入V2目标架构，后续模块设计和实现必须遵守 |
 | `DEFERRED` | 已明确不阻塞当前核心建设，并规定重新评估时点 |
 | `REJECTED` | 已讨论并明确不采用，除非发起新的架构变更重新审查 |
+| `SUPERSEDED` | 已被后续批准决策取代，只保留历史追溯，不再授权实现 |
 
 本登记只记录全局选择。需要完整背景、替代方案和影响分析的决策另建ADR，并在本文件中链接。
 
@@ -47,6 +48,17 @@
 | DEC-C027 | 可选和替代食材按并集参与健康审查 | 不通过删去可选项或自动选择替代项改变原菜谱；食材替换必须形成独立、完整审查的菜品变体 |
 | DEC-C028 | 健康PASS必须建立在固定食材全集的完整关系覆盖上 | 每个允许`constraint_code × ingredient_id`都要有唯一批准决定，审核键集合与健康食材全集精确相等；覆盖缺失或不完整进入`failed` |
 | DEC-C029 | 健康引擎使用二元结果并对最终菜单重新计算 | B4只输出`PASS/EXCLUDE`；菜单决策选择已有`plan_id`后主动调用同一引擎重新校验，系统错误不进入菜单重新规划 |
+| DEC-C030 | 菜品源固定为经精确清单核验的 2,000 行 | `recipe_id=1..2000` 与源行绑定；每行必须显式分类且零未决；详见 [ADR-0004](0004-fixed-source-and-one-time-identity-rebuild.md) |
+| DEC-C031 | 一次性重建并冻结 V2 食材身份 | 当前污染 ID 不继承；形成 merge/split/discard crosswalk，经审核后运行时不得动态增删身份；详见 [ADR-0004](0004-fixed-source-and-one-time-identity-rebuild.md) |
+| DEC-C032 | B1 是原始菜品和食材文本的唯一解析者 | B3/B4/B5/B6/C1 只消费同一构建的结构化 Artifact，在线禁止读取离线文件 |
+| DEC-C033 | 严格时间与更快偏好使用不同语义 | 硬时限只接受高权威调度的 `true`；`unknown` 不得冒充满足；详见 [ADR-0005](0005-strict-time-semantics.md) |
+| DEC-C034 | 软评分维度不可用时显式禁用并重归一化 | 不使用默认 0.5、零值或模型猜测伪装中性证据 |
+| DEC-C035 | 成功事件只能引用已提交结果 | 结果、强制审计和 outbox 原子提交，之后发布 `answer_ready/result_committed`；详见 [ADR-0006](0006-post-commit-event-publication.md) |
+| DEC-C036 | DeepSeek 整改采用外部阶段闸门 | 模型可选局部写法，但不能修改任务信封、锁定测试和批准契约；偏离不能进入下一阶段 |
+
+### 已废止的实现偏离
+
+[ADR-0003](0003-implementation-round-2-deviations.md) 已于 2026-08-09 标记为 `SUPERSEDED`。其中 C3 自动节点重试、LLM 时间高权威化、40% 并行公式和严格时间软化均不得继续作为设计依据。
 
 ## 3. DEFERRED：明确延期决策
 

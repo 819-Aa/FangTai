@@ -1,7 +1,7 @@
 # V2推荐请求生命周期
 
 - 状态：`APPROVED`
-- 日期：2026-08-04
+- 日期：2026-08-09
 - 适用范围：WorkflowState、模型节点、工具、API/SSE和最终提交
 
 ## 1. 文档目的
@@ -22,8 +22,11 @@ stateDiagram-v2
     running --> needs_clarification: 必要信息无法安全推断
     running --> no_safe_menu: 无健康安全菜品
     running --> no_feasible_menu: 安全菜品无法组成可行菜单
+    running --> strict_time_indeterminate: 硬时限缺少高权威可行性证据
     running --> failed: 工具、权限、证据或完整性失败
     revising --> failed: 修订上限耗尽或再次失败
+    revising --> no_safe_menu: 回流后重新审查无安全候选
+    revising --> no_feasible_menu: 回流后安全候选无法组成菜单
     accepted --> cancelled: 用户在执行前取消
     running --> cancelled: 节点边界确认取消
     revising --> cancelled: 节点边界确认取消
@@ -39,6 +42,7 @@ sequenceDiagram
     actor Client as 客户端
     participant API as API/SSE
     participant WF as Workflow
+    participant B2 as 健康档案服务
     participant CTX as Context Service
     participant Q as 查询理解模型
     participant RAG as 混合RAG
@@ -48,11 +52,14 @@ sequenceDiagram
     participant ANS as 回答模型
     participant REV as 统一审查模型
     participant DB as MySQL/Redis
+    participant OUT as Outbox Dispatcher
 
     Client->>API: POST recommendation-request + idempotency key
     API->>DB: 创建accepted请求
     API-->>Client: request_id
     WF->>DB: 唯一Worker Claim
+    WF->>B2: 解析参与者并加载完整有效约束
+    B2-->>WF: 匿名约束投影 + 证据引用
     WF->>CTX: 构建SharedWorkflowContext
     CTX-->>WF: ContextManifest + 角色投影
     WF->>Q: 当前消息和有效约束
@@ -75,9 +82,11 @@ sequenceDiagram
     ANS->>WF: AnswerArtifact
     WF->>REV: 执行证据 + AnswerArtifact
     REV->>WF: ReviewArtifact(PASS)
-    WF->>DB: 原子提交结果、健康证据和completed
-    WF->>API: 发布最终answer_ready/result_committed事件
-    API-->>Client: SSE最终结果
+    WF->>DB: 原子提交结果、健康证据、会话事实、outbox和completed
+    DB-->>WF: committed
+    OUT->>DB: 读取未发布outbox
+    OUT->>API: answer_ready / result_committed
+    API-->>Client: SSE已提交最终结果
 ```
 
 正常链路的强制条件是：
@@ -89,9 +98,9 @@ sequenceDiagram
 5. 菜单决策模型选择已有`plan_id`并完成最终健康校验；
 6. AnswerArtifact完全基于所选菜单和证据；
 7. ReviewArtifact为`PASS`；
-8. 最终结果和强制健康审计在同一事务提交。
+8. 最终结果、强制健康审计、会话事实和成功 outbox 在同一事务提交；两个最终成功事件都在提交后发布。
 
-阶段性`analysis_ready`事件可以在对应Artifact校验后发布。最终回答正文在`FinalValidationArtifact=PASS`和`ReviewArtifact=PASS`之前不得发布。
+阶段性`analysis_ready`事件可以在对应Artifact校验后发布。最终回答正文在`FinalValidationArtifact=PASS`、`ReviewArtifact=PASS`和结果事务提交之前不得发布。
 
 ## 4. 健康冲突与菜单不可用
 
@@ -134,6 +143,32 @@ safe_recipe_ids非空
 ```
 
 健康安全与菜单可行性必须分别记录，不能把两种终态合并为“没有推荐结果”。
+
+### 4.4 严格时间无法判定
+
+当请求明确要求硬截止时间，所有候选都没有高权威 `strict_time_feasible=true`，且至少存在一个 `unknown` 时：
+
+```text
+strict_time_feasibility_required = true
+且 true 候选为空
+且 unknown 候选非空
+→ 终态 strict_time_indeterminate
+```
+
+系统必须说明缺少哪些步骤时长、依赖或设备证据；不得用 LLM 估算、软排序或减少菜数冒充满足截止时间。如果全部高权威候选均为 `false`，则进入 `no_feasible_menu`。
+
+### 4.5 needs_clarification 终态
+
+当 B2 临时信号模糊（例如"不要吃辣的"无法确定是疾病、过敏、健康目标还是当前餐食禁忌），且查询理解无法解析参与者或意图时，工作流进入 `needs_clarification`：
+
+```text
+模糊信号或意图无法解析
+→ C4.record_session_event(status=needs_clarification)
+→ 会话保持活跃，不提交菜单，不清除已积累的约束
+→ 通过 SSE 发出 clarification_needed 事件（含待澄清问题）
+```
+
+用户提供新消息（创建新的 `request_id`）后，待澄清信号作为新请求输入被重新解析；原请求保持 `needs_clarification` 终态，不自动重跑、不自动沿用未确认的临时约束。
 
 ## 5. 一次扩展召回
 

@@ -28,7 +28,7 @@
 - 不设置Agent回答兜底、固定模板降级、自动模型切换或SDK技术重试；必需工具漏调和关键校验失败必须暴露并停止。
 - 允许的业务闭环有固定上限：召回扩展最多一次，健康失败重新规划最多一次，统一审查定向修订和复审各最多一次。
 - 核心健康约束、当前消息、当前菜单、待澄清事项和版本信息不得在上下文压缩中丢失。
-- 一次请求全程固定`release_id`，MySQL、Qdrant、规则和缓存使用同一发布身份；运行期只做轻量版本一致性校验。
+- 一次请求全程固定数据版本标识（离线构建时确定，不在请求期变更），MySQL、Qdrant、规则和缓存使用同一发布身份；运行期只做轻量版本一致性校验。
 - 最终回答只能引用通过校验的菜单事实，不增加菜品、不替换食材、不输出医疗结论或其他参与者的具体健康信息。
 - LangSmith、自建Trace详情页和完整指标平台登记为明确延期决定，不进入当前核心实施范围。
 - 文档使用中文，术语、字段名、Artifact名、错误码和代码标识保留英文。
@@ -225,7 +225,7 @@ INV-004 低置信度营养只参与软排序
 INV-005 回答不得添加MenuDecisionArtifact所选且经FinalValidationArtifact通过的菜单之外的菜品
 INV-006 模型不能直接修改WorkflowState
 INV-007 必需工具漏调必须停止
-INV-008 一次请求全程固定release_id
+INV-008 固定原始数据必须经过完整离线处理
 INV-009 核心健康约束不能在上下文压缩中丢失
 INV-010 最终提交必须同时保存健康审查证据
 INV-011 多人菜单不得包含只对部分参与者安全的菜品
@@ -235,7 +235,7 @@ INV-014 业务修订次数不得超过各自上限
 INV-015 营养估算不得参与健康硬筛选
 ```
 
-为每条不变量选择具体错误码，例如`FINAL_HEALTH_VALIDATION_FAILED`、`REQUIRED_TOOL_NOT_CALLED`、`RELEASE_VERSION_MISMATCH`、`CONTEXT_INTEGRITY_FAILED`、`SENSITIVE_DATA_EXPOSURE`。不得使用笼统的`UNKNOWN_ERROR`。
+为每条不变量选择具体错误码，例如`FINAL_HEALTH_VALIDATION_FAILED`、`REQUIRED_TOOL_NOT_CALLED`、`DATA_PIPELINE_VALIDATION_FAILED`、`CONTEXT_INTEGRITY_FAILED`、`SENSITIVE_DATA_EXPOSURE`。不得使用笼统的`UNKNOWN_ERROR`。
 
 - [ ] **Step 3: 建立总览链接并更新状态**
 
@@ -336,14 +336,14 @@ git commit -m "docs(contracts): define module ownership and dependencies"
 
 - [ ] **Step 4: 编写工具、上下文和取消失败场景**
 
-覆盖`REQUIRED_TOOL_NOT_CALLED`、`TOOL_PERMISSION_DENIED`、`CONTEXT_INTEGRITY_FAILED`、`RELEASE_VERSION_MISMATCH`、用户显式取消、SSE断开和重复`request_id`。SSE断开不得取消或重跑请求，相同幂等键不同载荷必须失败。
+覆盖`REQUIRED_TOOL_NOT_CALLED`、`TOOL_PERMISSION_DENIED`、`CONTEXT_INTEGRITY_FAILED`、`DATA_PIPELINE_VALIDATION_FAILED`、用户显式取消、SSE断开和重复`request_id`。SSE断开不得取消或重跑请求，相同幂等键不同载荷必须失败。
 
 - [ ] **Step 5: 建立总览链接并验证**
 
 更新总览和路线图后执行：
 
 ```powershell
-rg -n "no_safe_menu|no_feasible_menu|REQUIRED_TOOL_NOT_CALLED|TOOL_PERMISSION_DENIED|CONTEXT_INTEGRITY_FAILED|RELEASE_VERSION_MISMATCH" docs/scenarios/recommendation-lifecycle.md
+rg -n "no_safe_menu|no_feasible_menu|REQUIRED_TOOL_NOT_CALLED|TOOL_PERMISSION_DENIED|CONTEXT_INTEGRITY_FAILED|DATA_PIPELINE_VALIDATION_FAILED" docs/scenarios/recommendation-lifecycle.md
 rg -n "最多一次|一次定向修订|一次复审|SSE断开|幂等" docs/scenarios/recommendation-lifecycle.md
 git diff --check
 ```
@@ -428,7 +428,7 @@ Expected: 无命中。延期事项必须具有明确状态、范围和重新评�
 
 - [ ] **Step 2: 检查核心术语一致性**
 
-逐项确认所有文档统一使用：`WorkflowState`、`SharedWorkflowContext`、`HandoffMessage`、`QueryPlanArtifact`、`HealthEvaluationArtifact`、`FeasibleMenuArtifact`、`MenuDecisionArtifact`、`FinalValidationArtifact`、`AnswerArtifact`、`ReviewArtifact`、`release_id`。发现拼写或职责冲突时直接修改对应文档。
+逐项确认所有文档统一使用：`WorkflowState`、`SharedWorkflowContext`、`HandoffMessage`、`QueryPlanArtifact`、`HealthEvaluationArtifact`、`FeasibleMenuArtifact`、`MenuDecisionArtifact`、`FinalValidationArtifact`、`AnswerArtifact`、`ReviewArtifact`、`constraint_code`、`plan_id`。发现拼写或职责冲突时直接修改对应文档。
 
 - [ ] **Step 3: 检查设计矛盾**
 

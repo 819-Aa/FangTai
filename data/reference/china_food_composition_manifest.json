@@ -1,0 +1,8 @@
+{
+  "source_name": "中国疾病预防控制中心营养与健康所食物营养成分查询平台",
+  "source_endpoint": "https://nlc.chinanutri.cn/fq/FoodInfoQueryAction!queryFoodInfoList.do",
+  "record_count": 1356,
+  "page_count": 170,
+  "energy_conversion": "kcal = kJ / 4.184",
+  "output": "data\\reference\\china_food_composition.jsonl"
+}

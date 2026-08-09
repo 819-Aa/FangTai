@@ -1,0 +1,56 @@
+[project]
+name = "food-agent-v2"
+version = "0.1.0"
+description = "V2 personalized meal recommendation agent with deterministic health guards."
+readme = "README.md"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+  "fastapi>=0.116,<1",
+  "langchain-core>=1,<2",
+  "langchain-openai>=1,<2",
+  "langgraph>=1,<2",
+  "ortools>=9.14,<10",
+  "pydantic>=2.11,<3",
+  "pydantic-settings>=2.10,<3",
+  "pymysql>=1.1,<2",
+  "qdrant-client>=1.18,<2",
+  "redis>=6,<7",
+  "sentence-transformers>=5,<6",
+  "torch>=2.13,<3",
+  "uvicorn[standard]>=0.35,<1",
+]
+
+[project.scripts]
+food-agent-v2 = "food_agent_v2.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+package = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/food_agent_v2"]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.4,<9",
+  "ruff>=0.12,<1",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]

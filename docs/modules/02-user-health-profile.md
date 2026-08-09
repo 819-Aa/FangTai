@@ -1,9 +1,17 @@
 # V2用户健康档案模块设计
 
 - 状态：`APPROVED`
-- 日期：2026-08-04
+- 日期：2026-08-09
 - 适用项目：`program_v2`
 - 上游依据：[系统总体设计](../00-system-overview.md)、[全局不变量](../contracts/global-invariants.md)、[模块边界](../contracts/module-boundaries.md)、[数据工程模块](01-data-engineering.md)
+
+## 0. 2026-08-09 批准的实现基线
+
+- `constraint_code` 使用经人工确认的封闭注册表；未知疾病、过敏、指标或生理阶段不得动态生成代码，也不得静默当作普通偏好。
+- 50 份固定档案必须逐份产生 `valid / invalid` 结果、字段级错误和证据；缺失必需档案、重复用户、未知代码或无来源约束使初始化失败。
+- 每条派生约束必须有确定性规则 ID、事实引用、作用域、优先级和生效期；模型输出不能直接进入有效硬约束。
+- 特殊阶段及易混淆词（包括“备孕”）必须进入显式规则与人工审查清单，不能依靠自由文本包含判断。
+- 对外只暴露匿名 `participant_ref` 和最小约束投影；真实用户 ID、疾病名和原始指标不进入群组模型上下文、SSE 或前端。
 
 ## 1. 模块目的
 
@@ -91,7 +99,7 @@
 每位参与者输出独立的`ParticipantHealthConstraintSet`，包含：
 
 - `participant_ref`；
-- 有效硬约束；
+- 有效硬约束（硬约束字段名为 `hard_constraints[]`，类型为 `CodedHealthConstraint | ExplicitFoodTabooConstraint` 的联合，与 B4 §5.1 一致）；
 - 有效软健康目标；
 - 每条约束的作用域；
 - 每条约束的证据引用；
@@ -211,7 +219,7 @@ TemporaryHealthConstraint
 ├── ingredient_id | null
 ├── effect: hard_exclude
 ├── scope: turn | session
-├── source_ref
+├── source_refs[]
 └── created_from_signal_id
 ```
 
