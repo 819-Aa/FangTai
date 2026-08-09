@@ -10,14 +10,24 @@ V2 变更：
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from uuid import UUID
 
-from food_agent_v2.core.paths import CLEANED_RECIPES, CLEANED_DIR, PIPELINE_REPORTS_DIR
+from pydantic import BaseModel, ConfigDict
 
+from food_agent_v2.b1.consumer_views import RecipeRetrievalBuildView
+from food_agent_v2.core.paths import CLEANED_DIR, CLEANED_RECIPES, PIPELINE_REPORTS_DIR
 
 # V2 允许的非健康检索字段（不含 allergen/health/risk/nutrition）
-ALLOWED_SEARCH_FIELDS = {"meal", "taste", "cuisine", "cooking_method", "dish_type",
-                          "temperature", "texture", "occasion"}
+ALLOWED_SEARCH_FIELDS = {
+    "meal",
+    "taste",
+    "cuisine",
+    "cooking_method",
+    "dish_type",
+    "temperature",
+    "texture",
+    "occasion",
+}
 
 # 菜系关键词（简化版，从 V1 catalog 提取）
 CUISINE_KEYWORDS: dict[str, list[str]] = {
@@ -31,6 +41,21 @@ CUISINE_KEYWORDS: dict[str, list[str]] = {
 }
 
 
+class RagBuildDocument(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    build_id: UUID
+    source_manifest_hash: str
+    recipe_id: int
+    document_id: str
+    name: str
+    ingredient_ids: tuple[int, ...]
+    ingredient_family_ids: tuple[int, ...]
+    searchable_text: str
+    searchable_fields: dict[str, str]
+    step_summary: str | None
+
+
 def _build_searchable_text(recipe: dict) -> str:
     """构建不含健康和营养信息的可检索文本。"""
     parts = [recipe.get("名称", "")]
@@ -39,7 +64,7 @@ def _build_searchable_text(recipe: dict) -> str:
     parts.append(ingredients[:200])  # 食材前 200 字
     steps = recipe.get("烹饪步骤", "")
     if steps:
-        parts.append(steps[:200])   # 步骤前 200 字
+        parts.append(steps[:200])  # 步骤前 200 字
     return " ".join(parts)
 
 
@@ -58,6 +83,53 @@ def _detect_cuisine(name: str, ingredients: str) -> str | None:
             if kw in combined:
                 return cuisine
     return None
+
+
+def build_rag_documents_from_views(
+    views: tuple[RecipeRetrievalBuildView, ...],
+) -> tuple[list[RagBuildDocument], dict]:
+    """只消费 eligible 的结构化检索视图，不读取原始菜谱字符串。"""
+    documents: list[RagBuildDocument] = []
+    for view in views:
+        searchable_fields = {
+            key: value
+            for key, value in view.searchable_fields.items()
+            if key in ALLOWED_SEARCH_FIELDS and value
+        }
+        summary_text = " ".join(view.step_summary_input).strip()
+        searchable_text = " ".join(
+            part
+            for part in (
+                view.name,
+                " ".join(view.ingredient_display_names),
+                " ".join(searchable_fields.values()),
+                summary_text[:200],
+            )
+            if part
+        )
+        documents.append(
+            RagBuildDocument(
+                build_id=view.build_id,
+                source_manifest_hash=view.source_manifest_hash,
+                recipe_id=view.recipe_id,
+                document_id=f"recipe_{view.recipe_id:04d}",
+                name=view.name,
+                ingredient_ids=view.ingredient_ids,
+                ingredient_family_ids=view.ingredient_family_ids,
+                searchable_text=searchable_text,
+                searchable_fields=searchable_fields,
+                step_summary=(
+                    summary_text[:80] + ("..." if len(summary_text) > 80 else "")
+                    if summary_text
+                    else None
+                ),
+            )
+        )
+    return documents, {
+        "stage": "rag_documents_from_views",
+        "total_documents": len(documents),
+        "status": "passed",
+    }
 
 
 def build_rag_documents(cleaned_recipes: list[dict]) -> tuple[list[dict], dict]:
@@ -85,18 +157,20 @@ def build_rag_documents(cleaned_recipes: list[dict]) -> tuple[list[dict], dict]:
         if labels:
             searchable_fields["labels"] = labels
 
-        docs.append({
-            "recipe_id": rid,
-            "document_id": f"recipe_{rid:04d}",
-            "name": name,
-            "searchable_text": searchable_text,
-            "searchable_fields": searchable_fields,
-            "step_summary": step_summary,
-            "time_reference": None,  # 在 B5 构建后补充
-            # V2 关键移除项（确认不存在）:
-            # - allergen_types, health_features, risk_tags, nutrition_tags
-            # - per_serving, nutrition_values
-        })
+        docs.append(
+            {
+                "recipe_id": rid,
+                "document_id": f"recipe_{rid:04d}",
+                "name": name,
+                "searchable_text": searchable_text,
+                "searchable_fields": searchable_fields,
+                "step_summary": step_summary,
+                "time_reference": None,  # 在 B5 构建后补充
+                # V2 关键移除项（确认不存在）:
+                # - allergen_types, health_features, risk_tags, nutrition_tags
+                # - per_serving, nutrition_values
+            }
+        )
 
     output_path = CLEANED_DIR / "rag_documents.jsonl"
     with output_path.open("w", encoding="utf-8") as f:

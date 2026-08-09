@@ -10,9 +10,13 @@ from __future__ import annotations
 
 import json
 import re
-from pathlib import Path
+from typing import Literal
+from uuid import UUID
 
-from food_agent_v2.core.paths import CLEANED_RECIPES, CLEANED_DIR, PIPELINE_REPORTS_DIR
+from pydantic import BaseModel, ConfigDict
+
+from food_agent_v2.b1.consumer_views import RecipeStepBindingView
+from food_agent_v2.core.paths import CLEANED_DIR, CLEANED_RECIPES, PIPELINE_REPORTS_DIR
 
 # 时长提取模式
 TIME_PATTERNS = [
@@ -25,13 +29,91 @@ TIME_PATTERNS = [
 TIME_RANGE_PATTERN = re.compile(r"(\d+)\s*[-–—~～]\s*(\d+)\s*(分钟|分)")
 
 
+class StepTimeTask(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    step_index: int
+    raw_text: str
+    step_type: str
+    equipment_type: str | None
+    duration_seconds: int | None
+    duration_min_seconds: int | None
+    duration_max_seconds: int | None
+    time_source: Literal["explicit", "derived_from_range", "llm_estimate", "unknown"]
+    confidence: Literal["high", "medium", "low"]
+    bound_occurrence_ids: tuple[str, ...]
+    bound_ingredient_ids: tuple[int, ...]
+
+
+class StepTimeProfile(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    build_id: UUID
+    source_manifest_hash: str
+    recipe_id: int
+    steps: tuple[StepTimeTask, ...]
+    authority: Literal["deterministic_high", "deterministic_partial", "model_estimate"]
+    strict_time_feasible: bool | Literal["unknown"]
+    total_duration_seconds: int | None
+    total_duration_min_seconds: int | None
+    total_duration_max_seconds: int | None
+
+
 # 步骤类型关键词
-ACTIVE_KEYWORDS = {"切", "剁", "削", "刮", "剥", "洗", "腌", "拌", "搅",
-                   "揉", "擀", "包", "串", "穿", "铺", "摆", "装", "抹", "刷"}
-EQUIPMENT_KEYWORDS = {"炒", "煎", "炸", "烤", "蒸", "煮", "炖", "焖", "烧",
-                      "煲", "熬", "烩", "焗", "卤", "煸", "爆", "熘"}
-PASSIVE_KEYWORDS = {"醒", "冷藏", "冷冻", "浸泡", "泡发", "饧", "发酵",
-                    "静置", "冷却", "晾凉", "沥干", "沉淀"}
+ACTIVE_KEYWORDS = {
+    "切",
+    "剁",
+    "削",
+    "刮",
+    "剥",
+    "洗",
+    "腌",
+    "拌",
+    "搅",
+    "揉",
+    "擀",
+    "包",
+    "串",
+    "穿",
+    "铺",
+    "摆",
+    "装",
+    "抹",
+    "刷",
+}
+EQUIPMENT_KEYWORDS = {
+    "炒",
+    "煎",
+    "炸",
+    "烤",
+    "蒸",
+    "煮",
+    "炖",
+    "焖",
+    "烧",
+    "煲",
+    "熬",
+    "烩",
+    "焗",
+    "卤",
+    "煸",
+    "爆",
+    "熘",
+}
+PASSIVE_KEYWORDS = {
+    "醒",
+    "冷藏",
+    "冷冻",
+    "浸泡",
+    "泡发",
+    "饧",
+    "发酵",
+    "静置",
+    "冷却",
+    "晾凉",
+    "沥干",
+    "沉淀",
+}
 
 
 def _parse_duration(text: str) -> tuple[int | None, str | None]:
@@ -76,9 +158,17 @@ def _classify_step_type(text: str) -> str:
 def _infer_equipment(text: str) -> str | None:
     """推断所需设备类型。"""
     equipment_map = {
-        "炒": "wok", "煎": "pan", "炸": "deep_fryer", "烤": "oven",
-        "蒸": "steamer", "煮": "pot", "炖": "pot", "焖": "pot",
-        "煲": "pot", "熬": "pot", "烧": "wok",
+        "炒": "wok",
+        "煎": "pan",
+        "炸": "deep_fryer",
+        "烤": "oven",
+        "蒸": "steamer",
+        "煮": "pot",
+        "炖": "pot",
+        "焖": "pot",
+        "煲": "pot",
+        "熬": "pot",
+        "烧": "wok",
     }
     for kw, eq in equipment_map.items():
         if kw in text:
@@ -113,6 +203,128 @@ def split_steps(steps_raw: str) -> list[str]:
             seen.add(s)
             out.append(s)
     return out
+
+
+def build_step_profiles_from_views(
+    views: tuple[RecipeStepBindingView, ...],
+    *,
+    model_estimates: dict[tuple[int, int], int] | None = None,
+    strict_limit_seconds_by_recipe: dict[int, int] | None = None,
+) -> tuple[list[StepTimeProfile], dict]:
+    """只消费结构化步骤绑定视图；模型估算永不产生严格布尔结论。"""
+    estimates = model_estimates or {}
+    limits = strict_limit_seconds_by_recipe or {}
+    profiles: list[StepTimeProfile] = []
+    source_counts = {"explicit": 0, "derived_from_range": 0, "llm_estimate": 0, "unknown": 0}
+
+    for view in views:
+        tasks: list[StepTimeTask] = []
+        for step in view.steps:
+            duration, minimum, maximum, source, confidence = _duration_fact(step.raw_text)
+            estimate = estimates.get((view.recipe_id, step.step_index))
+            if duration is None and estimate is not None:
+                duration = minimum = maximum = estimate
+                source = "llm_estimate"
+                confidence = "low"
+            source_counts[source] += 1
+            step_type = _classify_step_type(step.raw_text)
+            tasks.append(
+                StepTimeTask(
+                    step_index=step.step_index,
+                    raw_text=step.raw_text,
+                    step_type=step_type,
+                    equipment_type=(
+                        _infer_equipment(step.raw_text) if step_type == "equipment" else None
+                    ),
+                    duration_seconds=duration,
+                    duration_min_seconds=minimum,
+                    duration_max_seconds=maximum,
+                    time_source=source,
+                    confidence=confidence,
+                    bound_occurrence_ids=step.bound_occurrence_ids,
+                    bound_ingredient_ids=step.bound_ingredient_ids,
+                )
+            )
+
+        sources = {task.time_source for task in tasks}
+        if "llm_estimate" in sources:
+            authority = "model_estimate"
+        elif not tasks or "unknown" in sources or "derived_from_range" in sources:
+            authority = "deterministic_partial"
+        else:
+            authority = "deterministic_high"
+
+        total = _sum_known(task.duration_seconds for task in tasks)
+        total_min = _sum_known(task.duration_min_seconds for task in tasks)
+        total_max = _sum_known(task.duration_max_seconds for task in tasks)
+        strict: bool | Literal["unknown"] = "unknown"
+        limit = limits.get(view.recipe_id)
+        if limit is not None and authority != "model_estimate" and total_min is not None:
+            if total_max is not None and total_max <= limit:
+                strict = True
+            elif total_min > limit:
+                strict = False
+
+        profiles.append(
+            StepTimeProfile(
+                build_id=view.build_id,
+                source_manifest_hash=view.source_manifest_hash,
+                recipe_id=view.recipe_id,
+                steps=tuple(tasks),
+                authority=authority,
+                strict_time_feasible=strict,
+                total_duration_seconds=total,
+                total_duration_min_seconds=total_min,
+                total_duration_max_seconds=total_max,
+            )
+        )
+
+    return profiles, {
+        "stage": "step_time_views",
+        "total_recipes": len(profiles),
+        "time_source_counts": source_counts,
+        "status": "passed",
+    }
+
+
+def _duration_fact(
+    text: str,
+) -> tuple[
+    int | None,
+    int | None,
+    int | None,
+    Literal["explicit", "derived_from_range", "unknown"],
+    Literal["high", "medium", "low"],
+]:
+    minimum = maximum = 0
+    has_range = False
+    masked = list(text)
+    for match in TIME_RANGE_PATTERN.finditer(text):
+        low = int(match.group(1)) * 60
+        high = int(match.group(2)) * 60
+        minimum += min(low, high)
+        maximum += max(low, high)
+        has_range = True
+        masked[match.start() : match.end()] = " " * (match.end() - match.start())
+
+    remaining = "".join(masked)
+    exact = 0
+    for pattern, multiplier in TIME_PATTERNS:
+        exact += sum(int(match.group(1)) * multiplier for match in pattern.finditer(remaining))
+    minimum += exact
+    maximum += exact
+    if has_range:
+        return (minimum + maximum) // 2, minimum, maximum, "derived_from_range", "medium"
+    if exact:
+        return exact, exact, exact, "explicit", "high"
+    return None, None, None, "unknown", "low"
+
+
+def _sum_known(values) -> int | None:
+    materialized = tuple(values)
+    if not materialized or any(value is None for value in materialized):
+        return None
+    return sum(value for value in materialized if value is not None)
 
 
 def build_step_profiles(cleaned_recipes: list[dict]) -> tuple[list[dict], dict]:
@@ -161,16 +373,18 @@ def build_step_profiles(cleaned_recipes: list[dict]) -> tuple[list[dict], dict]:
                 medium_conf_count += 1
 
             total_steps += 1
-            step_tasks.append({
-                "step_index": i + 1,
-                "description_raw": text,
-                "step_type": step_type,
-                "duration_seconds": duration,
-                "duration_confidence": conf,
-                "equipment_type": equipment,
-                "mutex_key": mutex_key,
-                "depends_on": [],  # V2: 从步骤顺序推断依赖
-            })
+            step_tasks.append(
+                {
+                    "step_index": i + 1,
+                    "description_raw": text,
+                    "step_type": step_type,
+                    "duration_seconds": duration,
+                    "duration_confidence": conf,
+                    "equipment_type": equipment,
+                    "mutex_key": mutex_key,
+                    "depends_on": [],  # V2: 从步骤顺序推断依赖
+                }
+            )
 
         # 按顺序推断依赖：本菜内下一步依赖上一步（被动等待结束后才能继续本菜后续步骤）
         for i in range(1, len(step_tasks)):
@@ -179,24 +393,29 @@ def build_step_profiles(cleaned_recipes: list[dict]) -> tuple[list[dict], dict]:
             if prev["step_index"] not in curr["depends_on"]:
                 curr["depends_on"].append(prev["step_index"])
 
-        profiles.append({
-            "recipe_id": rid,
-            "name": recipe["名称"],
-            "step_tasks": step_tasks,
-            "total_steps": len(step_tasks),
-            "total_active_seconds": sum(
-                s["duration_seconds"] for s in step_tasks
-                if s["step_type"] == "active" and s["duration_seconds"]
-            ),
-            "total_equipment_seconds": sum(
-                s["duration_seconds"] for s in step_tasks
-                if s["step_type"] == "equipment" and s["duration_seconds"]
-            ),
-            "total_passive_seconds": sum(
-                s["duration_seconds"] for s in step_tasks
-                if s["step_type"] == "passive" and s["duration_seconds"]
-            ),
-        })
+        profiles.append(
+            {
+                "recipe_id": rid,
+                "name": recipe["名称"],
+                "step_tasks": step_tasks,
+                "total_steps": len(step_tasks),
+                "total_active_seconds": sum(
+                    s["duration_seconds"]
+                    for s in step_tasks
+                    if s["step_type"] == "active" and s["duration_seconds"]
+                ),
+                "total_equipment_seconds": sum(
+                    s["duration_seconds"]
+                    for s in step_tasks
+                    if s["step_type"] == "equipment" and s["duration_seconds"]
+                ),
+                "total_passive_seconds": sum(
+                    s["duration_seconds"]
+                    for s in step_tasks
+                    if s["step_type"] == "passive" and s["duration_seconds"]
+                ),
+            }
+        )
 
     output_path = CLEANED_DIR / "time_profiles.jsonl"
     with output_path.open("w", encoding="utf-8") as f:
