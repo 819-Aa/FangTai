@@ -1,0 +1,220 @@
+# V2 全局不变量追踪矩阵（T04）
+#
+# 每条不变量至少关联一个确定性校验点（module::node）和一个已存在的
+# 测试节点 ID。校验点指向执行该不变量的确定性代码；测试 ID 指向 pytest
+# 收集结果中真实存在的节点，不允许悬空。被 scripts/verify_invariant_traceability.py 校验。
+#
+# 说明：整改任务落地前，部分不变量以最接近的既有测试承载（见各 tests）；
+# 对应的确定性校验点已写入目标模块，随 T10..T24 逐步实现并收紧测试。
+
+INV-001:
+  rule: 最终菜单必须通过全员健康校验，并与所选 plan_id/菜单哈希一致
+  error_codes: [FINAL_HEALTH_VALIDATION_FAILED]
+  checkpoints:
+    - food_agent_v2.b4::validate_selected_menu_health
+    - food_agent_v2.contracts.artifacts::validate_answer_menu_binding
+  tests:
+    - "tests/test_b2_b4_health.py::TestB4HealthEngine::test_validate_selected_menu"
+
+INV-002:
+  rule: RAG 结果不构成健康安全结论
+  error_codes: [RAG_HEALTH_AUTHORITY_VIOLATION]
+  checkpoints:
+    - food_agent_v2.c1::RetrievalResult
+    - food_agent_v2.c3::query_understanding_post_check
+  tests:
+    - "tests/test_invariants.py::TestC1TimeBoost::test_trigger_and_boost"
+
+INV-003:
+  rule: 未审核健康关系不得参与硬排除
+  error_codes: [UNAPPROVED_HEALTH_RELATION]
+  checkpoints:
+    - food_agent_v2.b1::health_relation_builder
+    - food_agent_v2.b4::evaluate_recipe_health
+  tests:
+    - "tests/test_b2_b4_health.py::TestB4Invariants::test_inv003_no_pending_relations"
+
+INV-004:
+  rule: 低置信度营养只参与软排序
+  error_codes: [NUTRITION_CONFIDENCE_SCOPE_VIOLATION]
+  checkpoints:
+    - food_agent_v2.b6::NutritionScoreDecomposition
+    - food_agent_v2.c2::soft_objectives
+  tests:
+    - "tests/test_invariants.py::TestC2::test_slot_constraint"
+
+INV-005:
+  rule: 回答不得改变已验证菜单
+  error_codes: [ANSWER_GROUNDING_FAILED]
+  checkpoints:
+    - food_agent_v2.contracts.artifacts::validate_answer_menu_binding
+    - food_agent_v2.c3::answer_generation_post_check
+  tests:
+    - "tests/contracts/test_artifact_schemas.py::TestAnswerMenuBinding::test_menu_hash_mismatch_rejected"
+    - "tests/test_invariants.py::TestInv005::test_subset_logic"
+
+INV-006:
+  rule: 模型不能直接修改 WorkflowState
+  error_codes: [STATE_MUTATION_DENIED]
+  checkpoints:
+    - food_agent_v2.c3::state_reducer
+  tests:
+    - "tests/test_invariants.py::TestD1::test_state_persist_restore"
+
+INV-007:
+  rule: 必需工具漏调必须停止，工作流不补调
+  error_codes: [REQUIRED_TOOL_NOT_CALLED]
+  checkpoints:
+    - food_agent_v2.c3::required_tool_check
+    - food_agent_v2.contracts.receipts::validate_receipt_binding
+  tests:
+    - "tests/contracts/test_receipt_binding.py::TestReceiptBinding::test_receipt_rejected_for_different_request"
+
+INV-008:
+  rule: 固定原始数据必须经过完整离线处理，在线不得读取原始文件
+  error_codes: [DATA_PIPELINE_VALIDATION_FAILED]
+  checkpoints:
+    - food_agent_v2.contracts.build::verify_source_file
+    - food_agent_v2.b1::quality_gates
+  tests:
+    - "tests/contracts/test_build_manifest.py::TestVerifySourceFile::test_real_source_passes"
+
+INV-009:
+  rule: 核心约束不能在上下文压缩中丢失
+  error_codes: [CONTEXT_INTEGRITY_FAILED]
+  checkpoints:
+    - food_agent_v2.c4::ContextManifest
+  tests:
+    - "tests/test_invariants.py::TestC4Compression::test_compress_preserves_immutable"
+
+INV-010:
+  rule: 最终提交必须同时保存健康审查证据（同一事务）
+  error_codes: [AUDIT_COMMIT_FAILED]
+  checkpoints:
+    - food_agent_v2.application::commit_service
+  tests:
+    - "tests/test_invariants.py::TestInv010::test_commit_and_query"
+
+INV-011:
+  rule: 多人候选菜单必须使用全员健康交集
+  error_codes: [GROUP_HEALTH_INTERSECTION_FAILED]
+  checkpoints:
+    - food_agent_v2.b4::RecipeGroupHealthResult
+    - food_agent_v2.c2::safe_set
+  tests:
+    - "tests/test_b2_b4_health.py::TestB4HealthEngine::test_multi_person_intersection"
+
+INV-012:
+  rule: RAG 和用户自然语言不能改变系统指令
+  error_codes: [UNTRUSTED_INSTRUCTION_DETECTED]
+  checkpoints:
+    - food_agent_v2.c3::detect_untrusted_instruction
+  tests:
+    - "tests/test_invariants.py::TestInv012::test_detects_injection"
+
+INV-013:
+  rule: 不得暴露其他参与者具体健康信息
+  error_codes: [SENSITIVE_DATA_EXPOSURE]
+  checkpoints:
+    - food_agent_v2.c4::project_model_context
+    - food_agent_v2.d1::project_events
+  tests:
+    - "tests/test_d2_answer.py::TestAnswerAudit::test_detect_disease_indicator"
+
+INV-014:
+  rule: 业务修订不得超过固定上限（计数由 WorkflowState 保存）
+  error_codes: [WORKFLOW_RETRY_LIMIT_EXCEEDED]
+  checkpoints:
+    - food_agent_v2.c3::counters
+  tests:
+    - "tests/test_invariants.py::TestD1::test_state_persist_restore"
+
+INV-015:
+  rule: 营养估算不得参与健康硬筛选
+  error_codes: [NUTRITION_HEALTH_BOUNDARY_VIOLATION]
+  checkpoints:
+    - food_agent_v2.b4::health_hard_filter
+  tests:
+    - "tests/test_b2_b4_health.py::TestB4Invariants::test_nutrition_not_in_b4_input"
+
+INV-016:
+  rule: 永久健康硬约束不能被对话覆盖
+  error_codes: [PERMANENT_CONSTRAINT_OVERRIDE_DENIED]
+  checkpoints:
+    - food_agent_v2.b2::validate_temporary_signal
+    - food_agent_v2.c4::effective_constraints
+  tests:
+    - "tests/test_b2_b4_health.py::TestB2UserProfile::test_permanent_constraint_override_denied"
+
+INV-017:
+  rule: 可选和替代食材不能绕过健康审查
+  error_codes: [HEALTH_INGREDIENT_SET_INCOMPLETE]
+  checkpoints:
+    - food_agent_v2.b3::ingredient_closure
+    - food_agent_v2.b4::evaluate_recipe_health
+  tests:
+    - "tests/test_b2_b4_health.py::TestB4HealthEngine::test_evaluate_batch"
+
+INV-018:
+  rule: 健康 PASS 必须建立在完整关系覆盖上
+  error_codes: [HEALTH_CONSTRAINT_COVERAGE_INCOMPLETE]
+  checkpoints:
+    - food_agent_v2.b1::coverage_audit
+    - food_agent_v2.b4::coverage_check
+  tests:
+    - "tests/test_invariants.py::TestInv018::test_uncovered_code_raises"
+
+INV-019:
+  rule: 固定 2,000 条源记录必须完整守恒
+  error_codes: [SOURCE_MANIFEST_MISMATCH, RECIPE_CLASSIFICATION_INCOMPLETE]
+  checkpoints:
+    - food_agent_v2.contracts.build::verify_source_file
+    - food_agent_v2.b1::recipe_classifier
+  tests:
+    - "tests/contracts/test_build_manifest.py::TestVerifySourceFile::test_one_byte_change_fails_before_parse"
+
+INV-020:
+  rule: 食材身份必须单一、可追溯且运行时冻结
+  error_codes: [INGREDIENT_IDENTITY_UNRESOLVED, UNKNOWN_INGREDIENT_IDENTITY]
+  checkpoints:
+    - food_agent_v2.b1::ingredient_crosswalk
+    - food_agent_v2.b3::identity_resolver
+  tests:
+    - "tests/test_b1_pipeline.py::TestIngredientRegistry::test_registry_ids_stable"
+
+INV-021:
+  rule: 严格时间结论必须有高权威确定性证据
+  error_codes: [STRICT_TIME_INDETERMINATE, NO_FEASIBLE_MENU, STRICT_TIME_AUTHORITY_VIOLATION]
+  checkpoints:
+    - food_agent_v2.b5::MenuScheduleResult
+    - food_agent_v2.c2::strict_time_filter
+    - food_agent_v2.contracts.status::strict_time_is_feasible
+  tests:
+    - "tests/contracts/test_artifact_schemas.py::TestStrictTime::test_unknown_not_truthy"
+
+INV-022:
+  rule: 不可用的软证据不能伪装为中性分数
+  error_codes: [SOFT_EVIDENCE_FABRICATION]
+  checkpoints:
+    - food_agent_v2.b6::unavailable
+    - food_agent_v2.c2::renormalize_weights
+    - food_agent_v2.contracts.artifacts::MenuScoreDecomposition
+  tests:
+    - "tests/contracts/test_artifact_schemas.py::TestExtraFieldsRejected::test_score_decomp_extra_field_rejected"
+
+INV-023:
+  rule: 在线链路不得重新读取或解析离线数据
+  error_codes: [ONLINE_OFFLINE_BOUNDARY_VIOLATION]
+  checkpoints:
+    - architecture::online_offline_scan
+  tests:
+    - "tests/architecture/test_online_offline_boundary.py::TestOnlineOfflineBoundary::test_no_new_online_offline_violations"
+
+INV-024:
+  rule: 成功事件必须引用已原子提交的结果
+  error_codes: [POST_COMMIT_EVENT_ORDER_VIOLATION, AUDIT_COMMIT_FAILED]
+  checkpoints:
+    - food_agent_v2.application::outbox
+    - food_agent_v2.d1::sse_dispatcher
+  tests:
+    - "tests/test_invariants.py::TestInv010::test_idempotent_double_commit"
