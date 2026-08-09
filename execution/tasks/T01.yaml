@@ -1,0 +1,33 @@
+{
+  "task_id": "T01",
+  "spec_hash": "58356145a11102b6ca1ac9d8c1e346c63c5493ac332ebc2a544fb25fe9940bf6",
+  "base_commit": "e2b949a6e285cfaccc5ee26f8b4185ca8c4ad170",
+  "allowed_paths": [
+    "execution/README.md",
+    "execution/task-envelope.schema.json",
+    "execution/tasks/T01.yaml",
+    "scripts/execution/check_changed_paths.py",
+    "scripts/execution/verify_task_envelope.py",
+    "scripts/execution/collect_evidence.py",
+    "tests/execution/test_execution_guards.py"
+  ],
+  "forbidden_paths": [
+    "docs/contracts/**",
+    "docs/decisions/**",
+    "data/raw/**",
+    "DEEPSEEK_START_HERE.md",
+    "reports/**",
+    "db/**"
+  ],
+  "required_tests": [
+    "tests/execution/test_execution_guards.py"
+  ],
+  "required_invariants": [],
+  "required_artifacts": [],
+  "human_gates": [],
+  "stop_conditions": [
+    "越界 diff 立即拒绝",
+    "spec_hash 或 base_commit 不匹配立即拒绝",
+    "证据缺退出码不能通过"
+  ]
+}
