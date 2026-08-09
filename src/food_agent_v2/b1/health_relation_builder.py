@@ -7,76 +7,399 @@ B4 在运行时只做 O(1) 查找。
 
 from __future__ import annotations
 
+import csv
 import json
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
-from food_agent_v2.core.paths import CLEANED_DIR, PIPELINE_REPORTS_DIR
+from pydantic import BaseModel, ConfigDict
+
+from food_agent_v2.core.paths import CLEANED_DIR
+
+# T10 的 B2 约束注册表必须与此闭包逐项一致；禁止运行时动态扩展。
+ALLOWED_CONSTRAINT_CODES = (
+    "allergy_peanut",
+    "allergy_tree_nut",
+    "allergy_dairy",
+    "allergy_egg",
+    "allergy_seafood",
+    "allergy_shrimp",
+    "allergy_crab",
+    "allergy_fish",
+    "allergy_shellfish",
+    "allergy_soy",
+    "allergy_wheat",
+    "allergy_sesame",
+    "allergy_mango",
+    "allergy_pineapple",
+    "allergy_alcohol",
+    "disease_hypertension",
+    "disease_hyperlipidemia",
+    "disease_hypercholesterolemia",
+    "disease_hyperglycemia",
+    "disease_diabetes",
+    "disease_hyperuricemia",
+    "disease_gout",
+    "disease_kidney",
+    "disease_fatty_liver",
+    "disease_chd",
+    "disease_obesity",
+    "disease_anemia",
+    "disease_osteoporosis",
+    "disease_hyperthyroidism",
+    "disease_hypothyroidism",
+    "indicator_high_bp",
+    "indicator_high_glucose",
+    "indicator_high_uric_acid",
+    "indicator_high_cholesterol",
+    "group_pregnancy",
+    "group_lactation",
+    "group_child",
+    "group_elderly",
+)
+
+
+class HealthRelationCandidate(BaseModel):
+    """机器候选只能建议，不能携带正式决定或签名。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    constraint_code: str
+    ingredient_id: int
+    ingredient_name: str
+    suggested_decision: Literal["hard_exclude", "no_hard_relation"]
+    suggested_reason: str
+    suggested_evidence: str
+    decision: None = None
+    review_status: Literal["pending"] = "pending"
+    reviewer: None = None
+    reviewed_at: None = None
+
+
+class HardHealthRelation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    relation_id: str
+    constraint_code: str
+    ingredient_id: int
+    effect: Literal["hard_exclude"] = "hard_exclude"
+    relation_basis: Literal["direct"] = "direct"
+    review_status: Literal["approved"] = "approved"
+    hard_filter: Literal[True] = True
+    public_reason_code: str = "reviewed_health_relation"
+    evidence_refs: tuple[str, ...]
+    reviewer: str
+    reviewed_at: str
+
+
+class HealthRelationCoverage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    constraint_code: str
+    coverage_status: Literal["complete"] = "complete"
+    universe_ingredient_count: int
+    reviewed_ingredient_count: int
+    relation_count: int
+    evidence_ref: str
+
+
+@dataclass(frozen=True)
+class ApprovedHealthRelationArtifacts:
+    decisions: tuple
+    hard_relations: tuple[HardHealthRelation, ...]
+    coverage: tuple[HealthRelationCoverage, ...]
 
 
 # 食材分类关键词 → constraint_code 映射
 # 每个约束代码对应一组食材名模式（基于食材名中的关键词匹配）
 CONSTRAINT_INGREDIENT_PATTERNS: dict[str, list[str]] = {
     # 过敏类
-    "allergy_seafood": ["虾", "蟹", "贝", "鱿鱼", "章鱼", "墨鱼", "蛤", "蚝", "蛏", "蚌",
-                        "海参", "海胆", "海蜇", "螺", "鲍鱼", "扇贝", "青口", "花甲",
-                        "龙虾", "基围虾", "对虾", "明虾", "皮皮虾", "小龙虾", "鳌虾",
-                        "三文鱼", "金枪鱼", "鳕鱼", "鲈鱼", "鲳鱼", "带鱼", "黄鱼",
-                        "鳗鱼", "鲶鱼", "石斑", "多宝鱼", "龙利鱼", "比目鱼", "鳟鱼",
-                        "鱼"],
+    "allergy_seafood": [
+        "虾",
+        "蟹",
+        "贝",
+        "鱿鱼",
+        "章鱼",
+        "墨鱼",
+        "蛤",
+        "蚝",
+        "蛏",
+        "蚌",
+        "海参",
+        "海胆",
+        "海蜇",
+        "螺",
+        "鲍鱼",
+        "扇贝",
+        "青口",
+        "花甲",
+        "龙虾",
+        "基围虾",
+        "对虾",
+        "明虾",
+        "皮皮虾",
+        "小龙虾",
+        "鳌虾",
+        "三文鱼",
+        "金枪鱼",
+        "鳕鱼",
+        "鲈鱼",
+        "鲳鱼",
+        "带鱼",
+        "黄鱼",
+        "鳗鱼",
+        "鲶鱼",
+        "石斑",
+        "多宝鱼",
+        "龙利鱼",
+        "比目鱼",
+        "鳟鱼",
+        "鱼",
+    ],
     "allergy_peanut": ["花生", "花生酱", "花生粉", "花生碎", "花生油"],
-    "allergy_tree_nut": ["核桃", "杏仁", "腰果", "榛子", "松子", "开心果", "夏威夷果",
-                         "巴旦木", "碧根果", "栗子", "瓜子"],
+    "allergy_tree_nut": [
+        "核桃",
+        "杏仁",
+        "腰果",
+        "榛子",
+        "松子",
+        "开心果",
+        "夏威夷果",
+        "巴旦木",
+        "碧根果",
+        "栗子",
+        "瓜子",
+    ],
     "allergy_dairy": ["牛奶", "奶油", "黄油", "芝士", "奶酪", "炼乳", "酸奶", "乳清"],
     "allergy_egg": ["鸡蛋", "鸭蛋", "蛋黄", "蛋白", "蛋液", "鹌鹑蛋", "咸蛋", "皮蛋"],
     "allergy_soy": ["豆腐", "豆浆", "豆皮", "腐竹", "豆干", "豆腐乳", "黄豆", "毛豆"],
-    "allergy_wheat": ["面粉", "面包", "面条", "馒头", "饺子", "馄饨", "包子", "吐司",
-                      "蛋糕", "饼干"],
+    "allergy_wheat": [
+        "面粉",
+        "面包",
+        "面条",
+        "馒头",
+        "饺子",
+        "馄饨",
+        "包子",
+        "吐司",
+        "蛋糕",
+        "饼干",
+    ],
     "allergy_sesame": ["芝麻", "芝麻酱", "芝麻油", "香油"],
     # 独立虾/蟹/芒果过敏码（B2 对"虾"派生出 allergy_shrimp、"蟹/螃蟹"→allergy_crab、"芒果"→allergy_mango）
-    "allergy_shrimp": ["虾", "基围虾", "对虾", "明虾", "皮皮虾", "小龙虾", "龙虾",
-                       "虾仁", "虾皮", "虾米", "鲜虾", "河虾", "大头虾", "虾饺", "虾滑"],
-    "allergy_crab": ["蟹", "螃蟹", "大闸蟹", "梭子蟹", "青蟹", "蟹肉", "蟹黄", "蟹粉",
-                     "蟹柳", "蟹肉棒", "蟹膏", "蟹腿"],
+    "allergy_shrimp": [
+        "虾",
+        "基围虾",
+        "对虾",
+        "明虾",
+        "皮皮虾",
+        "小龙虾",
+        "龙虾",
+        "虾仁",
+        "虾皮",
+        "虾米",
+        "鲜虾",
+        "河虾",
+        "大头虾",
+        "虾饺",
+        "虾滑",
+    ],
+    "allergy_crab": [
+        "蟹",
+        "螃蟹",
+        "大闸蟹",
+        "梭子蟹",
+        "青蟹",
+        "蟹肉",
+        "蟹黄",
+        "蟹粉",
+        "蟹柳",
+        "蟹肉棒",
+        "蟹膏",
+        "蟹腿",
+    ],
     "allergy_mango": ["芒果", "芒果干", "芒果酱", "芒果肉", "芒果泥"],
-    "allergy_fish": ["鱼", "鲈鱼", "鳕鱼", "三文鱼", "鲫鱼", "带鱼", "草鱼", "黄鱼",
-                     "鳗鱼", "鲳鱼", "鲶鱼", "龙利鱼", "比目鱼", "鱼丸", "鱼片",
-                     "鱼头", "鱼露", "鱼子"],
-    "allergy_shellfish": ["贝", "蛤", "蚝", "蛏", "蚌", "螺", "扇贝", "青口", "花甲",
-                          "牡蛎", "干贝", "鲍鱼", "海螺", "蛏子", "蛤蜊"],
-    "allergy_alcohol": ["啤酒", "白酒", "红酒", "黄酒", "料酒", "米酒", "酒酿", "醪糟",
-                        "葡萄酒", "朗姆酒", "威士忌", "白兰地", "绍兴酒"],
-
+    "allergy_fish": [
+        "鱼",
+        "鲈鱼",
+        "鳕鱼",
+        "三文鱼",
+        "鲫鱼",
+        "带鱼",
+        "草鱼",
+        "黄鱼",
+        "鳗鱼",
+        "鲳鱼",
+        "鲶鱼",
+        "龙利鱼",
+        "比目鱼",
+        "鱼丸",
+        "鱼片",
+        "鱼头",
+        "鱼露",
+        "鱼子",
+    ],
+    "allergy_shellfish": [
+        "贝",
+        "蛤",
+        "蚝",
+        "蛏",
+        "蚌",
+        "螺",
+        "扇贝",
+        "青口",
+        "花甲",
+        "牡蛎",
+        "干贝",
+        "鲍鱼",
+        "海螺",
+        "蛏子",
+        "蛤蜊",
+    ],
+    "allergy_alcohol": [
+        "啤酒",
+        "白酒",
+        "红酒",
+        "黄酒",
+        "料酒",
+        "米酒",
+        "酒酿",
+        "醪糟",
+        "葡萄酒",
+        "朗姆酒",
+        "威士忌",
+        "白兰地",
+        "绍兴酒",
+    ],
     # 疾病类
-    "disease_hyperuricemia": ["动物内脏", "猪肝", "猪心", "猪腰", "猪肚", "鸡肝", "鸭肝",
-                              "牛百叶", "毛肚", "黄喉", "腰花",
-                              "沙丁鱼", "凤尾鱼", "鱼子", "虾", "蟹", "贝",
-                              "浓汤", "高汤", "骨头汤", "火锅底料", "啤酒",
-                              "香菇", "紫菜", "海带", "干贝", "瑶柱", "牡蛎"],
-    "disease_diabetes": ["白糖", "白砂糖", "冰糖", "红糖", "蜂蜜", "糖浆", "果酱",
-                         "蜂蜜", "麦芽糖", "甜面酱"],
-    "disease_hypertension": ["咸菜", "酸菜", "泡菜", "腊肉", "腊肠", "火腿", "咸鱼",
-                             "榨菜", "腌", "酱菜", "腐乳", "豆豉", "味精", "鸡精",
-                             "高盐", "重盐"],
-    "disease_hyperlipidemia": ["猪油", "肥肉", "奶油", "黄油", "油炸", "酥皮",
-                               "动物内脏", "猪肝", "猪脑", "蟹黄", "鱼子",
-                               "蛋黄", "虾膏"],
-
+    "disease_hyperuricemia": [
+        "动物内脏",
+        "猪肝",
+        "猪心",
+        "猪腰",
+        "猪肚",
+        "鸡肝",
+        "鸭肝",
+        "牛百叶",
+        "毛肚",
+        "黄喉",
+        "腰花",
+        "沙丁鱼",
+        "凤尾鱼",
+        "鱼子",
+        "虾",
+        "蟹",
+        "贝",
+        "浓汤",
+        "高汤",
+        "骨头汤",
+        "火锅底料",
+        "啤酒",
+        "香菇",
+        "紫菜",
+        "海带",
+        "干贝",
+        "瑶柱",
+        "牡蛎",
+    ],
+    "disease_diabetes": [
+        "白糖",
+        "白砂糖",
+        "冰糖",
+        "红糖",
+        "蜂蜜",
+        "糖浆",
+        "果酱",
+        "蜂蜜",
+        "麦芽糖",
+        "甜面酱",
+    ],
+    "disease_hypertension": [
+        "咸菜",
+        "酸菜",
+        "泡菜",
+        "腊肉",
+        "腊肠",
+        "火腿",
+        "咸鱼",
+        "榨菜",
+        "腌",
+        "酱菜",
+        "腐乳",
+        "豆豉",
+        "味精",
+        "鸡精",
+        "高盐",
+        "重盐",
+    ],
+    "disease_hyperlipidemia": [
+        "猪油",
+        "肥肉",
+        "奶油",
+        "黄油",
+        "油炸",
+        "酥皮",
+        "动物内脏",
+        "猪肝",
+        "猪脑",
+        "蟹黄",
+        "鱼子",
+        "蛋黄",
+        "虾膏",
+    ],
     # 特殊人群
-    "group_pregnancy": ["酒精", "生食", "生鱼", "刺身", "含酒精", "酒酿",
-                        "咖啡因", "咖啡", "浓茶",
-                        "薏米", "薏仁", "山楂", "螃蟹", "甲鱼",
-                        "未熟", "半生"],
-    "group_lactation": ["酒精", "啤酒", "白酒", "红酒", "料酒", "酒酿", "醪糟",
-                        "咖啡因", "咖啡", "浓茶", "辛辣", "辣椒", "麻辣",
-                        "生食", "生鱼", "刺身"],
+    "group_pregnancy": [
+        "酒精",
+        "生食",
+        "生鱼",
+        "刺身",
+        "含酒精",
+        "酒酿",
+        "咖啡因",
+        "咖啡",
+        "浓茶",
+        "薏米",
+        "薏仁",
+        "山楂",
+        "螃蟹",
+        "甲鱼",
+        "未熟",
+        "半生",
+    ],
+    "group_lactation": [
+        "酒精",
+        "啤酒",
+        "白酒",
+        "红酒",
+        "料酒",
+        "酒酿",
+        "醪糟",
+        "咖啡因",
+        "咖啡",
+        "浓茶",
+        "辛辣",
+        "辣椒",
+        "麻辣",
+        "生食",
+        "生鱼",
+        "刺身",
+    ],
     "group_child": ["酒精", "咖啡因", "咖啡", "浓茶", "辛辣", "辣椒", "麻辣"],
     "group_elderly": ["高盐", "高糖", "高脂"],
-
     # 异常指标
     "indicator_high_uric_acid": ["动物内脏", "海鲜", "虾", "蟹", "贝", "啤酒", "浓汤"],
     "indicator_high_glucose": ["糖", "蜂蜜", "甜食", "高糖"],
-    "indicator_high_cholesterol": ["动物内脏", "蛋黄", "奶油", "黄油", "肥肉", "虾膏",
-                                   "蟹黄", "鱼子"],
+    "indicator_high_cholesterol": [
+        "动物内脏",
+        "蛋黄",
+        "奶油",
+        "黄油",
+        "肥肉",
+        "虾膏",
+        "蟹黄",
+        "鱼子",
+    ],
     "indicator_high_bp": ["高盐", "咸", "腌", "腊", "味精", "鸡精"],
 }
 
@@ -87,10 +410,10 @@ CONSTRAINT_INGREDIENT_PATTERNS: dict[str, list[str]] = {
 # 其余单字关键词（咸/辣/生/糖/腌/腊等）继续使用保守词边界匹配，避免误伤生菜、生姜、生抽等。
 BROAD_SINGLE_CHARS = {"虾", "蟹", "贝", "鱼", "蛤", "蚝", "蛏", "蚌", "螺"}
 _SINGLE_CHAR_GUARDS = {
-    "蟹": lambda n: ("菇" in n or "菌" in n),          # 蟹味菇/海鲜菇：蘑菇不是蟹
-    "贝": lambda n: ("贝贝南瓜" in n or "川贝" in n),   # 贝贝南瓜/川贝：非贝类
-    "鱼": lambda n: ("腥草" in n),                      # 鱼腥草：草本非鱼
-    "蚝": lambda n: ("素蚝油" in n),                    # 素蚝油：素食调味汁，不含蚝
+    "蟹": lambda n: "菇" in n or "菌" in n,  # 蟹味菇/海鲜菇：蘑菇不是蟹
+    "贝": lambda n: "贝贝南瓜" in n or "川贝" in n,  # 贝贝南瓜/川贝：非贝类
+    "鱼": lambda n: "腥草" in n,  # 鱼腥草：草本非鱼
+    "蚝": lambda n: "素蚝油" in n,  # 素蚝油：素食调味汁，不含蚝
     "虾": lambda n: False,
     "蛤": lambda n: False,
     "蛏": lambda n: False,
@@ -143,66 +466,326 @@ def _single_char_boundary_match(name: str, kw: str) -> bool:
 def _is_chinese(ch: str) -> bool:
     """判断字符是否为中文字符（CJK统一表意文字）。"""
     cp = ord(ch)
-    return (0x4E00 <= cp <= 0x9FFF or  # CJK Unified
-            0x3400 <= cp <= 0x4DBF or  # CJK Extended A
-            0x20000 <= cp <= 0x2A6DF)  # CJK Extended B
+    return (
+        0x4E00 <= cp <= 0x9FFF  # CJK Unified
+        or 0x3400 <= cp <= 0x4DBF  # CJK Extended A
+        or 0x20000 <= cp <= 0x2A6DF
+    )  # CJK Extended B
+
+
+def generate_health_relation_candidates(
+    allowed_constraint_codes: tuple[str, ...],
+    health_ingredients: tuple[dict, ...],
+) -> tuple[HealthRelationCandidate, ...]:
+    """生成完整笛卡尔积候选；输出固定为 pending，绝不自动批准。"""
+    if len(set(allowed_constraint_codes)) != len(allowed_constraint_codes):
+        raise ValueError("allowed_constraint_codes 存在重复")
+    ingredient_ids = [int(item["ingredient_id"]) for item in health_ingredients]
+    if len(set(ingredient_ids)) != len(ingredient_ids):
+        raise ValueError("health_ingredients 存在重复 ingredient_id")
+    unknown_codes = set(allowed_constraint_codes) - set(ALLOWED_CONSTRAINT_CODES)
+    if unknown_codes:
+        raise ValueError(f"未知 constraint_code: {sorted(unknown_codes)}")
+
+    candidates: list[HealthRelationCandidate] = []
+    for code in allowed_constraint_codes:
+        patterns = CONSTRAINT_INGREDIENT_PATTERNS.get(code, [])
+        for ingredient in health_ingredients:
+            name = ingredient["name_canonical"]
+            matched_patterns = _matching_patterns(name, patterns)
+            if matched_patterns:
+                suggestion = "hard_exclude"
+                reason = "unverified_legacy_name_pattern"
+                evidence = f"legacy-pattern:{code}:{'|'.join(matched_patterns)}"
+            else:
+                suggestion = "no_hard_relation"
+                reason = "no_curated_rule_candidate"
+                evidence = f"candidate-gap:{code}:no-pattern-match"
+            candidates.append(
+                HealthRelationCandidate(
+                    constraint_code=code,
+                    ingredient_id=int(ingredient["ingredient_id"]),
+                    ingredient_name=name,
+                    suggested_decision=suggestion,
+                    suggested_reason=reason,
+                    suggested_evidence=evidence,
+                )
+            )
+    return tuple(candidates)
+
+
+def build_approved_health_relation_artifacts(
+    decisions: tuple,
+    *,
+    allowed_constraint_codes: tuple[str, ...],
+    health_ingredient_ids: tuple[int, ...],
+) -> ApprovedHealthRelationArtifacts:
+    """把已由独立审核器验证的全矩阵冻结为关系和覆盖产物。"""
+    expected = {
+        (code, ingredient_id)
+        for code in allowed_constraint_codes
+        for ingredient_id in health_ingredient_ids
+    }
+    observed = {(item.constraint_code, item.ingredient_id) for item in decisions}
+    if observed != expected or len(decisions) != len(expected):
+        missing = sorted(expected - observed)[:10]
+        extra = sorted(observed - expected)[:10]
+        raise ValueError(f"批准矩阵不完整: missing={missing}, extra={extra}")
+
+    hard_relations = tuple(
+        HardHealthRelation(
+            relation_id=f"health-relation:{item.constraint_code}:{item.ingredient_id}",
+            constraint_code=item.constraint_code,
+            ingredient_id=item.ingredient_id,
+            evidence_refs=(item.evidence,),
+            reviewer=item.reviewer,
+            reviewed_at=item.reviewed_at,
+        )
+        for item in decisions
+        if item.decision == "hard_exclude"
+    )
+    coverage = []
+    for code in allowed_constraint_codes:
+        code_decisions = [item for item in decisions if item.constraint_code == code]
+        hard_count = sum(item.decision == "hard_exclude" for item in code_decisions)
+        coverage.append(
+            HealthRelationCoverage(
+                constraint_code=code,
+                universe_ingredient_count=len(health_ingredient_ids),
+                reviewed_ingredient_count=len(code_decisions),
+                relation_count=hard_count,
+                evidence_ref=f"health-review-matrix:{code}",
+            )
+        )
+    return ApprovedHealthRelationArtifacts(
+        decisions=decisions,
+        hard_relations=hard_relations,
+        coverage=tuple(coverage),
+    )
+
+
+def _matching_patterns(name: str, patterns: list[str]) -> tuple[str, ...]:
+    return tuple(pattern for pattern in patterns if _ingredient_matches_pattern(name, [pattern]))
+
+
+def write_health_relation_candidates(
+    candidates: tuple[HealthRelationCandidate, ...],
+    output_path: Path,
+) -> Path:
+    """Write machine suggestions without turning them into approval records."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8", newline="\n") as handle:
+        for candidate in candidates:
+            payload = candidate.model_dump(mode="json")
+            handle.write(json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n")
+    return output_path
+
+
+def write_health_relation_candidate_csv(
+    candidates: tuple[HealthRelationCandidate, ...],
+    output_path: Path,
+) -> Path:
+    """Write a review worksheet whose decision and signature cells stay empty."""
+    fieldnames = (
+        "constraint_code",
+        "ingredient_id",
+        "decision",
+        "evidence",
+        "review_status",
+        "reviewer",
+        "reviewed_at",
+        "ingredient_name",
+        "suggested_decision",
+        "suggested_reason",
+        "suggested_evidence",
+    )
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        for candidate in candidates:
+            writer.writerow(
+                {
+                    "constraint_code": candidate.constraint_code,
+                    "ingredient_id": candidate.ingredient_id,
+                    "decision": "",
+                    "evidence": "",
+                    "review_status": "pending",
+                    "reviewer": "",
+                    "reviewed_at": "",
+                    "ingredient_name": candidate.ingredient_name,
+                    "suggested_decision": candidate.suggested_decision,
+                    "suggested_reason": candidate.suggested_reason,
+                    "suggested_evidence": candidate.suggested_evidence,
+                }
+            )
+    return output_path
+
+
+def _read_jsonl(path: Path) -> tuple[dict, ...]:
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    return tuple(
+        json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
+    )
+
+
+def _write_jsonl(path: Path, records: tuple[BaseModel, ...]) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="\n") as handle:
+        for record in records:
+            handle.write(
+                json.dumps(
+                    record.model_dump(mode="json"),
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+                + "\n"
+            )
+    return path
+
+
+def run_health_relation_stage(
+    *,
+    ingredient_registry_path: Path,
+    health_views_path: Path,
+    decisions_path: Path,
+    staging_dir: Path,
+    builder_identity: str,
+) -> dict:
+    """Publish T08 candidates and freeze outputs only after H03 passes."""
+    from food_agent_v2.b1.health_relation_review import (
+        HealthRelationReviewError,
+        load_approved_health_relation_decisions,
+    )
+
+    staging = Path(staging_dir).resolve()
+    registry = _read_jsonl(ingredient_registry_path)
+    registry_by_id = {int(item["ingredient_id"]): item for item in registry}
+    if len(registry_by_id) != len(registry):
+        raise ValueError("ingredient registry contains duplicate ingredient_id")
+
+    health_views = _read_jsonl(health_views_path)
+    health_ids = tuple(
+        sorted(
+            {
+                int(ingredient_id)
+                for view in health_views
+                for ingredient_id in view["ingredient_ids"]
+            }
+        )
+    )
+    unknown_ids = set(health_ids) - set(registry_by_id)
+    if unknown_ids:
+        raise ValueError(
+            f"health views reference unknown ingredient ids: {sorted(unknown_ids)[:10]}"
+        )
+    health_ingredients = tuple(registry_by_id[ingredient_id] for ingredient_id in health_ids)
+    candidates = generate_health_relation_candidates(
+        ALLOWED_CONSTRAINT_CODES,
+        health_ingredients,
+    )
+    candidate_path = write_health_relation_candidates(
+        candidates,
+        staging / "health_relation_candidates.jsonl",
+    )
+    candidate_csv_path = write_health_relation_candidate_csv(
+        candidates,
+        staging / "health_relation_review_matrix.csv",
+    )
+    flagged_csv_path = write_health_relation_candidate_csv(
+        tuple(item for item in candidates if item.suggested_decision == "hard_exclude"),
+        staging / "health_relation_flagged_review.csv",
+    )
+    hard_suggestion_count = sum(item.suggested_decision == "hard_exclude" for item in candidates)
+    report = {
+        "stage": "T08",
+        "status": "blocked",
+        "approval_gate": "H03",
+        "constraint_code_count": len(ALLOWED_CONSTRAINT_CODES),
+        "health_ingredient_count": len(health_ids),
+        "expected_decision_count": len(candidates),
+        "candidate_count": len(candidates),
+        "pending_candidate_count": len(candidates),
+        "hard_exclude_suggestion_count": hard_suggestion_count,
+        "candidate_output": str(candidate_path),
+        "review_matrix_output": str(candidate_csv_path),
+        "flagged_review_output": str(flagged_csv_path),
+        "decisions_input": str(decisions_path.resolve()),
+    }
+
+    try:
+        decisions = load_approved_health_relation_decisions(
+            decisions_path,
+            allowed_constraint_codes=ALLOWED_CONSTRAINT_CODES,
+            health_ingredient_ids=health_ids,
+            builder_identity=builder_identity,
+        )
+    except HealthRelationReviewError as error:
+        report["blocker"] = error.code
+        report["blocker_detail"] = str(error)
+        (staging / "health_relation_quality_report.json").write_text(
+            json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+        return report
+
+    artifacts = build_approved_health_relation_artifacts(
+        decisions,
+        allowed_constraint_codes=ALLOWED_CONSTRAINT_CODES,
+        health_ingredient_ids=health_ids,
+    )
+    decisions_output = _write_jsonl(
+        staging / "health_relation_decisions.jsonl", artifacts.decisions
+    )
+    relations_output = _write_jsonl(staging / "health_relations.jsonl", artifacts.hard_relations)
+    coverage_output = _write_jsonl(
+        staging / "health_relation_coverage.jsonl",
+        artifacts.coverage,
+    )
+    report.update(
+        {
+            "status": "passed",
+            "pending_candidate_count": 0,
+            "approved_decision_count": len(artifacts.decisions),
+            "hard_relation_count": len(artifacts.hard_relations),
+            "decisions_output": str(decisions_output),
+            "relations_output": str(relations_output),
+            "coverage_output": str(coverage_output),
+        }
+    )
+    report.pop("blocker", None)
+    report.pop("blocker_detail", None)
+    (staging / "health_relation_quality_report.json").write_text(
+        json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    return report
 
 
 def build_health_relations(
     ingredient_registry: list[dict],
 ) -> tuple[list[dict], dict]:
-    """构建全部约束—食材关系对。"""
-    CLEANED_DIR.mkdir(parents=True, exist_ok=True)
-    PIPELINE_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-
-    relations: list[dict] = []
-    stats: dict[str, dict[str, int]] = {}
-
-    # 审核全部注册表食材（含 is_edible=false）：菜品的健康视图可能引用非可食用条目，
-    # INV-018 要求覆盖"标准食材全集"，不能只审核可食用子集。
-    for code, patterns in CONSTRAINT_INGREDIENT_PATTERNS.items():
-        matched = 0
-        for ing in ingredient_registry:
-            if _ingredient_matches_pattern(ing["name_canonical"], patterns):
-                relations.append({
-                    "constraint_code": code,
-                    "ingredient_id": ing["ingredient_id"],
-                    "ingredient_name": ing["name_canonical"],
-                    "review_status": "approved",
-                    "hard_filter": True,
-                    "evidence_ref": f"pattern_match:{code}",
-                })
-                matched += 1
-        stats[code] = {"total_ingredients_matched": matched}
-
-    output_path = CLEANED_DIR / "health_relations.jsonl"
-    with output_path.open("w", encoding="utf-8") as f:
-        for rel in relations:
-            f.write(json.dumps(rel, ensure_ascii=False) + "\n")
-
-    # INV-018：写覆盖记录——每个码针对"全部标准食材（含非可食用）"的完整审核集。
-    # B4 运行时可据此校验：某码无覆盖记录或菜品的食材不在覆盖集内 → 系统失败，不是 PASS。
-    all_ids = [ing["ingredient_id"] for ing in ingredient_registry]
-    coverage_path = CLEANED_DIR / "health_relation_coverage.jsonl"
-    with coverage_path.open("w", encoding="utf-8") as f:
-        for code in CONSTRAINT_INGREDIENT_PATTERNS:
-            f.write(json.dumps({
-                "constraint_code": code,
-                "review_status": "complete",
-                "covered_ingredient_ids": all_ids,
-                "evidence_ref": f"coverage:{code}:all_ingredients",
-            }, ensure_ascii=False) + "\n")
-
+    """Generate pending candidates for H03; never create approved relations."""
+    candidates = generate_health_relation_candidates(
+        ALLOWED_CONSTRAINT_CODES,
+        tuple(ingredient_registry),
+    )
+    output_path = write_health_relation_candidates(
+        candidates,
+        CLEANED_DIR / "health_relation_candidates.jsonl",
+    )
+    hard_suggestion_count = sum(item.suggested_decision == "hard_exclude" for item in candidates)
     summary = {
         "stage": "health_relations",
-        "total_relations": len(relations),
-        "constraint_codes": len(stats),
-        "coverage_codes": len(CONSTRAINT_INGREDIENT_PATTERNS),
-        "covered_ingredient_count": len(all_ids),
-        "by_constraint": stats,
+        "status": "pending_review",
+        "approval_gate": "H03",
+        "candidate_count": len(candidates),
+        "expected_decision_count": len(candidates),
+        "hard_exclude_suggestion_count": hard_suggestion_count,
+        "constraint_codes": len(ALLOWED_CONSTRAINT_CODES),
+        "covered_ingredient_count": len(ingredient_registry),
         "output": str(output_path.relative_to(CLEANED_DIR.parent)),
-        "coverage_output": str(coverage_path.relative_to(CLEANED_DIR.parent)),
-        "status": "passed",
     }
-
-    return relations, summary
+    return [item.model_dump(mode="json") for item in candidates], summary

@@ -57,6 +57,16 @@ class TestFixedSource:
             assert isinstance(row.labels_raw, str)
             assert len(row.row_sha256) == 64
 
+    def test_gbk_source_decodes_without_replacement_characters(self) -> None:
+        rows = load_verified_recipe_source(SOURCE_CSV, canonical_manifest())
+        text_fields = (
+            value
+            for row in rows
+            for value in (row.name, row.ingredients_raw, row.steps_raw, row.labels_raw)
+        )
+        assert all("\ufffd" not in value for value in text_fields)
+        assert rows[0].name == "秋梨膏"
+
     def test_one_byte_change_rejected_before_parse(self, tmp_path: Path) -> None:
         tampered = tmp_path / "recipes.csv"
         tampered.write_bytes(SOURCE_CSV.read_bytes())
