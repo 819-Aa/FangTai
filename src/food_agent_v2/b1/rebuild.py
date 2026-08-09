@@ -1,61 +1,195 @@
-"""B1 数据管线编排器 —— REFACTOR 自 V1 rebuild.py。
+"""T09 fixed-source build orchestrator.
 
-V2 变更：
-- 从子进程调用改为单进程函数调用（状态共享、结构化错误传递）
-- 阶段间传递数据对象而非文件路径
-- 每个阶段返回 (数据, 汇总报告)，下一阶段消费上一阶段的数据
+Full builds are isolated in a new empty staging directory.  No database or Qdrant
+write occurs here; initialization is a separate H04-gated command.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
-import time
+import subprocess
+from dataclasses import asdict
+from datetime import UTC, datetime
 from pathlib import Path
+from uuid import UUID, uuid4
 
-from food_agent_v2.b1.cross_domain_validator import validate
-from food_agent_v2.b1.health_relation_builder import (
-    build_health_relations,
+from food_agent_v2.b1.consumer_views import (
+    BuildIdentity,
+    build_consumer_views,
+    identity_facts_from_records,
+    occurrence_facts_from_records,
+    publish_downstream_build_views,
+    recipe_facts_from_source,
 )
 from food_agent_v2.b1.health_relation_builder import (
     run_health_relation_stage as build_health_relation_stage,
 )
-from food_agent_v2.b1.ingredient_identity import (
-    build_ingredient_registry,
-    rebuild_ingredient_identities,
+from food_agent_v2.b1.ingredient_identity import rebuild_ingredient_identities
+from food_agent_v2.b1.quality_gates import (
+    artifact_entry,
+    build_artifact_entries,
+    verify_build_manifest,
+    write_quality_gate_report,
 )
-from food_agent_v2.b1.nutrition_feature_builder import build_nutrition_features
-from food_agent_v2.b1.quality_gates import GateFailure, run_all_gates
-from food_agent_v2.b1.rag_document_builder import build_rag_documents
-from food_agent_v2.b1.recipe_cleaning import clean_recipes
+from food_agent_v2.b1.recipe_classifier import (
+    classify_all,
+    enforce_classification_gate,
+    load_overrides,
+    write_classification_output,
+)
 from food_agent_v2.b1.source_manifest import (
     canonical_source_manifest,
     load_verified_recipe_source,
 )
-from food_agent_v2.b1.step_time_builder import build_step_profiles
-from food_agent_v2.b1.user_cleaning import clean_users
-from food_agent_v2.core.paths import PIPELINE_REPORTS_DIR, PROJECT_ROOT, RECIPES_RAW
+from food_agent_v2.b1.user_cleaning import clean_one, load_raw_users
+from food_agent_v2.contracts.build import BuildManifest, QualityGateReport, source_manifest_hash
+from food_agent_v2.core.paths import FOOD_COMPOSITION, PROJECT_ROOT, RECIPES_RAW, USERS_RAW
 
-STAGES = [
-    ("recipe_cleaning", "菜品清洗"),
-    ("user_cleaning", "用户档案清洗"),
-    ("ingredient_registry", "食材注册表"),
-    ("step_time", "步骤时间构建"),
-    ("nutrition", "营养特征构建"),
-    ("rag_documents", "RAG检索文档"),
-    ("health_relations", "健康关系构建"),
-    ("cross_domain", "跨域引用校验"),
-    ("quality_gates", "数据质量门禁"),
-]
+CLASSIFICATION_OVERRIDES = PROJECT_ROOT / "data" / "review" / "recipe_classification_overrides.csv"
+INGREDIENT_OVERRIDES = PROJECT_ROOT / "data" / "review" / "ingredient_identity_overrides.csv"
+HEALTH_DECISIONS = PROJECT_ROOT / "data" / "review" / "health_relation_decisions.csv"
+
+
+class DataPipelineError(RuntimeError):
+    """Stable failure raised before a build can be considered publishable."""
+
+    def __init__(self, code: str, message: str) -> None:
+        self.code = code
+        self.message = message
+        super().__init__(f"{code}: {message}")
+
+
+def _prepare_empty_staging(staging_dir: Path) -> Path:
+    staging = Path(staging_dir).resolve()
+    if staging.exists() and any(staging.iterdir()):
+        raise DataPipelineError("STAGING_NOT_EMPTY", str(staging))
+    staging.mkdir(parents=True, exist_ok=True)
+    return staging
+
+
+def _git_builder_version() -> str:
+    try:
+        status = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=all"],
+            cwd=PROJECT_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        if status.stdout.strip():
+            raise DataPipelineError(
+                "GIT_WORKTREE_NOT_CLEAN",
+                "commit the reviewed build code and data decisions before data-rebuild",
+            )
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=PROJECT_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except DataPipelineError:
+        raise
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise DataPipelineError("GIT_BUILDER_VERSION_UNAVAILABLE", str(exc)) from exc
+    value = result.stdout.strip()
+    if len(value) != 40:
+        raise DataPipelineError("GIT_BUILDER_VERSION_INVALID", value)
+    return value
+
+
+def _read_jsonl(path: Path) -> tuple[dict, ...]:
+    return tuple(
+        json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
+    )
+
+
+def _write_jsonl(path: Path, records: list[dict] | tuple[dict, ...]) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="\n") as handle:
+        for record in records:
+            handle.write(
+                json.dumps(
+                    record,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    default=str,
+                )
+                + "\n"
+            )
+    return path
+
+
+def _attach_build_identity(path: Path, *, build_id: str, manifest_hash: str) -> None:
+    records = _read_jsonl(path)
+    enriched = tuple(
+        {
+            **record,
+            "build_id": build_id,
+            "source_manifest_hash": manifest_hash,
+        }
+        for record in records
+    )
+    _write_jsonl(path, enriched)
+
+
+def _write_source_rows(path: Path, rows, *, build_id: str, manifest_hash: str) -> Path:
+    records = [
+        {
+            **asdict(row),
+            "build_id": build_id,
+            "source_manifest_hash": manifest_hash,
+        }
+        for row in rows
+    ]
+    return _write_jsonl(path, records)
+
+
+def _write_user_profiles(path: Path, *, build_id: str, manifest_hash: str) -> tuple[Path, dict]:
+    raw_users = load_raw_users(USERS_RAW)
+    records = []
+    for index, raw in enumerate(raw_users, start=1):
+        profile = clean_one(raw, index)
+        records.append(
+            {
+                "user_id": profile.user_id,
+                "source_user_id": profile.source_user_id,
+                "gender": profile.gender,
+                "age": profile.age,
+                "activity_level": profile.activity_level,
+                "special_group": profile.special_group,
+                "height_cm": profile.height_cm,
+                "weight_kg": profile.weight_kg,
+                "bmi": profile.bmi,
+                "dietary_preferences": profile.dietary_preferences,
+                "allergies": profile.allergies,
+                "health_goals": profile.health_goals,
+                "diseases": profile.diseases,
+                "taboo_ingredients": profile.taboo_ingredients,
+                "health_metrics": profile.health_metrics,
+                "parse_quality": profile.parse_quality,
+                "cleaning_notes": profile.cleaning_notes,
+                "build_id": build_id,
+                "source_manifest_hash": manifest_hash,
+            }
+        )
+    _write_jsonl(path, records)
+    return path, {
+        "status": "passed" if len(records) == 50 else "failed",
+        "profile_count": len(records),
+    }
 
 
 def run_ingredient_stage(
     staging_dir: Path,
     *,
     source_path: Path = RECIPES_RAW,
-    overrides_path: Path = PROJECT_ROOT / "data" / "review" / "ingredient_identity_overrides.csv",
+    overrides_path: Path = INGREDIENT_OVERRIDES,
 ) -> dict:
-    """运行计划规定的独立 T06 阶段，并把机器可核验报告写入 staging。"""
+    """Backward-compatible standalone T06 build used during identity review."""
     staging = Path(staging_dir).resolve()
     rows = load_verified_recipe_source(source_path, canonical_source_manifest())
     report = rebuild_ingredient_identities(rows, overrides_path, staging)
@@ -67,248 +201,202 @@ def run_ingredient_stage(
 
 
 def run_health_relation_stage(staging_dir: Path) -> dict:
-    """运行 T08；只从同一 staging 根目录的 T06/T07 结构化产物构建。"""
+    """Backward-compatible standalone T08 build from sibling T06/T07 outputs."""
     staging = Path(staging_dir).resolve()
     return build_health_relation_stage(
         ingredient_registry_path=staging.parent / "T06" / "ingredient_registry.jsonl",
         health_views_path=staging.parent / "T07" / "recipe_health_views.jsonl",
-        decisions_path=PROJECT_ROOT / "data" / "review" / "health_relation_decisions.csv",
+        decisions_path=HEALTH_DECISIONS,
         staging_dir=staging,
         builder_identity="food-agent-v2:T08",
     )
 
 
+def build_fixed_data_staging(
+    staging_dir: Path,
+    *,
+    build_id: UUID | None = None,
+    builder_version: str | None = None,
+) -> dict:
+    """Build the complete fixed-data artifact graph and a verified BuildManifest."""
+    staging = _prepare_empty_staging(staging_dir)
+    resolved_build_id = build_id or uuid4()
+    build_id_text = str(resolved_build_id)
+    resolved_builder_version = builder_version or _git_builder_version()
+    manifest_hash = source_manifest_hash(canonical_source_manifest())
+
+    t04 = staging / "T04"
+    t05 = staging / "T05"
+    t06 = staging / "T06"
+    t07 = staging / "T07"
+    t08 = staging / "T08"
+
+    rows = tuple(load_verified_recipe_source(RECIPES_RAW, canonical_source_manifest()))
+    source_rows_path = _write_source_rows(
+        t04 / "recipe_source_rows.jsonl",
+        rows,
+        build_id=build_id_text,
+        manifest_hash=manifest_hash,
+    )
+    user_profiles_path, user_report = _write_user_profiles(
+        t04 / "user_profiles.jsonl",
+        build_id=build_id_text,
+        manifest_hash=manifest_hash,
+    )
+    if user_report["status"] != "passed":
+        raise DataPipelineError("FIXED_USER_COUNT_MISMATCH", str(user_report))
+
+    classifications = classify_all(list(rows), load_overrides(CLASSIFICATION_OVERRIDES))
+    classification_report = write_classification_output(list(rows), classifications, t05)
+    enforce_classification_gate(classifications)
+    classification_path = t05 / "recipe_classifications.jsonl"
+    _attach_build_identity(
+        classification_path,
+        build_id=build_id_text,
+        manifest_hash=manifest_hash,
+    )
+
+    t06_report = rebuild_ingredient_identities(list(rows), INGREDIENT_OVERRIDES, t06)
+    if t06_report["status"] != "passed":
+        raise DataPipelineError("T06_NOT_PASSED", str(t06_report))
+    t06_artifact_files = (
+        "ingredient_occurrences.jsonl",
+        "ingredient_registry.jsonl",
+        "ingredient_aliases.jsonl",
+        "ingredient_forms.jsonl",
+        "ingredient_crosswalk.jsonl",
+        "recipe_ingredient_relations.jsonl",
+    )
+    for filename in t06_artifact_files:
+        _attach_build_identity(
+            t06 / filename,
+            build_id=build_id_text,
+            manifest_hash=manifest_hash,
+        )
+
+    identities = identity_facts_from_records(
+        _read_jsonl(t06 / "ingredient_registry.jsonl"),
+        _read_jsonl(t06 / "ingredient_aliases.jsonl"),
+    )
+    views = build_consumer_views(
+        build=BuildIdentity(resolved_build_id, manifest_hash),
+        recipes=recipe_facts_from_source(rows, tuple(classifications)),
+        occurrences=occurrence_facts_from_records(
+            _read_jsonl(t06 / "ingredient_occurrences.jsonl")
+        ),
+        identities=identities,
+    )
+    downstream_report = publish_downstream_build_views(
+        views,
+        identities,
+        _read_jsonl(FOOD_COMPOSITION),
+        t07,
+    )
+
+    t08_report = build_health_relation_stage(
+        ingredient_registry_path=t06 / "ingredient_registry.jsonl",
+        health_views_path=t07 / "recipe_health_views.jsonl",
+        decisions_path=HEALTH_DECISIONS,
+        staging_dir=t08,
+        builder_identity="food-agent-v2:T08",
+    )
+    if t08_report["status"] != "passed":
+        raise DataPipelineError("T08_NOT_PASSED", str(t08_report))
+    for filename in (
+        "health_relation_decisions.jsonl",
+        "health_relations.jsonl",
+        "health_relation_coverage.jsonl",
+    ):
+        _attach_build_identity(
+            t08 / filename,
+            build_id=build_id_text,
+            manifest_hash=manifest_hash,
+        )
+
+    artifact_paths = {
+        "recipe_source_rows": source_rows_path,
+        "recipe_classifications": classification_path,
+        "user_profiles": user_profiles_path,
+        "ingredient_occurrences": t06 / "ingredient_occurrences.jsonl",
+        "ingredient_registry": t06 / "ingredient_registry.jsonl",
+        "ingredient_aliases": t06 / "ingredient_aliases.jsonl",
+        "ingredient_forms": t06 / "ingredient_forms.jsonl",
+        "ingredient_crosswalk": t06 / "ingredient_crosswalk.jsonl",
+        "recipe_ingredient_relations": t06 / "recipe_ingredient_relations.jsonl",
+        "recipe_health_views": t07 / "recipe_health_views.jsonl",
+        "recipe_step_binding_views": t07 / "recipe_step_binding_views.jsonl",
+        "recipe_nutrition_input_views": t07 / "recipe_nutrition_input_views.jsonl",
+        "recipe_retrieval_build_views": t07 / "recipe_retrieval_build_views.jsonl",
+        "step_tasks": t07 / "step_time_profiles.jsonl",
+        "nutrition_features": t07 / "nutrition_reference_views.jsonl",
+        "rag_documents": t07 / "rag_documents.jsonl",
+        "health_relation_decisions": t08 / "health_relation_decisions.jsonl",
+        "health_relations": t08 / "health_relations.jsonl",
+        "health_relation_coverage": t08 / "health_relation_coverage.jsonl",
+    }
+    quality_path = write_quality_gate_report(
+        staging,
+        artifact_paths,
+        build_id=build_id_text,
+        source_manifest_hash=manifest_hash,
+    )
+    artifact_entries = build_artifact_entries(staging, artifact_paths)
+    quality_entry = artifact_entry(staging, quality_path)
+    manifest = BuildManifest(
+        build_id=resolved_build_id,
+        source_manifest_hash=manifest_hash,
+        builder_version=resolved_builder_version,
+        schema_versions={name: "1.0.0" for name in artifact_entries},
+        artifacts=artifact_entries,
+        quality_gate_report=QualityGateReport(
+            relative_path=quality_entry.relative_path,
+            sha256=quality_entry.sha256,
+            passed=True,
+        ),
+        created_at=datetime.now(UTC),
+    )
+    manifest_path = staging / "build_manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            manifest.model_dump(mode="json"),
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    verify_build_manifest(manifest_path)
+    manifest_sha = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+    return {
+        "status": "passed",
+        "build_id": build_id_text,
+        "source_manifest_hash": manifest_hash,
+        "builder_version": resolved_builder_version,
+        "manifest_path": str(manifest_path),
+        "manifest_sha256": manifest_sha,
+        "artifact_count": len(artifact_entries),
+        "classification": classification_report,
+        "T06": t06_report,
+        "T07": downstream_report,
+        "T08": t08_report,
+        "user_profiles": user_report,
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="food-agent-v2 data-rebuild")
     parser.add_argument("--stage", choices=("ingredients", "health-relations"))
-    parser.add_argument("--staging-dir", type=Path)
+    parser.add_argument("--staging-dir", type=Path, required=True)
     args = parser.parse_args(argv)
 
     if args.stage == "ingredients":
-        if args.staging_dir is None:
-            parser.error("--stage ingredients requires --staging-dir")
         report = run_ingredient_stage(args.staging_dir)
-        print(json.dumps(report, ensure_ascii=False, indent=2))
-        return 0 if report["status"] == "passed" else 2
-    if args.stage == "health-relations":
-        if args.staging_dir is None:
-            parser.error("--stage health-relations requires --staging-dir")
+    elif args.stage == "health-relations":
         report = run_health_relation_stage(args.staging_dir)
-        print(json.dumps(report, ensure_ascii=False, indent=2))
-        return 0 if report["status"] == "passed" else 2
-    if args.staging_dir is not None:
-        parser.error("--staging-dir requires --stage")
-
-    PIPELINE_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-    started = time.perf_counter()
-    results: list[dict] = []
-    data: dict[str, list[dict]] = {}
-
-    # --- 阶段 1: 菜品清洗 ---
-    t0 = time.perf_counter()
-    recipes, summary = clean_recipes()
-    data["recipes"] = recipes
-    results.append(
-        {
-            "name": STAGES[0][1],
-            "module": STAGES[0][0],
-            "status": "passed",
-            "elapsed_ms": round((time.perf_counter() - t0) * 1000, 2),
-        }
-    )
-    print(f"[PASS] 菜品清洗 — {len(recipes)} recipes")
-
-    # --- 阶段 2: 用户清洗 ---
-    t0 = time.perf_counter()
-    users, summary = clean_users()
-    data["users"] = users
-    results.append(
-        {
-            "name": STAGES[1][1],
-            "module": STAGES[1][0],
-            "status": "passed",
-            "elapsed_ms": round((time.perf_counter() - t0) * 1000, 2),
-        }
-    )
-    print(f"[PASS] 用户清洗 — {len(users)} users")
-
-    # --- 阶段 3: 食材注册表 ---
-    t0 = time.perf_counter()
-    ingredients, summary = build_ingredient_registry(recipes)
-    data["ingredients"] = ingredients
-    results.append(
-        {
-            "name": STAGES[2][1],
-            "module": STAGES[2][0],
-            "status": "passed",
-            "elapsed_ms": round((time.perf_counter() - t0) * 1000, 2),
-        }
-    )
-    print(f"[PASS] 食材注册表 — {len(ingredients)} ingredients")
-
-    # --- 阶段 4: 步骤时间 ---
-    t0 = time.perf_counter()
-    time_profiles, summary = build_step_profiles(recipes)
-    data["time_profiles"] = time_profiles
-    results.append(
-        {
-            "name": STAGES[3][1],
-            "module": STAGES[3][0],
-            "status": "passed",
-            "elapsed_ms": round((time.perf_counter() - t0) * 1000, 2),
-        }
-    )
-    print(f"[PASS] 步骤时间 — {len(time_profiles)} profiles")
-
-    # --- 阶段 5: 营养特征 ---
-    t0 = time.perf_counter()
-    nutrition_profiles, summary = build_nutrition_features(recipes)
-    data["nutrition_profiles"] = nutrition_profiles
-    results.append(
-        {
-            "name": STAGES[4][1],
-            "module": STAGES[4][0],
-            "status": "passed",
-            "elapsed_ms": round((time.perf_counter() - t0) * 1000, 2),
-        }
-    )
-    print(f"[PASS] 营养特征 — {len(nutrition_profiles)} profiles")
-
-    # --- 阶段 6: RAG 文档 ---
-    t0 = time.perf_counter()
-    rag_docs, summary = build_rag_documents(recipes)
-    data["rag_docs"] = rag_docs
-    results.append(
-        {
-            "name": STAGES[5][1],
-            "module": STAGES[5][0],
-            "status": "passed",
-            "elapsed_ms": round((time.perf_counter() - t0) * 1000, 2),
-        }
-    )
-    print(f"[PASS] RAG文档 — {len(rag_docs)} docs")
-
-    # --- 阶段 7: 健康关系构建 ---
-    t0 = time.perf_counter()
-    health_relations, summary = build_health_relations(ingredients)
-    data["health_relations"] = health_relations
-    health_status = summary["status"]
-    results.append(
-        {
-            "name": STAGES[6][1],
-            "module": STAGES[6][0],
-            "status": health_status,
-            "elapsed_ms": round((time.perf_counter() - t0) * 1000, 2),
-            "approval_gate": summary.get("approval_gate"),
-        }
-    )
-    print(f"[{health_status.upper()}] 健康关系 — {len(health_relations)} pending candidate pairs")
-    if health_status != "passed":
-        report = {
-            "status": "blocked",
-            "blocker": "H03",
-            "stages": results,
-            "data_summary": {
-                "recipes": len(recipes),
-                "users": len(users),
-                "ingredients": len(ingredients),
-                "time_profiles": len(time_profiles),
-                "nutrition_profiles": len(nutrition_profiles),
-                "rag_docs": len(rag_docs),
-            },
-        }
-        report_path = PIPELINE_REPORTS_DIR / "pipeline_run.json"
-        report_path.write_text(
-            json.dumps(report, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-        print(f"[BLOCKED] H03 independent health relation approval required: {report_path}")
-        return 2
-
-    # --- 阶段 8: 跨域校验 ---
-    t0 = time.perf_counter()
-    validation_report = validate(recipes, users)
-    cross_errors = len(validation_report.get("errors", []))
-    results.append(
-        {
-            "name": STAGES[7][1],
-            "module": STAGES[7][0],
-            "status": validation_report["status"],
-            "elapsed_ms": round((time.perf_counter() - t0) * 1000, 2),
-            "errors": cross_errors,
-            "warnings": len(validation_report.get("warnings", [])),
-        }
-    )
-    print(f"[{validation_report['status'].upper()}] 跨域校验 — {cross_errors} errors")
-
-    # --- 阶段 9: 质量门禁 ---
-    t0 = time.perf_counter()
-    try:
-        run_all_gates(
-            recipe_count=len(recipes),
-            user_count=len(users),
-            ingredient_count=len(ingredients),
-            time_profile_count=len(time_profiles),
-            nutrition_count=len(nutrition_profiles),
-            rag_count=len(rag_docs),
-            cross_domain_errors=cross_errors,
-        )
-        results.append(
-            {
-                "name": STAGES[8][1],
-                "module": STAGES[8][0],
-                "status": "passed",
-                "elapsed_ms": round((time.perf_counter() - t0) * 1000, 2),
-            }
-        )
-        print("[PASS] 质量门禁 — all gates passed")
-        pipeline_passed = True
-    except GateFailure as e:
-        results.append(
-            {
-                "name": STAGES[8][1],
-                "module": STAGES[8][0],
-                "status": "failed",
-                "elapsed_ms": round((time.perf_counter() - t0) * 1000, 2),
-                "error": str(e),
-            }
-        )
-        print(f"[FAIL] 质量门禁 — {e}")
-        pipeline_passed = False
-
-    # 恢复离线 LLM 时间估算（data-rebuild 会重新生成 time_profiles，需把 partial 合并回来）
-    try:
-        from food_agent_v2.b1.llm_time_profiler import merge_estimates
-
-        merged = merge_estimates()
-        if merged:
-            print(f"[INFO] 恢复 LLM 时间估算 {merged} 条")
-    except Exception as e:
-        print(f"[WARN] 合并 LLM 时间估算失败: {e}")
-
-    # 写入管线运行报告
-    elapsed_total = round((time.perf_counter() - started) * 1000, 2)
-    report = {
-        "status": "passed" if pipeline_passed else "failed",
-        "elapsed_ms": elapsed_total,
-        "stages": results,
-        "data_summary": {
-            "recipes": len(recipes),
-            "users": len(users),
-            "ingredients": len(ingredients),
-            "time_profiles": len(time_profiles),
-            "nutrition_profiles": len(nutrition_profiles),
-            "rag_docs": len(rag_docs),
-        },
-    }
-
-    report_path = PIPELINE_REPORTS_DIR / "pipeline_run.json"
-    report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"\n{'=' * 40}")
-    print(f"Pipeline {'PASSED' if pipeline_passed else 'FAILED'} ({elapsed_total} ms)")
-    print(f"Report: {report_path}")
-
-    return 0 if pipeline_passed else 1
+    else:
+        report = build_fixed_data_staging(args.staging_dir)
+    print(json.dumps(report, ensure_ascii=False, indent=2, default=str))
+    return 0 if report["status"] == "passed" else 2
 
 
 if __name__ == "__main__":

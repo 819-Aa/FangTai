@@ -1,6 +1,31 @@
 -- V2 MySQL Schema
 -- 与 V1 隔离：使用独立数据库 food_agent_v2
 
+-- T09 一次性固定数据初始化元数据。data_builds 只有 ready 才可被在线读取；
+-- fixed_artifact_records 在同一事务中保存 BuildManifest 已验证的无损产物。
+CREATE TABLE IF NOT EXISTS data_builds (
+    build_id CHAR(36) PRIMARY KEY,
+    source_manifest_hash CHAR(64) NOT NULL,
+    builder_version CHAR(40) NOT NULL,
+    manifest_sha256 CHAR(64) NOT NULL,
+    quality_report_sha256 CHAR(64) NOT NULL,
+    artifact_counts JSON,
+    status ENUM('initializing', 'ready') NOT NULL,
+    initialized_at TIMESTAMP NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS fixed_artifact_records (
+    build_id CHAR(36) NOT NULL,
+    artifact_name VARCHAR(96) NOT NULL,
+    record_index INT NOT NULL,
+    payload JSON NOT NULL,
+    PRIMARY KEY (build_id, artifact_name, record_index),
+    CONSTRAINT fk_fixed_artifact_build
+        FOREIGN KEY (build_id) REFERENCES data_builds(build_id) ON DELETE CASCADE,
+    INDEX idx_fixed_artifact_name (artifact_name)
+);
+
 CREATE TABLE IF NOT EXISTS recipes (
     recipe_id INT PRIMARY KEY,
     name VARCHAR(255) NOT NULL,

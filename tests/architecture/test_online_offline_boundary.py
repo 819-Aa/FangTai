@@ -42,7 +42,6 @@ KNOWN_VIOLATIONS: dict[str, str] = {
     "src/food_agent_v2/b6/__init__.py::file_ref::nutrition_profiles.jsonl": "T13",
     "src/food_agent_v2/c1/__init__.py::file_ref::rag_documents.jsonl": "T14",
     "src/food_agent_v2/c1/__init__.py::file_ref::time_profiles.jsonl": "T14",
-    "src/food_agent_v2/c1/index_builder.py::file_ref::rag_documents.jsonl": "T14",
     "src/food_agent_v2/c1/qdrant_client.py::file_ref::rag_documents.jsonl": "T14",
 }
 

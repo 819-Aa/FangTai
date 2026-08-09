@@ -1,44 +1,30 @@
-"""C1 向量索引批量构建 —— BGE-M3 嵌入 2000 条 RAG 文档 → Qdrant。"""
+"""Qdrant index construction boundary.
+
+The pre-T09 command wrote directly to the configured online collection and could
+publish an unverified or partial index.  Fixed data is now indexed only inside the
+H04-gated MySQL/Qdrant initialization transaction.
+"""
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
 
-from food_agent_v2.core.paths import CLEANED_DIR
-from food_agent_v2.c1.qdrant_client import QdrantVectorStore
+def build_index(*_args: object, **_kwargs: object) -> dict:
+    """Block the legacy direct-to-online index path.
 
-
-def build_index(rag_path: Path | None = None, batch_size: int = 32) -> dict:
-    """批量生成 BGE-M3 嵌入并写入 Qdrant。
-
-    在首次调用时加载 BGE-M3 模型（~2GB），后续批次复用。
+    Use ``food-agent-v2 data-initialize --manifest ... --confirm-empty-v2`` so the
+    verified RAG artifact is built in an isolated physical collection, checked for
+    exact recipe-ID parity, and only then published under the configured alias.
     """
-    if rag_path is None:
-        rag_path = CLEANED_DIR / "rag_documents.jsonl"
-
-    if not rag_path.exists():
-        return {"status": "failed", "reason": "RAG documents not found"}
-
-    # 加载文档
-    docs = []
-    with rag_path.open("r", encoding="utf-8") as f:
-        for line in f:
-            if line.strip():
-                docs.append(json.loads(line))
-
-    store = QdrantVectorStore()
-    if not store.available:
-        return {"status": "failed", "reason": "Qdrant not available"}
-
-    total = store.index_documents(rag_path)
     return {
-        "status": "done",
-        "total_documents": len(docs),
-        "total_indexed": total,
+        "status": "blocked",
+        "reason": "DIRECT_QDRANT_BUILD_REMOVED",
+        "required_command": (
+            "food-agent-v2 data-initialize --manifest <BuildManifest> --confirm-empty-v2"
+        ),
     }
 
 
 if __name__ == "__main__":
-    result = build_index()
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    import json
+
+    print(json.dumps(build_index(), ensure_ascii=False, indent=2))
