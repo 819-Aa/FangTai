@@ -30,6 +30,7 @@ qdrant-data/
 redis-data/
 
 # Generated data and reports
+.staging/
 data/cleaned/
 reports/data_pipeline/
 data/profiles/
