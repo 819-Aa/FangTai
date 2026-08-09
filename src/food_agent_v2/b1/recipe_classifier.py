@@ -156,7 +156,7 @@ def load_overrides(path: Path) -> dict[int, ClassificationOverride]:
             recipe_id = int(row["recipe_id"])
             overrides[recipe_id] = ClassificationOverride(
                 recipe_id=recipe_id,
-                record_type=RecordType[row["record_type"]],
+                record_type=RecordType[row["record_type"].strip().upper()],
                 reason=row.get("reason", ""),
                 reviewer=row.get("reviewer", ""),
                 reviewed_at=row.get("reviewed_at", ""),
