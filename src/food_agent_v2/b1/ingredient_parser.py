@@ -68,6 +68,10 @@ _QTY_SUFFIX = re.compile(rf"(?:约|大约|适量|少许|少量|若干|足量)?\s
 _RANGE_WITH_UNIT = re.compile(rf"{_NUMBER}\s*[~\-—]\s*{_NUMBER}\s*{_UNIT}\s*$")
 #: 范围后缀："土豆400~" / "冰糖5-" / "糖15—"
 _RANGE_SUFFIX = re.compile(rf"{_NUMBER}\s*[~\-—]\s*\d*\s*$")
+#: 定性数量+计数单位："新鲜香菇若干只"。
+_QUALITATIVE_QTY_SUFFIX = re.compile(
+    rf"(?:约|大约)?\s*(?:适量|少许|少量|若干|足量)\s*(?:{_COUNT_UNIT})?\s*$"
+)
 #: 时间/温度后缀："冷冻4小时" / "冬35度"
 _TIME_SUFFIX = re.compile(rf"{_NUMBER}\s*(?:小时|分钟|秒|度|℃)\s*$")
 #: 切分处理后缀："1切4" / "1开2"
@@ -89,7 +93,42 @@ _PAREN_GROUP_RE = re.compile(r"[（(][^（()）]*[)）]")
 #: 切配形态后缀（form 属性）
 FORM_SUFFIXES = ("丝", "片", "末", "蓉", "丁", "花", "碎", "块", "粒", "段", "条", "泥")
 #: 以形态字符结尾但本身是完整食材名的整名（不按形态处理）
-_WHOLE_NAMES_WITH_FORM_CHAR = {"丝瓜", "蒜苔", "豆苗", "西红柿", "马齿苋", "蟹味菇"}
+_WHOLE_NAMES_WITH_FORM_CHAR = {
+    "丝瓜",
+    "蒜苔",
+    "豆苗",
+    "西红柿",
+    "马齿苋",
+    "蟹味菇",
+    "油条",
+}
+
+# 固定源中有少量破损的双层括号把“切3cm段））/切丝））/切块））”拆成
+# 独立片段。它们是处理说明，不是食材出现。
+_INSTRUCTION_ONLY_RE = re.compile(
+    r"^(?:"
+    r"切(?:\d+(?:\.\d+)?\s*(?:cm|厘米|毫米))?(?:丝|片|末|蓉|丁|花|碎|块|粒|段|条|泥)?"
+    r"|切小块"
+    r"|洗净(?:划花刀|切\d+段)?"
+    r"|去皮"
+    r"|去内脏洗净"
+    r"|冷冻\d+(?:\.\d+)?小时"
+    r"|根和叶分开"
+    r")[）)]*$"
+)
+
+# 固定源中把多个实际食材连写成制备混合物的封闭清单。
+_FIXED_COMPOUND_SPLITS: dict[str, tuple[tuple[str, str | None], ...]] = {
+    "蜂蜜加油混合": (("蜂蜜", None), ("油", None)),
+    "青红椒": (("青椒", None), ("红椒", None)),
+    "青红椒丝": (("青椒", "丝"), ("红椒", "丝")),
+    "葱姜": (("葱", None), ("姜", None)),
+    "姜葱": (("姜", None), ("葱", None)),
+    "姜葱末": (("姜", "末"), ("葱", "末")),
+    "葱姜蒜各": (("葱", None), ("姜", None), ("蒜", None)),
+    "葱姜汁": (("葱", "汁"), ("姜", "汁")),
+    "葱姜水": (("葱", None), ("姜", None), ("水", None)),
+}
 
 #: 非食材说明标记
 NOTE_MARKERS = ("适量", "少许", "少量", "若干", "足量", "根据", "见", "备", "待用")
@@ -155,7 +194,14 @@ def _strip_quantities(name: str) -> str:
         if prefix:
             cleaned = cleaned[prefix.end():].strip()
             changed = True
-        for pattern in (_QTY_SUFFIX, _RANGE_WITH_UNIT, _RANGE_SUFFIX, _TIME_SUFFIX, _PROCESS_SUFFIX):
+        for pattern in (
+            _QTY_SUFFIX,
+            _QUALITATIVE_QTY_SUFFIX,
+            _RANGE_WITH_UNIT,
+            _RANGE_SUFFIX,
+            _TIME_SUFFIX,
+            _PROCESS_SUFFIX,
+        ):
             stripped = pattern.sub("", cleaned)
             if stripped != cleaned:
                 cleaned = stripped
@@ -234,6 +280,12 @@ def parse_ingredients(ingredients_raw: str) -> list[ParsedOccurrence]:
     for fragment in split_ingredient_text(ingredients_raw):
         group, body = _detect_group(fragment)
 
+        if _INSTRUCTION_ONLY_RE.fullmatch(body.strip()):
+            occurrences.append(
+                ParsedOccurrence(raw_text=fragment, name_clean=body, group=group, is_note=True)
+            )
+            continue
+
         composition = COMPOSITION_PATTERN.search(body)
         if composition:
             occurrences.append(
@@ -282,6 +334,19 @@ def parse_ingredients(ingredients_raw: str) -> list[ParsedOccurrence]:
             clean_name, qty, unit = _extract_qty_name(cleaned)
             if not clean_name:
                 continue  # 纯处理语残留，不是食材
+            compound_names = _FIXED_COMPOUND_SPLITS.get(clean_name)
+            if compound_names:
+                for compound_name, compound_form in compound_names:
+                    occurrences.append(
+                        ParsedOccurrence(
+                            raw_text=fragment,
+                            name_clean=compound_name,
+                            group=group,
+                            is_optional=is_optional,
+                            form=compound_form,
+                        )
+                    )
+                continue
             base, form = _detect_form(clean_name)
             occurrences.append(
                 ParsedOccurrence(

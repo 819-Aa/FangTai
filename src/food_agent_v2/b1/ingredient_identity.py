@@ -26,6 +26,8 @@ from food_agent_v2.b1.ingredient_crosswalk import (
     generate_crosswalk_decisions,
     load_approved_decisions,
     processing_base,
+    processing_prefix_variant,
+    processing_variant,
 )
 from food_agent_v2.b1.ingredient_parser import _strip_parens, _strip_quantities, parse_ingredients
 from food_agent_v2.b1.schemas import SourceRecipeRow
@@ -213,7 +215,38 @@ _SYNONYMS: dict[str, str] = {
     "陈醋": "醋",
     "白醋": "醋",
     "小米椒": "辣椒",
-    "干辣椒段": "干辣椒",
+    "清水": "水",
+    "西红柿": "番茄",
+    "西蓝花": "西兰花",
+    "京葱": "大葱",
+    "北芪": "黄芪",
+    "元肉": "桂圆",
+    "冬菇": "香菇",
+    "剁椒": "剁辣椒",
+    "食盐": "盐",
+    "蒜头": "蒜",
+    "麻油": "芝麻油",
+    "芝士": "奶酪",
+    "乳酪": "奶酪",
+    "马苏里拉芝士": "马苏里拉奶酪",
+    "地瓜": "红薯",
+}
+
+#: 不能用宽泛前缀规则表达、但在固定源中语义确定的形态/状态映射。
+_FORM_VARIANTS: dict[str, tuple[str, str]] = {
+    "温水": ("水", "温"),
+    "冷水": ("水", "冷"),
+    "开水": ("水", "煮沸"),
+    "温开水": ("水", "煮沸+温"),
+    "热水": ("水", "热"),
+    "冰水": ("水", "冰"),
+    "冰牛奶": ("牛奶", "冰"),
+    "鸡蛋液": ("鸡蛋", "液"),
+    "全蛋液": ("鸡蛋", "液"),
+    "蛋液": ("鸡蛋", "液"),
+    "姜汁": ("姜", "汁"),
+    "核桃仁": ("核桃", "去壳"),
+    "软化黄油": ("黄油", "软化"),
 }
 
 #: 合法数字名（数量/单位解析后仍保留数字的整名白名单）。
@@ -222,6 +255,9 @@ _LEGIT_DIGIT_NAMES = {"100%纯可可", "80头干瑶柱", "NFC100%椰子水", "T4
 #: 类别/食材族覆盖阈值（家族经兜底后应为全量；类别阈值低于实际覆盖即门禁通过）。
 _CATEGORY_COVERAGE_THRESHOLD = 0.70
 _FAMILY_COVERAGE_THRESHOLD = 0.90
+
+_CATEGORY_EXACT = {"油条": "谷物"}
+_FAMILY_EXACT = {"油条": "谷物通用"}
 
 
 class IngredientIdentityError(Exception):
@@ -264,6 +300,8 @@ def enforce_quality_gates(gates: dict, *, registry_size: int) -> None:
 
 
 def _classify(name: str) -> str:
+    if name in _CATEGORY_EXACT:
+        return _CATEGORY_EXACT[name]
     for category, keywords in _CATEGORY_RULES:
         if any(keyword in name for keyword in keywords):
             return category
@@ -272,6 +310,8 @@ def _classify(name: str) -> str:
 
 def _assign_family(name: str) -> str:
     """分配食材族；未命中具体族的按粗类别兜底，保证 family_id 不为空（issue 1）。"""
+    if name in _FAMILY_EXACT:
+        return _FAMILY_EXACT[name]
     for family, keywords in _FAMILY_RULES:
         if any(keyword in name for keyword in keywords):
             return family
@@ -325,6 +365,36 @@ def _quality_leakage(names: list[str]) -> list[str]:
     return sorted(n for n in names if any(c.isdigit() for c in n) and n not in _LEGIT_DIGIT_NAMES)
 
 
+def _resolve_terminal_targets(
+    direct_targets: dict[str, int],
+    id_by_name: dict[str, int],
+) -> dict[str, int]:
+    """把 source→target 合并图解析到最终保留身份，并拒绝环/未知目标。"""
+    name_by_id = {ingredient_id: name for name, ingredient_id in id_by_name.items()}
+    terminal: dict[str, int] = {}
+
+    for source_name, first_target_id in direct_targets.items():
+        target_id = first_target_id
+        path = [source_name]
+        while True:
+            target_name = name_by_id.get(target_id)
+            if target_name is None:
+                raise IngredientIdentityError(
+                    "MERGE_TARGET_UNKNOWN",
+                    f"{source_name} 指向未知 ingredient_id={target_id}",
+                )
+            if target_name not in direct_targets:
+                terminal[source_name] = target_id
+                break
+            if target_name in path:
+                cycle = " -> ".join([*path, target_name])
+                raise IngredientIdentityError("MERGE_CYCLE", cycle)
+            path.append(target_name)
+            target_id = direct_targets[target_name]
+
+    return terminal
+
+
 def rebuild_ingredient_identities(
     rows: list[SourceRecipeRow],
     overrides_path: Path,
@@ -336,32 +406,75 @@ def rebuild_ingredient_identities(
 
     occurrences = _parse_recipes(rows)
 
-    canonical_names: list[str] = []
-    seen: set[str] = set()
+    source_names: list[str] = []
+    source_seen: set[str] = set()
     for occ in occurrences:
         name = occ["name_clean"]
-        if not name or occ["is_note"] or name in seen:
+        if not name or occ["is_note"] or name in source_seen:
             continue
-        seen.add(name)
-        canonical_names.append(name)
+        source_seen.add(name)
+        source_names.append(name)
+
+    # 两遍建表：先知道全部真实源名称，优先把状态/形态源直接指向最深已存在终点；
+    # 只有终点从未单独出现时才创建合成基底，避免“辣椒段”这类零证据中间身份。
+    canonical_names: list[str] = []
+    canonical_seen: set[str] = set()
+    direct_name_set = set(source_names)
+    for name in source_names:
+        existing_variant = processing_variant(name, direct_name_set)
+        prefix_variant = processing_prefix_variant(name)
+        base = existing_variant[0] if existing_variant else prefix_variant[0] if prefix_variant else None
+        if base and base not in canonical_seen:
+            canonical_seen.add(base)
+            canonical_names.append(base)
+        if name not in canonical_seen:
+            canonical_seen.add(name)
+            canonical_names.append(name)
 
     evidence = _occurrence_evidence(occurrences)
     id_by_name = {name: idx for idx, name in enumerate(canonical_names, start=1)}
 
-    non_edible_names = {name for name in canonical_names if name in NON_EDIBLE_KEYWORDS}
+    canonical_name_set = set(canonical_names)
+    non_edible_names = set()
+    for name in canonical_names:
+        variant = processing_variant(name, canonical_name_set)
+        if name in NON_EDIBLE_KEYWORDS or (variant and variant[0] in NON_EDIBLE_KEYWORDS):
+            non_edible_names.add(name)
     decisions = generate_crosswalk_decisions(
         canonical_names,
         non_edible=non_edible_names,
         synonyms=_SYNONYMS,
+        form_variants=_FORM_VARIANTS,
         occurrence_evidence=evidence,
     )
 
     signed = load_approved_decisions(overrides_path)
+    generated_sources = {decision.source_key for decision in decisions}
+    unknown_signed_sources = sorted(set(signed) - generated_sources)
+    if unknown_signed_sources:
+        raise IngredientIdentityError(
+            "OVERRIDE_SOURCE_UNKNOWN",
+            f"签署文件包含非候选 source_key: {unknown_signed_sources}",
+        )
     applied: dict[str, CrosswalkDecision] = {}
     for decision in decisions:
-        applied[decision.source_key] = signed.get(decision.source_key, decision)
+        signed_decision = signed.get(decision.source_key)
+        if signed_decision is None:
+            applied[decision.source_key] = decision
+            continue
+        applied[decision.source_key] = decision.model_copy(
+            update={
+                "operation": signed_decision.operation,
+                "target_ingredient_ids": signed_decision.target_ingredient_ids,
+                "reason_code": signed_decision.reason_code,
+                "review_status": signed_decision.review_status,
+                "reviewer": signed_decision.reviewer,
+                "reviewed_at": signed_decision.reviewed_at,
+                "form": signed_decision.form or decision.form,
+            }
+        )
 
-    resolved: dict[str, int] = {}
+    direct_targets: dict[str, int] = {}
     excluded: set[str] = set()
     rejected: set[str] = set()
     for source_key, decision in applied.items():
@@ -373,7 +486,9 @@ def rebuild_ingredient_identities(
         if decision.operation == "discard":
             excluded.add(source_key)
         elif decision.operation in ("merge", "split") and decision.target_ingredient_ids:
-            resolved[source_key] = decision.target_ingredient_ids[0]
+            direct_targets[source_key] = decision.target_ingredient_ids[0]
+
+    resolved = _resolve_terminal_targets(direct_targets, id_by_name)
 
     merged_keys = {key for key, target in resolved.items() if target != id_by_name.get(key)}
 
@@ -423,13 +538,31 @@ def rebuild_ingredient_identities(
         name = occ["name_clean"]
         if not name or occ["is_note"]:
             continue
+        occurrence_id = f"{occ['recipe_id']}-{occ['occurrence_index']}"
         if name in excluded:
+            ingredient_occurrences.append(
+                {
+                    "occurrence_id": occurrence_id,
+                    "recipe_id": occ["recipe_id"],
+                    "source_fragment": occ["source_fragment"],
+                    "name_clean": name,
+                    "group": occ["group"],
+                    "quantity_raw": occ["quantity_raw"],
+                    "unit_raw": occ["unit_raw"],
+                    "is_optional": occ["is_optional"],
+                    "choice_group_id": occ["choice_group_id"],
+                    "alternatives": occ["alternatives"],
+                    "composition_ref": occ["composition_ref"],
+                    "form": occ.get("form"),
+                    "resolved_ingredient_id": None,
+                    "consumption_role": "non_edible",
+                }
+            )
             continue
         target_id = resolved.get(name, id_by_name.get(name))
         if target_id is None:
             unresolved.append(name)
             continue
-        occurrence_id = f"{occ['recipe_id']}-{occ['occurrence_index']}"
         form = occ.get("form")
         if name in form_merges:
             # form-merge：源词条已解析到目标身份，形态为被批准形态。
@@ -449,6 +582,7 @@ def rebuild_ingredient_identities(
                 "composition_ref": occ["composition_ref"],
                 "form": form,
                 "resolved_ingredient_id": target_id,
+                "consumption_role": "edible",
             }
         )
         recipe_ingredient_relations.append(
@@ -467,14 +601,26 @@ def rebuild_ingredient_identities(
     # 别名：仅真实别名（synonym/merge 源 -> 目标），不含自映射。
     ingredient_aliases = []
     for source_key, target_id in resolved.items():
-        if source_key in merged_keys and target_id != id_by_name.get(source_key):
+        decision = applied[source_key]
+        if (
+            decision.reason_code == "synonym"
+            and source_key in merged_keys
+            and target_id != id_by_name.get(source_key)
+        ):
             ingredient_aliases.append({"alias": source_key, "ingredient_id": target_id})
 
     # 形态：approved form-merge 的 (目标身份, 形态)。
-    ingredient_forms = [
-        {"ingredient_id": fid, "name_canonical": next((r["name_canonical"] for r in registry if r["ingredient_id"] == fid), ""), "form": form}
-        for source, (fid, form) in form_merges.items()
-    ]
+    registry_name_by_id = {row["ingredient_id"]: row["name_canonical"] for row in registry}
+    ingredient_forms = []
+    seen_forms: set[tuple[int, str]] = set()
+    for fid, form in form_merges.values():
+        form_key = (fid, form)
+        if form_key in seen_forms:
+            continue
+        seen_forms.add(form_key)
+        ingredient_forms.append(
+            {"ingredient_id": fid, "name_canonical": registry_name_by_id.get(fid, ""), "form": form}
+        )
 
     # 冻结状态。
     pending = [d.source_key for d in applied.values() if d.review_status == "pending"]
@@ -498,8 +644,10 @@ def rebuild_ingredient_identities(
 
     # ---- 质量门禁 ----
     leakage = _quality_leakage(canonical_names)
-    alias_targets = [a["ingredient_id"] for a in ingredient_aliases]
-    alias_unique = len(alias_targets) == len(set(alias_targets))
+    alias_names = [a["alias"] for a in ingredient_aliases]
+    # “别名唯一”约束的是一个 alias 不能出现多行/多目标；多个不同 alias
+    # 合法地指向同一个标准身份（如姜丝、姜片都指向姜）。
+    alias_unique = len(alias_names) == len(set(alias_names))
     category_coverage = sum(1 for r in registry if r["category"] != "其他") / len(registry) if registry else 0
     family_coverage = sum(1 for r in registry if r["family_name"]) / len(registry) if registry else 0
     registry_ids = {r["ingredient_id"] for r in registry}
@@ -561,6 +709,7 @@ _H02_COLUMNS = [
     "suggested_target_name",
     "target_ingredient_ids",
     "reason_code",
+    "form",
     "occurrence_count",
     "sample_recipe_ids",
     "sample_fragments",
@@ -583,8 +732,15 @@ def write_h02_candidates(
         suggested_target_id = ""
         suggested_target_name = ""
         if decision.operation == "merge" and not decision.target_ingredient_ids:
-            base = processing_base(source_key)
-            target_name = base if (base and base in id_by_name) else _SYNONYMS.get(source_key)
+            variant = processing_variant(source_key, set(id_by_name))
+            fixed_form = _FORM_VARIANTS.get(source_key)
+            target_name = (
+                variant[0]
+                if variant
+                else fixed_form[0]
+                if fixed_form
+                else _SYNONYMS.get(source_key)
+            )
             if target_name and target_name in id_by_name:
                 suggested_target_id = str(id_by_name[target_name])
                 suggested_target_name = target_name
@@ -597,6 +753,7 @@ def write_h02_candidates(
                 "suggested_target_name": suggested_target_name,
                 "target_ingredient_ids": ";".join(str(x) for x in decision.target_ingredient_ids),
                 "reason_code": decision.reason_code,
+                "form": decision.form or "",
                 "occurrence_count": ev.get("occurrence_count", 0),
                 "sample_recipe_ids": ";".join(str(x) for x in ev.get("sample_recipe_ids", [])),
                 "sample_fragments": " | ".join(ev.get("sample_fragments", [])),
@@ -620,6 +777,86 @@ def _normalize_old_name(name: str) -> str:
     return _strip_quantities(cleaned)
 
 
+# 固定旧 3,326 身份中无法由通用清洗安全决定的异常项。固定数据不会增减，
+# 因此用显式、可审查的迁移决定代替模糊匹配。
+_OLD_IDENTITY_REVIEW: dict[str, tuple[str, tuple[str, ...]]] = {
+    "切块））": ("discard", ()),
+    "切4））": ("discard", ()),
+    "切丝））": ("discard", ()),
+    "切段））": ("discard", ()),
+    "切小块））": ("discard", ()),
+    "冷冻4小时））": ("discard", ()),
+    "冷冻4小时)": ("discard", ()),
+    "去内脏洗净": ("discard", ()),
+    "去皮））": ("discard", ()),
+    "根和叶分开））": ("discard", ()),
+    "洗净": ("discard", ()),
+    "洗净切)）": ("discard", ()),
+    "洗净划花刀））": ("discard", ()),
+    "洗净））": ("discard", ()),
+    "B料：蜂蜜加油混合": ("split", ("蜂蜜", "油")),
+    "葱姜水": ("split", ("葱", "姜", "水")),
+    "青红椒": ("split", ("青椒", "红椒")),
+    "葱姜": ("split", ("葱", "姜")),
+    "葱姜适量": ("split", ("葱", "姜")),
+    "姜葱": ("split", ("姜", "葱")),
+    "姜葱末": ("split", ("姜", "葱")),
+    "葱姜少许": ("split", ("葱", "姜")),
+    "葱姜汁": ("split", ("葱", "姜")),
+    "葱姜蒜各": ("split", ("葱", "姜", "蒜")),
+    "青红椒丝": ("split", ("青椒", "红椒")),
+    "青红椒适量": ("split", ("青椒", "红椒")),
+    "青红椒）": ("split", ("青椒", "红椒")),
+    "%纯可可": ("merge", ("100%纯可可",)),
+    "头干瑶柱1粒": ("merge", ("80头干瑶柱",)),
+    "牛肩肉或牛腩": ("split", ("牛肩肉", "牛腩")),
+    "盐克": ("merge", ("盐",)),
+    "红糟或红腐乳汁": ("split", ("红糟", "红腐乳汁")),
+    "菠菜粉/或菠菜汁": ("split", ("菠菜粉", "菠菜汁")),
+    "葡萄干或蔓越莓干": ("split", ("葡萄干", "蔓越莓干")),
+    "蜜豆或芝麻": ("split", ("蜜豆", "芝麻")),
+}
+
+
+def _resolve_old_name(clean: str, new_names: set[str]) -> str | None:
+    """把旧单一身份名解析到当前保留的终点名称。"""
+    candidate = clean
+    visited: set[str] = set()
+    while candidate and candidate not in visited:
+        if candidate in new_names:
+            return candidate
+        visited.add(candidate)
+        fixed_form = _FORM_VARIANTS.get(candidate)
+        if fixed_form and fixed_form[0] != candidate:
+            candidate = fixed_form[0]
+            continue
+        synonym = _SYNONYMS.get(candidate)
+        if synonym and synonym != candidate:
+            candidate = synonym
+            continue
+        base = processing_base(candidate)
+        if base and base != candidate:
+            candidate = base
+            continue
+        break
+    return None
+
+
+def _is_old_non_edible(clean: str) -> bool:
+    """识别被状态/形态词包裹的旧非食用身份，迁移时显式记为 discard。"""
+    candidate = clean
+    visited: set[str] = set()
+    while candidate and candidate not in visited:
+        if candidate in NON_EDIBLE_KEYWORDS:
+            return True
+        visited.add(candidate)
+        base = processing_base(candidate)
+        if not base or base == candidate:
+            break
+        candidate = base
+    return False
+
+
 def build_old_to_new_diff(
     old_records: list[dict],
     new_registry: list[dict],
@@ -628,29 +865,37 @@ def build_old_to_new_diff(
     """旧 3,326 身份到新身份的 merge/split/discard 差异 crosswalk。"""
     new_names = set(id_by_name)
     diff: list[dict] = []
-    stats = {"identity": 0, "merge": 0, "orphan": 0, "split": 0}
+    stats = {"identity": 0, "merge": 0, "orphan": 0, "split": 0, "discard": 0}
     for old in old_records:
         old_name = old["name_canonical"]
         clean = _normalize_old_name(old_name)
-        if old_name in new_names or clean in new_names:
-            target = id_by_name.get(old_name) or id_by_name.get(clean)
-            op = "identity" if old_name in new_names else "merge"
-        else:
-            base = processing_base(clean)
-            if base and base in new_names:
-                target = id_by_name[base]
-                op = "merge"
-            else:
-                target = None
+        reviewed = _OLD_IDENTITY_REVIEW.get(old_name)
+        if reviewed:
+            op, target_names_tuple = reviewed
+            target_names = list(target_names_tuple)
+            missing = [name for name in target_names if name not in new_names]
+            if missing:
                 op = "orphan"
+                target_names = []
+        elif _is_old_non_edible(clean):
+            op = "discard"
+            target_names = []
+        else:
+            target_name = _resolve_old_name(clean, new_names)
+            if target_name:
+                target_names = [target_name]
+                op = "identity" if old_name == target_name else "merge"
+            else:
+                op = "orphan"
+                target_names = []
         stats[op] = stats.get(op, 0) + 1
         diff.append(
             {
                 "old_ingredient_id": old["ingredient_id"],
                 "old_name": old_name,
                 "operation": op,
-                "new_ingredient_id": target,
-                "new_name": next((n for n, i in id_by_name.items() if i == target), None) if target else None,
+                "new_ingredient_ids": [id_by_name[name] for name in target_names],
+                "new_names": target_names,
             }
         )
     stats["new_total"] = len(new_registry)

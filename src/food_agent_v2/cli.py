@@ -29,7 +29,7 @@ def main() -> None:
 
     if command == "data-rebuild":
         from food_agent_v2.b1.rebuild import main as fn
-        sys.exit(fn())
+        sys.exit(fn(sys.argv[2:]))
 
     elif command == "seed-generate":
         from food_agent_v2.b1.seed_writer import generate_mysql_seed, generate_qdrant_payloads
@@ -73,8 +73,9 @@ def main() -> None:
         api_main()
 
     elif command == "config-show":
-        from food_agent_v2.core.config import load_config
         import json
+
+        from food_agent_v2.core.config import load_config
         cfg = load_config()
         cfg_dict = {
             "mysql": {"host": cfg.mysql.host, "port": cfg.mysql.port, "database": cfg.mysql.database},
@@ -89,9 +90,10 @@ def main() -> None:
         print(json.dumps(cfg_dict, ensure_ascii=False, indent=2))
 
     elif command == "validate-data":
+        import json as _json
+
         from food_agent_v2.b1.cross_domain_validator import validate
         from food_agent_v2.core.paths import CLEANED_RECIPES, CLEANED_USERS
-        import json as _json
         with CLEANED_RECIPES.open("r", encoding="utf-8") as f:
             recipes = [_json.loads(line) for line in f if line.strip()]
         with CLEANED_USERS.open("r", encoding="utf-8") as f:

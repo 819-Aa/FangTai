@@ -24,6 +24,30 @@ CrosswalkReview = Literal["pending", "approved", "rejected"]
 #: 处理语后缀：丝/片/末/蓉/丁/花/碎/块/粒/段/条/泥 是切配形态，不构成新身份（INV-020）。
 PROCESSING_SUFFIXES = ("丝", "片", "末", "蓉", "丁", "花", "碎", "块", "粒", "段", "条", "泥")
 
+#: 固定源中实际出现的前置形态/状态/预处理词。只有剥离后存在真实基底身份时才生成候选。
+PROCESSING_PREFIXES = (
+    "半成品",
+    "罐装",
+    "洗净的",
+    "新鲜生",
+    "蒸熟",
+    "煮熟",
+    "去皮",
+    "泡发",
+    "切丁",
+    "切块",
+    "切片",
+    "法切",
+    "装饰",
+    "新鲜",
+    "冷冻",
+    "熟",
+    "干",
+)
+
+# 后缀字形与切配形态相同、但整词本身是独立食材的固定源词条。
+WHOLE_INGREDIENT_NAMES = {"油条", "鸡米花", "薯条", "甘薯薯条"}
+
 
 class CrosswalkDecision(BaseModel):
     """单个 merge/split/discard 决策。pending 必须人工 approve/reject 后才落定。
@@ -47,12 +71,79 @@ class CrosswalkDecision(BaseModel):
     sample_fragments: tuple[str, ...] = ()
 
 
+def processing_variant(
+    name: str,
+    known_names: set[str] | None = None,
+) -> tuple[str, str] | None:
+    """返回 ``(基底名, 形态)``；有已知名集合时选择可到达的最深真实基底。
+
+    前缀先按源文本顺序剥离，再逐层剥离后缀。例如
+    ``罐装去皮番茄 -> 番茄, 罐装+去皮``、
+    ``熟花生碎 -> 花生, 熟+碎``。不在固定注册候选中的中间字符串不能成为目标。
+    """
+    if name in WHOLE_INGREDIENT_NAMES:
+        return None
+
+    # 前后缀可能同时存在（干辣椒段）；遍历两种剥离顺序，避免先剥前缀后
+    # 错过仍然有效的中间基底“干辣椒”。
+    queue: list[tuple[str, tuple[str, ...], tuple[str, ...], int]] = [(name, (), (), 0)]
+    seen = {name}
+    variants: list[tuple[str, tuple[str, ...], int]] = []
+    while queue:
+        current, prefix_forms, suffix_forms, depth = queue.pop(0)
+        for prefix in PROCESSING_PREFIXES:
+            if current.startswith(prefix) and len(current) > len(prefix):
+                stripped = current[len(prefix):]
+                if stripped not in seen:
+                    seen.add(stripped)
+                    next_prefixes = (*prefix_forms, prefix)
+                    forms = (*next_prefixes, *reversed(suffix_forms))
+                    variants.append((stripped, forms, depth + 1))
+                    queue.append((stripped, next_prefixes, suffix_forms, depth + 1))
+        if current not in WHOLE_INGREDIENT_NAMES:
+            for suffix in PROCESSING_SUFFIXES:
+                if current.endswith(suffix) and len(current) > len(suffix):
+                    stripped = current[: -len(suffix)]
+                    if stripped not in seen:
+                        seen.add(stripped)
+                        next_suffixes = (*suffix_forms, suffix)
+                        forms = (*prefix_forms, *reversed(next_suffixes))
+                        variants.append((stripped, forms, depth + 1))
+                        queue.append((stripped, prefix_forms, next_suffixes, depth + 1))
+
+    if known_names is None:
+        chosen = variants[0] if variants else None
+    else:
+        matches = [item for item in variants if item[0] in known_names]
+        chosen = max(matches, key=lambda item: item[2]) if matches else None
+    if chosen is None:
+        return None
+    base, selected_forms, _ = chosen
+    return base, "+".join(selected_forms)
+
+
+def processing_prefix_variant(name: str) -> tuple[str, str] | None:
+    """只剥离连续前置状态词，用于首次出现时建立尚不存在的审核目标身份。"""
+    current = name
+    forms: list[str] = []
+    while True:
+        prefix = next(
+            (item for item in PROCESSING_PREFIXES if current.startswith(item) and len(current) > len(item)),
+            None,
+        )
+        if prefix is None:
+            break
+        current = current[len(prefix):]
+        forms.append(prefix)
+    if not forms:
+        return None
+    return current, "+".join(forms)
+
+
 def processing_base(name: str) -> str | None:
-    """若名称以处理语后缀结尾且去掉后缀后仍有基底字符，返回基底名，否则 None。"""
-    for suffix in PROCESSING_SUFFIXES:
-        if name.endswith(suffix) and len(name) - len(suffix) >= 1:
-            return name[: -len(suffix)]
-    return None
+    """兼容旧调用：返回第一层处理语剥离后的基底名。"""
+    variant = processing_variant(name)
+    return variant[0] if variant else None
 
 
 def generate_crosswalk_decisions(
@@ -60,6 +151,7 @@ def generate_crosswalk_decisions(
     *,
     non_edible: set[str],
     synonyms: dict[str, str],
+    form_variants: dict[str, tuple[str, str]],
     occurrence_evidence: dict[str, dict],
 ) -> list[CrosswalkDecision]:
     """生成 pending 决策：discard 非食用、merge 处理语变体、merge 同义词。
@@ -86,24 +178,45 @@ def generate_crosswalk_decisions(
                 )
             )
 
+    decision_sources = set(non_edible)
+
     # merge：处理语变体归一到基底身份（仅当基底也在候选名中）。
     for name in canonical_names:
-        base = processing_base(name)
-        if base and base in name_set and base != name:
+        if name in non_edible:
+            continue
+        variant = processing_variant(name, name_set)
+        if variant:
+            base, form = variant
             decisions.append(
                 CrosswalkDecision(
                     source_key=name,
                     operation="merge",
                     target_ingredient_ids=(),
                     reason_code="processing_variant",
-                    form=name[len(base):],
+                    form=form,
                     **_evidence(name),
                 )
             )
+            decision_sources.add(name)
+
+    # 固定源中无法由通用前后缀安全表达的状态/形态词（例如温水、鸡蛋液）。
+    for source, (target, form) in form_variants.items():
+        if source in name_set and target in name_set and source != target and source not in decision_sources:
+            decisions.append(
+                CrosswalkDecision(
+                    source_key=source,
+                    operation="merge",
+                    target_ingredient_ids=(),
+                    reason_code="processing_variant",
+                    form=form,
+                    **_evidence(source),
+                )
+            )
+            decision_sources.add(source)
 
     # merge：同义词归一到规范名（仅当目标也在候选名中）。
     for source, target in synonyms.items():
-        if source in name_set and target in name_set and source != target:
+        if source in name_set and target in name_set and source != target and source not in decision_sources:
             decisions.append(
                 CrosswalkDecision(
                     source_key=source,

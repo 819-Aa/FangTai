@@ -8,20 +8,28 @@ V2 变更：
 
 from __future__ import annotations
 
+import argparse
 import json
 import time
 from pathlib import Path
 
-from food_agent_v2.core.paths import PIPELINE_REPORTS_DIR
-from food_agent_v2.b1.recipe_cleaning import clean_recipes
-from food_agent_v2.b1.user_cleaning import clean_users
-from food_agent_v2.b1.ingredient_identity import build_ingredient_registry
-from food_agent_v2.b1.step_time_builder import build_step_profiles
-from food_agent_v2.b1.nutrition_feature_builder import build_nutrition_features
-from food_agent_v2.b1.rag_document_builder import build_rag_documents
-from food_agent_v2.b1.health_relation_builder import build_health_relations
 from food_agent_v2.b1.cross_domain_validator import validate
-from food_agent_v2.b1.quality_gates import run_all_gates, GateFailure
+from food_agent_v2.b1.health_relation_builder import build_health_relations
+from food_agent_v2.b1.ingredient_identity import (
+    build_ingredient_registry,
+    rebuild_ingredient_identities,
+)
+from food_agent_v2.b1.nutrition_feature_builder import build_nutrition_features
+from food_agent_v2.b1.quality_gates import GateFailure, run_all_gates
+from food_agent_v2.b1.rag_document_builder import build_rag_documents
+from food_agent_v2.b1.recipe_cleaning import clean_recipes
+from food_agent_v2.b1.source_manifest import (
+    canonical_source_manifest,
+    load_verified_recipe_source,
+)
+from food_agent_v2.b1.step_time_builder import build_step_profiles
+from food_agent_v2.b1.user_cleaning import clean_users
+from food_agent_v2.core.paths import PIPELINE_REPORTS_DIR, PROJECT_ROOT, RECIPES_RAW
 
 STAGES = [
     ("recipe_cleaning", "菜品清洗"),
@@ -36,7 +44,38 @@ STAGES = [
 ]
 
 
-def main() -> int:
+def run_ingredient_stage(
+    staging_dir: Path,
+    *,
+    source_path: Path = RECIPES_RAW,
+    overrides_path: Path = PROJECT_ROOT / "data" / "review" / "ingredient_identity_overrides.csv",
+) -> dict:
+    """运行计划规定的独立 T06 阶段，并把机器可核验报告写入 staging。"""
+    staging = Path(staging_dir).resolve()
+    rows = load_verified_recipe_source(source_path, canonical_source_manifest())
+    report = rebuild_ingredient_identities(rows, overrides_path, staging)
+    (staging / "ingredient_identity_report.json").write_text(
+        json.dumps(report, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return report
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="food-agent-v2 data-rebuild")
+    parser.add_argument("--stage", choices=("ingredients",))
+    parser.add_argument("--staging-dir", type=Path)
+    args = parser.parse_args(argv)
+
+    if args.stage == "ingredients":
+        if args.staging_dir is None:
+            parser.error("--stage ingredients requires --staging-dir")
+        report = run_ingredient_stage(args.staging_dir)
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return 0 if report["status"] == "passed" else 2
+    if args.staging_dir is not None:
+        parser.error("--staging-dir requires --stage ingredients")
+
     PIPELINE_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     started = time.perf_counter()
     results: list[dict] = []
@@ -112,7 +151,7 @@ def main() -> int:
     # --- 阶段 9: 质量门禁 ---
     t0 = time.perf_counter()
     try:
-        gate_report = run_all_gates(
+        run_all_gates(
             recipe_count=len(recipes),
             user_count=len(users),
             ingredient_count=len(ingredients),

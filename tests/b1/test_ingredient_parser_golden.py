@@ -4,6 +4,8 @@
 非食材说明，以及旧系统暴露的"海鲜菇/红酒醋/素蚝油"名称边界。
 """
 
+import pytest
+
 from food_agent_v2.b1.ingredient_parser import parse_ingredients
 
 
@@ -90,3 +92,48 @@ class TestParserGolden:
         occs = parse_ingredients("姜丝5克")
         assert occs[0].name_clean == "姜丝"
         assert occs[0].form == "丝"
+
+    @pytest.mark.parametrize("fragment", ["切3cm段））", "切丝））", "切块））"])
+    def test_malformed_processing_fragment_is_not_an_ingredient(self, fragment: str) -> None:
+        assert names(fragment) == []
+
+    @pytest.mark.parametrize(
+        "fragment",
+        ["洗净划花刀））", "洗净", "切小块））", "去皮））", "去内脏洗净", "洗净切4段)）"],
+    )
+    def test_standalone_preparation_instruction_is_not_an_ingredient(self, fragment: str) -> None:
+        assert names(fragment) == []
+
+    @pytest.mark.parametrize("fragment", ["冷冻4小时)", "根和叶分开））"])
+    def test_standalone_state_instruction_is_not_an_ingredient(self, fragment: str) -> None:
+        assert names(fragment) == []
+
+    def test_qualitative_count_suffix_is_not_part_of_identity(self) -> None:
+        assert names("新鲜香菇若干只") == ["新鲜香菇"]
+
+    def test_fixed_compound_mixture_splits_into_real_ingredients(self) -> None:
+        assert names("蜂蜜加油混合40毫升") == ["蜂蜜", "油"]
+
+    @pytest.mark.parametrize(
+        ("fragment", "expected"),
+        [
+            ("青红椒20克", [("青椒", None), ("红椒", None)]),
+            ("青红椒丝20克", [("青椒", "丝"), ("红椒", "丝")]),
+            ("葱姜10克", [("葱", None), ("姜", None)]),
+            ("姜葱末10克", [("姜", "末"), ("葱", "末")]),
+            ("葱姜蒜各5克", [("葱", None), ("姜", None), ("蒜", None)]),
+            ("葱姜汁8克", [("葱", "汁"), ("姜", "汁")]),
+            ("葱姜水10克", [("葱", None), ("姜", None), ("水", None)]),
+        ],
+    )
+    def test_fixed_compound_names_split_members(
+        self,
+        fragment: str,
+        expected: list[tuple[str, str | None]],
+    ) -> None:
+        occurrences = [item for item in parse_ingredients(fragment) if not item.is_note]
+        assert [(item.name_clean, item.form) for item in occurrences] == expected
+
+    def test_oil_fritter_is_a_whole_ingredient_not_a_form(self) -> None:
+        occs = parse_ingredients("油条1根")
+        assert [(o.name_clean, o.form) for o in occs if not o.is_note] == [("油条", None)]
