@@ -20,7 +20,9 @@ from food_agent_v2.b1.source_manifest import canonical_source_manifest, load_ver
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SOURCE_CSV = REPO_ROOT / "data" / "raw" / "recipes_sample_2000.csv"
-OLD_REGISTRY = REPO_ROOT / "data" / "cleaned" / "ingredient_registry.jsonl"
+OLD_REGISTRY = (
+    REPO_ROOT / "data" / "migration" / "legacy_ingredient_registry_3326.jsonl"
+)
 OVERRIDES = REPO_ROOT / "data" / "review" / "ingredient_identity_overrides.csv"
 
 

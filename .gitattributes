@@ -1,0 +1,3 @@
+# Byte-signed fixed inputs must be checked out exactly as committed.
+data/raw/recipes_sample_2000.csv -text -diff
+data/migration/legacy_ingredient_registry_3326.jsonl -text -diff
