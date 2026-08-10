@@ -9,7 +9,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-
 # ---- 拆分规则 ----
 
 # 分割符："，、；; \n" 和 "。"

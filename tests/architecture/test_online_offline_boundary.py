@@ -33,9 +33,6 @@ ONLINE_PACKAGES = [
 
 #: 已登记的历史边界违规 -> 消除任务。实现任务消除后必须同步删除对应条目。
 KNOWN_VIOLATIONS: dict[str, str] = {
-    "src/food_agent_v2/b3/identity_resolver.py::import::food_agent_v2.b1.ingredient_identity": "T11",
-    "src/food_agent_v2/b3/identity_resolver.py::file_ref::ingredient_registry.jsonl": "T11",
-    "src/food_agent_v2/b3/recipe_views.py::file_ref::rag_documents.jsonl": "T11",
     "src/food_agent_v2/b4/__init__.py::file_ref::health_relation_coverage.jsonl": "T12",
     "src/food_agent_v2/b4/__init__.py::file_ref::health_relations.jsonl": "T12",
     "src/food_agent_v2/b5/__init__.py::file_ref::time_profiles.jsonl": "T13",

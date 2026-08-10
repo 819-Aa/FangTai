@@ -15,10 +15,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SRC = REPO_ROOT / "src"
 
 #: 每个基础设施客户端只允许其拥有模块导入。
+#: b3.repository 是固定数据 Repository 适配器（T11），允许直接读 MySQL。
 INFRA_OWNERS = {
-    "pymysql": "application",
-    "redis": "c4",
-    "qdrant_client": "c1",
+    "pymysql": {"application", "b3"},
+    "redis": {"c4"},
+    "qdrant_client": {"c1"},
 }
 
 #: 在线运行时包（api_app 是单文件入口，单独扫描）。
@@ -58,9 +59,8 @@ def scan_file_infra_imports(py: Path) -> list[InfraImportViolation]:
             library = _classify_import(module)
             if library is None:
                 continue
-            owner = INFRA_OWNERS[library]
-            owner_dir = SRC / "food_agent_v2" / owner
-            if owner_dir not in py.parents:
+            owners = INFRA_OWNERS[library]
+            if not any((SRC / "food_agent_v2" / owner) in py.parents for owner in owners):
                 violations.append(
                     InfraImportViolation(
                         py.relative_to(REPO_ROOT).as_posix(),
