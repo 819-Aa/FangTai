@@ -50,17 +50,17 @@ def _artifact(runner, content, role):
     return runner._assemble_artifact(parsed, ROLE_POLICIES[role], _RID, ["p1"])
 
 
-def _invoke_artifact(client, runner, role, user_msg, attempts: int = 3):
-    """调用模型并组装校验为对应 Artifact；模型非确定，失败可重试。"""
+def _invoke_artifact(client, runner, role, user_msg):
+    """调用模型并组装校验为对应 Artifact（单次，不重试；超时记 FAIL/NOT_RUN）。"""
     prompt = get_prompt(role)
-    last = None
-    for _ in range(attempts):
+    try:
         resp = client.invoke(role, prompt, user_msg)
-        artifact, err = _artifact(runner, resp.get("content", ""), role)
-        if err is None:
-            return artifact
-        last = err
-    pytest.fail(f"{role} 模型输出 {attempts} 次均未通过严格 Artifact 校验: {last.message}")
+    except Exception as e:
+        pytest.fail(f"{role} 调用失败(NOT_RUN): {type(e).__name__}: {e}")
+    artifact, err = _artifact(runner, resp.get("content", ""), role)
+    if err is not None:
+        pytest.fail(f"{role} 模型输出未通过严格 Artifact 校验: {err.message}")
+    return artifact
 
 
 # ---- 查询理解 ----
@@ -138,20 +138,21 @@ def test_answer_contains_all_dishes(client, runner):
 # ---- 统一审查 ----
 
 def test_unified_review_detects_forbidden(client, runner):
-    """审查模型检测到禁止内容 → 合法 ReviewArtifact"""
+    """坏回答必须标记 REVISION_REQUIRED（含钠/疾病等硬性禁止内容），不得 PASS。"""
     bad = "为您推荐以下菜单。回锅肉含钠800mg，适合高血压患者食用。"
     msg = _CTX + f"## 审查对象\n{bad}\n\n## 证据链\n菜单：[回锅肉, 麻婆豆腐]"
     artifact = _invoke_artifact(client, runner, "unified_review", msg)
-    assert artifact.status in ("PASS", "REVISION_REQUIRED")
+    assert artifact.status == "REVISION_REQUIRED", \
+        f"坏回答必须 REVISION_REQUIRED，实际 {artifact.status}"
     print(f"\n  [OK] 统一审查-坏回答: status={artifact.status}")
 
 
 def test_unified_review_passes_clean(client, runner):
-    """审查模型通过干净回答 → 合法 ReviewArtifact"""
+    """干净回答 → PASS 的合法 ReviewArtifact"""
     clean = "为您推荐以下菜单：回锅肉、麻婆豆腐、清炒时蔬、紫菜蛋花汤。约35分钟完成。"
     msg = _CTX + f"## 审查对象\n{clean}\n\n## 证据链\n菜单：[回锅肉, 麻婆豆腐, 清炒时蔬, 紫菜蛋花汤]"
     artifact = _invoke_artifact(client, runner, "unified_review", msg)
-    assert artifact.status in ("PASS", "REVISION_REQUIRED")
+    assert artifact.status == "PASS", f"干净回答应 PASS，实际 {artifact.status}"
     print(f"\n  [OK] 统一审查-好回答: status={artifact.status}")
 
 

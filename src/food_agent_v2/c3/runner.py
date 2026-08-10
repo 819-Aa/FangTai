@@ -168,13 +168,7 @@ class WorkflowRunner:
                     state, c4, tool_ctx, "query_understanding", user_message=message)
                 if state.is_terminal():
                     break
-                # 澄清走正式可验证契约（needs_clarification + 必需字段），非任意 dict 特例
-                if self._is_clarification_payload(q_raw):
-                    state = reduce_workflow_state(
-                        state, action="query_understanding", success=True,
-                        needs_clarification=True)
-                    d1_api.publish_clarification_event(request_id, q_raw)
-                    break
+                # 查询理解输出必须为合法 QueryPlanArtifact（无澄清绕过；不满足即 fail-closed）
                 state = reduce_workflow_state(state, action="query_understanding", success=True)
                 state = reduce_workflow_state(
                     state, action="set_artifact", artifact="query_plan", value=q_artifact)
@@ -214,16 +208,17 @@ class WorkflowRunner:
             elif node == NodeType.MENU_DECISION:
                 feasible = tool_ctx.previous_results.get("feasible_menus", [])
                 md_input = {
+                    # 每个可行方案必须携带自己的 menu_hash（FeasibleMenuArtifact 无顶层 menu_hash）
                     "feasible_menus": [{
                         "plan_id": getattr(p, "plan_id", ""),
                         "recipe_ids": getattr(p, "recipe_ids", []),
+                        "menu_hash": getattr(p, "menu_hash", ""),
                         "dominant_objective": getattr(p, "dominant_objective", ""),
                         "total_score": getattr(p, "total_score", 0.0),
                         "makespan_seconds": getattr(p, "makespan_seconds", None),
                     } for p in feasible],
                     "feasible_menu_artifact_ref": str(feasible_artifact.artifact_id)
                     if feasible_artifact else "",
-                    "menu_hash": feasible_artifact.menu_hash if feasible_artifact else "",
                     "participant_refs": participant_refs,
                     "request_id": request_id,
                 }
@@ -266,6 +261,12 @@ class WorkflowRunner:
                     state = self._fail(state, "ARTIFACT_INTEGRITY_FAILED",
                                        f"所选 plan_id 不在可行方案中: {md.plan_id}")
                     break
+                # MenuDecisionArtifact.menu_hash 必须等于所选 plan 对应的 FeasibleMenu.menu_hash
+                plan = next((p for p in feasible if getattr(p, "plan_id", "") == md.plan_id), None)
+                if plan is None or md.menu_hash != getattr(plan, "menu_hash", ""):
+                    state = self._fail(state, "ARTIFACT_INTEGRITY_FAILED",
+                                       "决策 menu_hash 与所选可行方案不一致")
+                    break
                 # 引用生命周期：MenuDecisionArtifact 引用 B4 FinalValidationArtifact 与 FeasibleMenuArtifact
                 refs_err = self._decision_refs_error(md, fv, feasible_artifact)
                 if refs_err:
@@ -282,6 +283,8 @@ class WorkflowRunner:
                 plan_id = md.plan_id
                 recipe_ids = list(md.recipe_ids)
                 final_artifact = fv
+                state = reduce_workflow_state(
+                    state, action="set_artifact", artifact="menu_decision", value=md)
                 state = reduce_workflow_state(
                     state, action="set_artifact", artifact="final_validation", value=fv)
 
@@ -402,15 +405,6 @@ class WorkflowRunner:
         payload = artifact.model_dump(exclude={"content_hash", "input_fingerprint",
                                                "artifact_id", "request_id"})
         return canonical_json_hash(payload)
-
-    @staticmethod
-    def _is_clarification_payload(payload: Any) -> bool:
-        """正式澄清契约：needs_clarification=true 且包含 clarification_question 与 missing_key_info。"""
-        return (isinstance(payload, dict)
-                and payload.get("needs_clarification") is True
-                and isinstance(payload.get("clarification_question"), str)
-                and bool(payload.get("clarification_question"))
-                and isinstance(payload.get("missing_key_info"), list))
 
     def _build_dual_artifacts(self, state: WorkflowState,
                               tool_ctx: ToolContext) -> tuple[WorkflowState, FeasibleMenuArtifact | None]:
@@ -536,10 +530,6 @@ class WorkflowRunner:
                                 failed_node=state.current_node)
             return reduce_workflow_state(state, action="fail", error=err), result, None
 
-        # 查询理解：仅正式澄清契约放行（否则按 Artifact 严格校验）
-        if role == "query_understanding" and self._is_clarification_payload(result):
-            return state, result, None
-
         node_receipts = tool_ctx.tool_receipts[pre_count:]
 
         budget_err = self._validate_tool_budget(node_receipts)
@@ -550,8 +540,10 @@ class WorkflowRunner:
         if post_err:
             return reduce_workflow_state(state, action="fail", error=post_err), result, None
 
+        # 真实 input_fingerprint：绑定本节点 request/node/role/ModelContext 投影与用户输入
+        fingerprint_seed = self._fingerprint_seed(state, role, model_ctx, user_message)
         artifact, schema_err = self._assemble_artifact(
-            result, policy, state.request_id, state.participant_refs)
+            result, policy, state.request_id, state.participant_refs, fingerprint_seed)
         if schema_err:
             return reduce_workflow_state(state, action="fail", error=schema_err), result, None
 
@@ -587,19 +579,44 @@ class WorkflowRunner:
             f"模型输出不符合 {policy.output_artifact_type} Schema",
         )
 
+    @staticmethod
+    def _fingerprint_seed(state: WorkflowState, role: str, model_ctx: Any,
+                          user_message: str) -> str:
+        """绑定本节点真实输入的指纹种子（request/node/role/ModelContext 投影/用户输入）。"""
+        projection = {
+            "role": getattr(model_ctx, "role", role),
+            "conversation": getattr(model_ctx, "conversation_visible", None),
+            "constraints": getattr(model_ctx, "constraint_visible", None),
+            "menu": getattr(model_ctx, "menu_visible", None),
+        }
+        return canonical_json_hash({
+            "request_id": state.request_id,
+            "node_id": state.current_node.value if state.current_node else "",
+            "build_id": state.build_id,
+            "role": role,
+            "projection": projection,
+            "user_message": user_message,
+        })
+
     def _assemble_artifact(self, parsed: Any, policy: Any,
-                           request_id: str, participant_refs: list[str]
+                           request_id: str, participant_refs: list[str],
+                           fingerprint_seed: str | None = None
                            ) -> tuple[BaseModel | None, WorkflowError | None]:
         """组装式严格校验：模型输出语义字段，workflow 补充 artifact_id/request_id/
-        participant_refs/hashes（模型无法可靠生成 64 位 hash），再 model_validate。
+        participant_refs/hashes，再 model_validate。
 
-        任一必需语义字段缺失、额外字段、普通文本、任意 dict 一律 SCHEMA_VALIDATION_FAILED。
+        input_fingerprint 绑定本节点真实输入（非 64 个 0）；content_hash 对语义内容
+        做规范 hash。任一必需语义字段缺失、额外字段、普通文本、任意 dict 一律
+        SCHEMA_VALIDATION_FAILED。
         """
         if not policy.output_artifact_type:
             return None, None
         if not isinstance(parsed, dict):
             return None, WorkflowError("SCHEMA_VALIDATION_FAILED",
                                        f"模型输出不符合 {policy.output_artifact_type} Schema")
+        fingerprint = canonical_json_hash(
+            {"request_id": request_id, "participant_refs": list(participant_refs),
+             "seed": fingerprint_seed or ""})
         for name in (t.strip() for t in policy.output_artifact_type.split("|")):
             cls = ARTIFACT_TYPES.get(name)
             if cls is None:
@@ -611,7 +628,7 @@ class WorkflowRunner:
             if "participant_refs" in cls.model_fields:
                 assembled["participant_refs"] = list(participant_refs)
             if "input_fingerprint" in cls.model_fields and "input_fingerprint" not in assembled:
-                assembled["input_fingerprint"] = "0" * 64
+                assembled["input_fingerprint"] = fingerprint
             if "content_hash" in cls.model_fields and "content_hash" not in assembled:
                 assembled["content_hash"] = "0" * 64
             try:
@@ -868,6 +885,8 @@ class WorkflowRunner:
             _time_data = {"available": False}
         return {
             "selected_menu": {"plan_id": plan_id, "dishes": _dishes},
+            "plan_id": plan_id,
+            "recipe_ids": recipe_ids,
             "menu_hash": md.menu_hash if md else menu_hash_for(plan_id, recipe_ids),
             "menu_ref": md.feasible_menu_artifact_ref if md else "",
             "final_validation_ref": str(final_artifact.artifact_id) if final_artifact else "",

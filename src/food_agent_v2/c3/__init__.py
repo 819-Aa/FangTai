@@ -101,7 +101,9 @@ ROLE_POLICIES: dict[str, RolePolicy] = {
         ],
         forbidden_tools=["validate_selected_menu_health"],
         required_tool_receipts=["get_health_constraints", "evaluate_recipe_health", "generate_feasible_menus"],
-        output_artifact_type="HealthEvaluationArtifact|FeasibleMenuArtifact",
+        # 双 Artifact（HealthEvaluationArtifact/FeasibleMenuArtifact）由权威工具结果构建，
+        # 模型不输出完整 Artifact；output_artifact_type 为空表示无需模型级 Artifact 校验。
+        output_artifact_type="",
         input_artifact_types=["QueryPlanArtifact"],
         context_projection_role="health_menu_planning",
     ),

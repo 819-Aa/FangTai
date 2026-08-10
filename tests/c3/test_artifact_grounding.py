@@ -199,9 +199,11 @@ class TestPromptContract:
 
         data = json.loads(
             Path("config/prompts.json").resolve().read_text(encoding="utf-8"))
-        for role in ("query_understanding", "health_menu_planning", "menu_decision",
+        for role in ("query_understanding", "menu_decision",
                      "answer_generation", "unified_review"):
             assert "严格" in data[role]["system"], role
+        # health_menu_planning 收敛契约：双 Artifact 由工具回执构建，模型不伪造
+        assert "由工作流按工具回执构建" in data["health_menu_planning"]["system"]
 
     def test_query_understanding_output_validates(self, runner) -> None:
         # 语义输出（workflow 补充 id/refs/hash）
