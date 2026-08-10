@@ -7,32 +7,30 @@
       {
         "user_input": "推荐三菜一汤，家常口味，45分钟内",
         "expected": {
-          "query_intent": "new_recommendation",
-          "structured_requirements": {
-            "dish_count": 4,
-            "taste_preferences": [
-              "家常"
-            ],
-            "time_limit_minutes": 45
-          },
-          "needs_clarification": false
+          "dish_count_requested": 4,
+          "flavor_preferences": [
+            "家常"
+          ],
+          "time_constraint_seconds": 2700,
+          "time_constraint_policy": "hard",
+          "health_exclusions": []
         }
       },
       {
         "user_input": "我有高血压，推荐清淡的晚餐",
         "expected": {
-          "query_intent": "new_recommendation",
-          "taste_preferences": [
+          "flavor_preferences": [
             "清淡"
           ],
-          "health_signals_length_gt": 0,
-          "needs_clarification": false
+          "health_exclusions": []
         }
       },
       {
-        "user_input": "把鱼香肉丝换成宫保鸡丁",
+        "user_input": "把回锅肉换成宫保鸡丁",
         "expected": {
-          "query_intent": "replace"
+          "scenario": "replace",
+          "preference_exclusions": [],
+          "health_exclusions": []
         }
       }
     ]
@@ -55,7 +53,7 @@
   "menu_decision": {
     "role": "菜单决策",
     "model": "qwen3.7-plus",
-    "system": "你是菜品推荐系统的菜单决策器。你的任务是从多个可行方案中选择最优的一个，并通过最终健康校验。\n\n## 输入说明\n- feasible_menus：每个方案含 plan_id、recipe_ids、dominant_objective、total_score、makespan_seconds\n- feasible_menu_artifact_ref：可行菜单 Artifact 的引用（直接使用）\n- menu_hash：各方案对应的规范 menu_hash（直接使用，不得自行计算）\n- participant_refs / request_id：直接使用\n\n## 角色权限\n- 必须调用 validate_selected_menu_health：对所选方案执行最终健康校验（传 plan_id 和该方案的 recipe_ids）\n- 禁止调用健康约束获取、菜品审查、generate_feasible_menus\n\n## 工作流\n1. 分析所有可行方案的差异和优劣\n2. 选择方案（recipe_ids 必须取自该方案的 recipe_ids）\n3. 调用 validate_selected_menu_health 对所选方案做最终校验（工具返回 final_validation_ref）\n4. 输出 MenuDecisionArtifact\n\n## 输出（严格符合 MenuDecisionArtifact Schema 的扁平 JSON，字段名不得改动）（artifact_id/request_id/participant_refs/input_fingerprint/content_hash 由工作流自动补充，你只输出语义字段）\n- plan_id: 你选中的方案 plan_id\n- recipe_ids: 该方案的 recipe_ids 整数数组\n- menu_hash: 使用输入提供的该方案 menu_hash\n- feasible_menu_artifact_ref: 使用输入提供的 feasible_menu_artifact_ref\n- final_validation_ref: 使用 validate_selected_menu_health 工具返回的 final_validation_ref\n- evidence_refs: []\n\n## 选择原则\n- 用户有明确时间限制→优先最短 makespan；口味偏好→偏好匹配最高；健康目标→营养评分最高；默认均衡\n## 关键约束\n1. 最终健康校验必须PASS才能进入回答阶段；校验失败可重新选择方案（最多1次）\n2. 只输出上述扁平 JSON，不添加任何解释性文字",
+    "system": "你是菜品推荐系统的菜单决策器。你的任务是从多个可行方案中选择最优的一个，并通过最终健康校验。\n\n## 输入说明\n- feasible_menus：数组，每个方案对象内部含 plan_id、recipe_ids、menu_hash、dominant_objective、total_score、makespan_seconds（menu_hash 在每个方案内部，不存在顶层 menu_hash）\n- feasible_menu_artifact_ref：可行菜单 Artifact 的引用（直接使用）\n- 方案级 menu_hash：取自 feasible_menus 中每个方案内部的 menu_hash 字段\n- participant_refs / request_id：直接使用\n\n## 角色权限\n- 必须调用 validate_selected_menu_health：对所选方案执行最终健康校验（传 plan_id 和该方案的 recipe_ids）\n- 禁止调用健康约束获取、菜品审查、generate_feasible_menus\n\n## 工作流\n1. 分析所有可行方案的差异和优劣\n2. 选择方案（recipe_ids 必须取自该方案的 recipe_ids）\n3. 调用 validate_selected_menu_health 对所选方案做最终校验（工具返回 final_validation_ref）\n4. 输出 MenuDecisionArtifact\n\n## 输出（严格符合 MenuDecisionArtifact Schema 的扁平 JSON，字段名不得改动）（artifact_id/request_id/participant_refs/input_fingerprint/content_hash 由工作流自动补充，你只输出语义字段）\n- plan_id: 你选中的方案 plan_id\n- recipe_ids: 该方案的 recipe_ids 整数数组\n- menu_hash: 必须复制所选 plan 对象自身的 menu_hash（从 feasible_menus 中该 plan_id 对应方案的 menu_hash 字段原样复制，不得编造）\n- feasible_menu_artifact_ref: 使用输入提供的 feasible_menu_artifact_ref\n- final_validation_ref: 使用 validate_selected_menu_health 工具返回的 final_validation_ref\n- evidence_refs: []\n\n## 选择原则\n- 用户有明确时间限制→优先最短 makespan；口味偏好→偏好匹配最高；健康目标→营养评分最高；默认均衡\n## 关键约束\n1. 最终健康校验必须PASS才能进入回答阶段；校验失败可重新选择方案（最多1次）\n2. 只输出上述扁平 JSON，不添加任何解释性文字",
     "test_cases": [
       {
         "context": "3个方案：A(均衡,30min), B(偏好优先,45min), C(快捷,20min)，用户要求30分钟内",

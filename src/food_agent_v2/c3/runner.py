@@ -622,15 +622,15 @@ class WorkflowRunner:
             if cls is None:
                 return None, WorkflowError("SCHEMA_VALIDATION_FAILED", f"未知 Artifact 类型: {name}")
             assembled = dict(parsed)
-            # workflow 管理字段：模型不得伪造（覆盖为权威值）
+            # workflow 管理字段：无条件覆盖为权威值，模型提交值一律不采用
             assembled["artifact_id"] = str(uuid.uuid4())
             assembled["request_id"] = str(request_id)
             if "participant_refs" in cls.model_fields:
                 assembled["participant_refs"] = list(participant_refs)
-            if "input_fingerprint" in cls.model_fields and "input_fingerprint" not in assembled:
+            if "input_fingerprint" in cls.model_fields:
                 assembled["input_fingerprint"] = fingerprint
-            if "content_hash" in cls.model_fields and "content_hash" not in assembled:
-                assembled["content_hash"] = "0" * 64
+            if "content_hash" in cls.model_fields:
+                assembled["content_hash"] = "0" * 64  # 之后由 _content_hash 重算
             try:
                 artifact = cls.model_validate(assembled)
             except ValidationError:

@@ -264,6 +264,36 @@ class TestPromptContract:
         assert err is not None
         assert err.error_code == "SCHEMA_VALIDATION_FAILED"
 
+    def test_menu_decision_prompt_binds_menu_hash_per_plan(self) -> None:
+        """menu_decision 提示词：menu_hash 在每个方案内部，无顶层 menu_hash；输出复制所选 plan 的 menu_hash。"""
+        import json
+        from pathlib import Path
+
+        data = json.loads(
+            Path("config/prompts.json").resolve().read_text(encoding="utf-8"))
+        sys = data["menu_decision"]["system"]
+        assert "menu_hash 在每个方案内部" in sys
+        assert "不存在顶层 menu_hash" in sys
+        assert "复制所选 plan 对象自身的 menu_hash" in sys
+
+    def test_workflow_fields_overwrite_model_forgery(self, runner) -> None:
+        """模型伪造的 workflow 管理字段一律被覆盖为权威值（不得采用模型提交值）。"""
+        forged = "9" * 64
+        payload = {
+            "dish_count_requested": 4,
+            "artifact_id": "00000000-0000-0000-0000-000000000000",
+            "request_id": "00000000-0000-0000-0000-000000000000",
+            "participant_refs": ["attacker"],
+            "input_fingerprint": forged,
+            "content_hash": forged,
+        }
+        art, err = self._assemble(runner, payload, "query_understanding")
+        assert err is None
+        assert str(art.request_id) == str(RID)          # 覆盖为真实 request_id
+        assert art.participant_refs == ("p1",)          # 覆盖为真实 participant_refs
+        assert art.input_fingerprint != forged          # 覆盖为工作流计算指纹
+        assert art.content_hash != forged               # 覆盖为工作流计算 content_hash
+
 
 class TestAnswerMenuBinding:
     def test_valid_binding_passes(self) -> None:
