@@ -121,17 +121,19 @@ class TestC2:
         from food_agent_v2.b3.recipe_views import get_view_builder
         from collections import Counter
         builder = get_view_builder()
-        # 找 4 个汤 + 4 个主食 + 4 个饮品
-        cands, features = [], {}
+        # T15：菜数精确执行 + 槽位上限（汤/主食/饮品/主菜各≤1）。收集四类候选，
+        # 使 4 道菜单能精确凑满（1 汤 + 1 主食 + 1 饮品 + 1 主菜/甜品）。
+        cands, features, counts = [], {}, {}
         for rid in range(1, 2001):
             r = builder.get_recipe(rid)
             if not r:
                 continue
             t = MenuPlanner._classify_dish_type(r["名称"])
-            if t in ("soup", "staple", "drink"):
+            if t in ("soup", "staple", "drink", "main") and counts.get(t, 0) < 4:
                 cands.append(rid)
                 features[rid] = {"name": r["名称"], "fields": {}}
-            if len(cands) >= 12:
+                counts[t] = counts.get(t, 0) + 1
+            if len(cands) >= 16:
                 break
         planner = MenuPlanner()
         planner.set_safe_candidates(cands)
@@ -140,7 +142,8 @@ class TestC2:
         assert plans, "应生成至少一个方案"
         types = Counter(MenuPlanner._classify_dish_type(features[r]["name"])
                         for r in plans[0].recipe_ids)
-        for t in ("soup", "staple", "drink"):
+        assert len(plans[0].recipe_ids) == 4
+        for t in ("soup", "staple", "drink", "dessert"):
             assert types.get(t, 0) <= 1, f"槽位超限: {types}"
 
 
