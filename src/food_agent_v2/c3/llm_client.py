@@ -90,7 +90,7 @@ class LLMClient:
             api_key=self._api_key,
             base_url=self._base_url,
             timeout=self._timeout,
-            max_retries=self._max_retries,
+            max_retries=0,  # T17：SDK 不自动重试，失败交给 runner fail-closed
         )
 
         messages = [

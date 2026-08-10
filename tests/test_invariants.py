@@ -26,8 +26,9 @@ def _redis_available() -> bool:
 
 def _mysql_available() -> bool:
     try:
-        from food_agent_v2.core.config import load_config
         import pymysql
+
+        from food_agent_v2.core.config import load_config
         cfg = load_config()
         conn = pymysql.connect(host=cfg.mysql.host, port=cfg.mysql.port,
                                user=cfg.mysql.user, password=cfg.mysql.password,
@@ -38,28 +39,7 @@ def _mysql_available() -> bool:
         return False
 
 
-# ---- INV-005：回答 dish_ids ⊆ 菜单 ----
-
-class TestInv005:
-    def test_extract_dish_ids_top_level(self):
-        from food_agent_v2.c3.runner import WorkflowRunner
-        assert WorkflowRunner._extract_answer_dish_ids({"dish_ids": [1, 2, 3]}) == [1, 2, 3]
-
-    def test_extract_dish_ids_nested(self):
-        from food_agent_v2.c3.runner import WorkflowRunner
-        r = {"AnswerArtifact": {"dish_ids": [4, 5]}}
-        assert WorkflowRunner._extract_answer_dish_ids(r) == [4, 5]
-
-    def test_extract_dish_ids_missing(self):
-        from food_agent_v2.c3.runner import WorkflowRunner
-        assert WorkflowRunner._extract_answer_dish_ids({"content": "文字"}) == []
-
-    def test_subset_logic(self):
-        # INV-005：dish_ids 必须是菜单 recipe_ids 的子集
-        menu = {101, 202, 303}
-        assert {101, 202}.issubset(menu)
-        assert not {101, 999}.issubset(menu)
-
+# ---- INV-005：回答必须与最终菜单绑定（见 tests/c3/test_artifact_grounding.py） ----
 
 # ---- INV-012：不可信指令检测 ----
 
@@ -117,9 +97,10 @@ class TestC2:
         assert MenuPlanner._classify_dish_type("红烧肉") == "main"
 
     def test_slot_constraint(self):
-        from food_agent_v2.c2 import MenuPlanner, MenuHardConstraints
-        from food_agent_v2.b3.recipe_views import get_view_builder
         from collections import Counter
+
+        from food_agent_v2.b3.recipe_views import get_view_builder
+        from food_agent_v2.c2 import MenuHardConstraints, MenuPlanner
         builder = get_view_builder()
         # T15：菜数精确执行 + 槽位上限（汤/主食/饮品/主菜各≤1）。收集四类候选，
         # 使 4 道菜单能精确凑满（1 汤 + 1 主食 + 1 饮品 + 1 主菜/甜品）。
@@ -152,6 +133,7 @@ class TestC2:
 class TestC1TimeBoost:
     def test_trigger_and_boost(self):
         from types import SimpleNamespace
+
         from food_agent_v2.c1 import RecipeRetrievalService
         svc = RecipeRetrievalService()
         svc.load()
@@ -180,8 +162,7 @@ class TestC1TimeBoost:
 
 class TestC4Compression:
     def test_compress_preserves_immutable(self):
-        from food_agent_v2.c4 import (ContextService, ConversationEvent,
-                                      EventType)
+        from food_agent_v2.c4 import ContextService, ConversationEvent, EventType
         svc = ContextService()
         ctx, m = svc.build_shared_context("sess_t", ["p1"], {"raw_text": "第一轮"},
                                           {"p1": 1}, request_id="r1")
@@ -218,8 +199,8 @@ class TestC4Compression:
 @pytest.mark.skipif(not _redis_available(), reason="Redis 不可用")
 class TestD1:
     def test_cancel_sets_marker(self):
-        from food_agent_v2.d1 import api
         from food_agent_v2.c4.redis_store import RedisSessionStore
+        from food_agent_v2.d1 import api
         _, resp = api.create_request({"idempotency_key": "t-cancel",
                                       "participants": [{"participant_ref": "p1",
                                                         "user_id": "1"}],
@@ -239,8 +220,10 @@ class TestD1:
                                       "message": "测试", "config": {}})
         rid = resp["request_id"]
         api.update_status(rid, "running")
-        api._requests.clear(); api._events.clear()
-        api._event_cursors.clear(); api._idempotency.clear()
+        api._requests.clear()
+        api._events.clear()
+        api._event_cursors.clear()
+        api._idempotency.clear()
         req = api.get_request_status(rid)[1]
         assert req["status"] == "running"
         assert len(api.subscribe_events(rid)) >= 1
@@ -252,6 +235,7 @@ class TestD1:
 class TestInv010:
     def test_commit_and_query(self):
         import time
+
         from food_agent_v2.application import commit_request_result
         rid = f"t-inv010-{int(time.time()*1000)}"
         commit_request_result(
@@ -261,8 +245,9 @@ class TestInv010:
                              "final_validation_verdict": "PASS"},
             participant_refs=["p1"],
         )
-        from food_agent_v2.core.config import load_config
         import pymysql
+
+        from food_agent_v2.core.config import load_config
         cfg = load_config()
         conn = pymysql.connect(host=cfg.mysql.host, port=cfg.mysql.port,
                                user=cfg.mysql.user, password=cfg.mysql.password,
@@ -276,6 +261,7 @@ class TestInv010:
 
     def test_idempotent_double_commit(self):
         import time
+
         from food_agent_v2.application import commit_request_result
         rid = f"t-inv010-idem-{int(time.time()*1000)}"
         for _ in range(2):
@@ -284,8 +270,9 @@ class TestInv010:
                 final_plan_id="plan_x",
                 health_evidence={"recipe_ids": [1], "verdict": "PASS"},
             )
-        from food_agent_v2.core.config import load_config
         import pymysql
+
+        from food_agent_v2.core.config import load_config
         cfg = load_config()
         conn = pymysql.connect(host=cfg.mysql.host, port=cfg.mysql.port,
                                user=cfg.mysql.user, password=cfg.mysql.password,

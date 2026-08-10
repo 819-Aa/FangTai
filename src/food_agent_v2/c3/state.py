@@ -93,14 +93,6 @@ class WorkflowState:
     def is_terminal(self) -> bool:
         return self.status in TERMINAL_STATUSES
 
-    def check_and_increment(self, counter_name: str, limit: int) -> bool:
-        """遗留可变计数器辅助（纯 reducer 使用 _next_counter）。"""
-        current = getattr(self, counter_name, 0)
-        if current >= limit:
-            return False
-        setattr(self, counter_name, current + 1)
-        return True
-
 
 def can_model_write_state() -> bool:
     """模型永远不能直接写 WorkflowState（INV-006）。"""
@@ -200,10 +192,10 @@ def reduce_workflow_state(state: WorkflowState, *, action: str, **params) -> Wor
         return replace(state, current_node=NodeType.UNIFIED_REVIEW)
 
     if action == "unified_review":
-        verdict = params.get("verdict", "FAILED")
-        if verdict == "PASS":
+        status = params.get("status", "FAILED")
+        if status == "PASS":
             return replace(state, status=RequestStatus.COMPLETED, current_node=NodeType.ATOMIC_COMMIT)
-        if verdict == "REVISION_REQUIRED":
+        if status == "REVISION_REQUIRED":
             new_count, ok = _next_counter(state, "review_revision_count", 1)
             if ok:
                 return replace(

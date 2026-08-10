@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -216,91 +215,6 @@ def _is_sha256(value: Any) -> bool:
             and all(c in "0123456789abcdefABCDEF" for c in value))
 
 
-# ---- 状态转换（遗留可变实现）----
-# 仅 runner.py（T17 文件）仍在原地修改 WorkflowState。T16 起新状态更新一律走
-# state.reduce_workflow_state（纯 reducer，返回新状态）；T17 将 runner 迁移后删除本类。
-
-class WorkflowTransition:
-    @staticmethod
-    def context_building(state: WorkflowState, manifest_valid: bool) -> NodeType:
-        if not manifest_valid:
-            state.status = RequestStatus.FAILED
-            state.error = WorkflowError("CONTEXT_INTEGRITY_FAILED", "上下文完整性校验失败")
-            return NodeType.ATOMIC_COMMIT
-        return NodeType.QUERY_UNDERSTANDING
-
-    @staticmethod
-    def query_understanding(state: WorkflowState, success: bool, needs_clarification: bool = False) -> NodeType:
-        if needs_clarification:
-            state.status = RequestStatus.NEEDS_CLARIFICATION
-            return NodeType.ATOMIC_COMMIT
-        if not success:
-            state.status = RequestStatus.FAILED
-            return NodeType.ATOMIC_COMMIT
-        return NodeType.HEALTH_MENU_PLANNING
-
-    @staticmethod
-    def health_menu_planning(state: WorkflowState, result: str) -> NodeType:
-        if result == "ok":
-            return NodeType.MENU_DECISION
-        if result == "no_safe_menu":
-            state.status = RequestStatus.NO_SAFE_MENU
-            return NodeType.ATOMIC_COMMIT
-        if result == "no_feasible_menu":
-            state.status = RequestStatus.NO_FEASIBLE_MENU
-            return NodeType.ATOMIC_COMMIT
-        if result == "needs_expansion":
-            if state.check_and_increment("retrieval_expansion_count", 1):
-                state.status = RequestStatus.REVISING
-                return NodeType.HEALTH_MENU_PLANNING
-            state.error = WorkflowError("WORKFLOW_RETRY_LIMIT_EXCEEDED", "扩展召回已达上限")
-            state.status = RequestStatus.FAILED
-            return NodeType.ATOMIC_COMMIT
-        state.status = RequestStatus.FAILED
-        return NodeType.ATOMIC_COMMIT
-
-    @staticmethod
-    def menu_decision(state: WorkflowState, validation_pass: bool, needs_replan: bool = False) -> NodeType:
-        if needs_replan:
-            if state.check_and_increment("health_replan_count", 1):
-                state.status = RequestStatus.REVISING
-                return NodeType.HEALTH_MENU_PLANNING
-            state.error = WorkflowError("WORKFLOW_RETRY_LIMIT_EXCEEDED", "重新规划已达上限")
-            state.status = RequestStatus.FAILED
-            return NodeType.ATOMIC_COMMIT
-        if not validation_pass:
-            state.error = WorkflowError("FINAL_HEALTH_VALIDATION_FAILED", "最终健康校验未通过")
-            state.status = RequestStatus.FAILED
-            return NodeType.ATOMIC_COMMIT
-        return NodeType.ANSWER_GENERATION
-
-    @staticmethod
-    def answer_generation(state: WorkflowState, success: bool) -> NodeType:
-        if not success:
-            state.status = RequestStatus.FAILED
-            return NodeType.ATOMIC_COMMIT
-        return NodeType.UNIFIED_REVIEW
-
-    @staticmethod
-    def unified_review(state: WorkflowState, verdict: str) -> NodeType:
-        if verdict == "PASS":
-            state.status = RequestStatus.COMPLETED
-            return NodeType.ATOMIC_COMMIT
-        if verdict == "REVISION_REQUIRED":
-            if state.check_and_increment("review_revision_count", 1):
-                state.status = RequestStatus.REVISING
-                return NodeType.ANSWER_GENERATION
-            state.error = WorkflowError("WORKFLOW_RETRY_LIMIT_EXCEEDED", "修订已达上限")
-            state.status = RequestStatus.FAILED
-            return NodeType.ATOMIC_COMMIT
-        state.status = RequestStatus.FAILED
-        return NodeType.ATOMIC_COMMIT
-
-    @staticmethod
-    def atomic_commit(state: WorkflowState) -> None:
-        state.updated_at = time.time()
-
-
 # WorkflowState 辅助方法
 def _get_artifact_by_type(self: WorkflowState, art_type: str) -> dict | None:
     mapping = {
@@ -331,7 +245,6 @@ __all__ = [
     "UNTRUSTED_INSTRUCTION_PATTERNS",
     "WorkflowError",
     "WorkflowState",
-    "WorkflowTransition",
     "can_model_write_state",
     "detect_untrusted_instruction",
     "reduce_workflow_state",

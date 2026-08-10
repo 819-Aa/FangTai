@@ -77,7 +77,7 @@ class TestTransitionGraph:
         assert s.current_node == NodeType.UNIFIED_REVIEW
 
     def test_review_pass_completes(self) -> None:
-        s = reduce_workflow_state(make_state(), action="unified_review", verdict="PASS")
+        s = reduce_workflow_state(make_state(), action="unified_review", status="PASS")
         assert s.status == RequestStatus.COMPLETED
         assert s.current_node == NodeType.ATOMIC_COMMIT
         assert s.is_terminal()
@@ -86,7 +86,7 @@ class TestTransitionGraph:
 class TestUnknownVerdictFailClosed:
     def test_unknown_review_verdict_fails(self) -> None:
         for verdict in ("REVIEW_REQUIRED", "weird", "", None):
-            s = reduce_workflow_state(make_state(), action="unified_review", verdict=verdict)
+            s = reduce_workflow_state(make_state(), action="unified_review", status=verdict)
             assert s.status == RequestStatus.FAILED, f"verdict={verdict!r} 应 fail-closed"
 
     def test_unknown_health_result_fails(self) -> None:
@@ -120,11 +120,11 @@ class TestBoundedBudgets:
 
     def test_review_revision_budget(self) -> None:
         s = make_state()
-        s = reduce_workflow_state(s, action="unified_review", verdict="REVISION_REQUIRED")
+        s = reduce_workflow_state(s, action="unified_review", status="REVISION_REQUIRED")
         assert s.status == RequestStatus.REVISING
         assert s.current_node == NodeType.ANSWER_GENERATION
         assert s.review_revision_count == 1
-        s = reduce_workflow_state(s, action="unified_review", verdict="REVISION_REQUIRED")
+        s = reduce_workflow_state(s, action="unified_review", status="REVISION_REQUIRED")
         assert s.status == RequestStatus.FAILED
         assert s.error.error_code == "WORKFLOW_RETRY_LIMIT_EXCEEDED"
 

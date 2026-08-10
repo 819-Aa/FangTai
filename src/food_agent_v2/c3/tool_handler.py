@@ -318,13 +318,16 @@ def _generate_feasible_menus(args: dict, ctx: ToolContext) -> dict:
 
 
 def _validate_selected_menu_health(args: dict, ctx: ToolContext) -> dict:
-    """B4 最终健康校验：重新加载 B2 当前约束 + B3 食材事实。"""
+    """B4 最终健康校验：重新加载 B2 当前约束 + B3 食材事实，绑定真实 menu_hash。
+
+    返回完整权威 B4 结果并写入请求级上下文（禁止从截断 result_summary 拼造）。
+    """
     from food_agent_v2.b2 import UserHealthProfileService
     from food_agent_v2.b3.recipe_views import get_view_builder
     from food_agent_v2.b4 import HealthRuleEngine
 
     plan_id = args.get("plan_id", "")
-    recipe_ids = args.get("recipe_ids", [])
+    recipe_ids = [int(r) for r in args.get("recipe_ids", [])]
 
     builder = get_view_builder()
     ing_map: dict[int, list[int]] = {}
@@ -343,10 +346,25 @@ def _validate_selected_menu_health(args: dict, ctx: ToolContext) -> dict:
         cs = b2.derive_constraints(uid, ref)
         all_constraints[ref] = cs.hard_constraints
 
+    # 绑定与最终菜单一致的规范 menu_hash（禁止占位 hash，INV-001）
+    menu_hash = _sha256(sorted(recipe_ids))
     result = engine.validate_selected_menu(
-        recipe_ids, ing_map, all_constraints, plan_id, f"hash_{plan_id}"
+        recipe_ids, ing_map, all_constraints, plan_id, menu_hash
     )
-    return {"verdict": result.verdict, "plan_id": plan_id, "details": "final validation complete"}
+    final_validation = {
+        "verdict": result.verdict,
+        "plan_id": plan_id,
+        "recipe_ids": recipe_ids,
+        "menu_hash": menu_hash,
+        "participant_recipe_results": [
+            {"recipe_id": r.recipe_id, "participant_ref": r.participant_ref,
+             "status": r.verdict}
+            for r in result.participant_recipe_results
+        ],
+        "evidence_refs": list(result.evidence_refs),
+    }
+    ctx.previous_results["final_validation"] = final_validation
+    return final_validation
 
 
 def _expand_retrieval(args: dict, ctx: ToolContext) -> dict:

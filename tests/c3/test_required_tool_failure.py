@@ -1,8 +1,8 @@
-"""T17 必需工具失败/漏调 fail-closed，禁止节点级自动重试。
+"""T17 必需工具失败/漏调 fail-closed，禁止节点级自动重试与漏调提示。
 
-必需工具漏调 → REQUIRED_TOOL_NOT_CALLED；已调但失败 → TOOL_EXECUTION_FAILED；
-模型异常 → MODEL_CALL_FAILED；同一节点重复工具调用 → WORKFLOW_RETRY_LIMIT_EXCEEDED。
-全部立即失败、不重试、不模板回答。
+直接覆盖真实 `_call_model`（注入 FakeLLM，不 override）：必需工具漏调 →
+REQUIRED_TOOL_NOT_CALLED；模型异常/空输出 → MODEL_CALL_FAILED；漏调不提示
+补齐、不 nudge 空输出、不自动重试。
 """
 
 from types import SimpleNamespace
@@ -41,9 +41,26 @@ class _FakeC4:
         pass
 
 
-class _StubLLM:
-    def invoke(self, *args, **kwargs):
-        raise AssertionError("_call_model 被覆盖后不应调用 LLM")
+class _FakeLLM:
+    """记录调用序列，按脚本返回响应（最后一个响应重复）。"""
+
+    def __init__(self, responses: list[dict], raise_on_invoke: bool = False):
+        self._responses = responses
+        self._raise_on_invoke = raise_on_invoke
+        self.calls: list[str] = []  # 每次调用的 user_message
+
+    def invoke(self, role, system_prompt, user_message, tools=None, response_format=None):
+        if self._raise_on_invoke:
+            raise RuntimeError("api down")
+        idx = min(len(self.calls), len(self._responses) - 1)
+        self.calls.append(user_message)
+        return self._responses[idx]
+
+
+def make_runner(responses: list[dict], raise_on_invoke: bool = False):
+    llm = _FakeLLM(responses, raise_on_invoke)
+    runner = WorkflowRunner(build_id=BID, llm=llm)
+    return runner, llm
 
 
 def make_state(node: NodeType = NodeType.QUERY_UNDERSTANDING) -> WorkflowState:
@@ -54,21 +71,6 @@ def make_state(node: NodeType = NodeType.QUERY_UNDERSTANDING) -> WorkflowState:
 
 def make_ctx() -> ToolContext:
     return ToolContext(request_id=str(RID), node_id="query_understanding", build_id=BID)
-
-
-class _ScriptedRunner(WorkflowRunner):
-    """注入 _call_model 脚本结果并记录调用次数（验证无节点级自动重试）。"""
-
-    def __init__(self, script: dict):
-        super().__init__(build_id=BID, llm=_StubLLM())
-        self._script = script
-        self.call_count = 0
-
-    def _call_model(self, role, policy, model_ctx, user_message, tool_ctx):
-        self.call_count += 1
-        if callable(self._script):
-            return self._script(tool_ctx)
-        return self._script
 
 
 def make_receipt(success: bool = True, **overrides) -> ToolReceipt:
@@ -107,60 +109,71 @@ class TestNodeValidatorRequiredTools:
         assert err is None
 
 
-class TestNoNodeRetry:
+class TestRealCallModelFailClosed:
+    """直测真实 _call_model（FakeLLM 注入，不 override）。"""
+
     def test_missing_required_tool_no_retry(self) -> None:
-        """模型漏调必需工具 → 节点立即失败，_call_model 只调用一次（无自动重试）。"""
-        runner = _ScriptedRunner({"status": "ok", "content": '{"plan": 1}', "tool_calls": []})
-        new_state, _ = runner._run_model_node(make_state(), _FakeC4(), make_ctx(),
-                                              "query_understanding", "hi")
+        """模型提交最终输出但缺少必需工具回执 → 立即 REQUIRED_TOOL_NOT_CALLED，不重试。"""
+        runner, llm = make_runner([{"content": '{"intent": "new"}', "tool_calls": []}])
+        new_state, _raw, _art = runner._run_model_node(
+            make_state(), _FakeC4(), make_ctx(), "query_understanding", "hi")
         assert new_state.status == RequestStatus.FAILED
         assert new_state.error is not None
         assert new_state.error.error_code == "REQUIRED_TOOL_NOT_CALLED"
-        assert runner.call_count == 1
+        assert len(llm.calls) == 1  # 无节点级自动重试、无漏调提示二次调用
 
-    def test_model_failure_fail_closed(self) -> None:
-        """模型异常 → MODEL_CALL_FAILED，不切换模型、不模板回答。"""
-        runner = _ScriptedRunner({"status": "failed", "error": "boom", "content": ""})
-        new_state, _ = runner._run_model_node(make_state(), _FakeC4(), make_ctx(),
-                                              "query_understanding", "hi")
+    def test_empty_output_fails_immediately_no_nudge(self) -> None:
+        """空输出立即失败，不 nudge 重试。"""
+        runner, llm = make_runner([{"content": "", "tool_calls": []}])
+        new_state, _raw, _art = runner._run_model_node(
+            make_state(), _FakeC4(), make_ctx(), "query_understanding", "hi")
         assert new_state.status == RequestStatus.FAILED
         assert new_state.error is not None
         assert new_state.error.error_code == "MODEL_CALL_FAILED"
-        assert runner.call_count == 1
+        assert "MODEL_EMPTY_OUTPUT" in (new_state.error.message or "")
+        assert len(llm.calls) == 1  # 无“你的输出为空”式二次提示
+
+    def test_no_missing_tool_nudge_prompt(self) -> None:
+        """漏调必需工具时不附加“你还没有调用……”提示，也不代调。"""
+        runner, llm = make_runner([{"content": '{"intent": "new"}', "tool_calls": []}])
+        _new_state, _raw, _art = runner._run_model_node(
+            make_state(), _FakeC4(), make_ctx(), "query_understanding", "hi")
+        assert len(llm.calls) == 1
+        assert "你还没有调用" not in llm.calls[0]
+
+    def test_model_exception_fails_closed(self) -> None:
+        """模型 API 异常 → MODEL_CALL_FAILED，不切换模型、不模板回答。"""
+        runner, llm = make_runner([], raise_on_invoke=True)
+        new_state, _raw, _art = runner._run_model_node(
+            make_state(), _FakeC4(), make_ctx(), "query_understanding", "hi")
+        assert new_state.status == RequestStatus.FAILED
+        assert new_state.error is not None
+        assert new_state.error.error_code == "MODEL_CALL_FAILED"
+        assert len(llm.calls) == 0
+
+    def test_model_output_failure_marker_fails(self) -> None:
+        """模型输出失败标记 → MODEL_CALL_FAILED。"""
+        runner, _llm = make_runner(
+            [{"content": '{"status": "failed", "error": "boom"}', "tool_calls": []}])
+        new_state, _raw, _art = runner._run_model_node(
+            make_state(), _FakeC4(), make_ctx(), "query_understanding", "hi")
+        assert new_state.status == RequestStatus.FAILED
+        assert new_state.error is not None
+        assert new_state.error.error_code == "MODEL_CALL_FAILED"
 
     def test_state_not_mutated_in_place(self) -> None:
         """reducer 返回新状态，原 state 不被原地修改（禁止直接修改 state）。"""
         original = make_state()
-        runner = _ScriptedRunner({"status": "failed", "error": "boom", "content": ""})
-        new_state, _ = runner._run_model_node(original, _FakeC4(), make_ctx(),
-                                              "query_understanding", "hi")
+        runner, _llm = make_runner([{"content": '{"intent": "new"}', "tool_calls": []}])
+        new_state, _raw, _art = runner._run_model_node(
+            original, _FakeC4(), make_ctx(), "query_understanding", "hi")
         assert new_state is not original
         assert original.status == RequestStatus.ACCEPTED  # 原 state 未改
         assert new_state.status == RequestStatus.FAILED
 
-    def test_duplicate_tool_call_budget(self) -> None:
-        """同一节点内同一 (tool_name, input_hash) 出现两次 → 预算超限立即失败。"""
-
-        def script(tool_ctx: ToolContext) -> dict:
-            receipt = {
-                "tool_name": "retrieve_recipes",
-                "tool_call_id": "call-1",
-                "request_id": str(RID),
-                "node_id": "query_understanding",
-                "input_hash": "a" * 64,
-                "output_hash": "b" * 64,
-                "build_id": BID,
-                "success": True,
-                "error_code": None,
-                "arguments_summary": {},
-                "result_summary": "{}",
-            }
-            tool_ctx.tool_receipts.extend([receipt, dict(receipt)])
-            return {"status": "ok", "content": '{"ok": 1}', "tool_calls": []}
-
-        runner = _ScriptedRunner(script)
-        new_state, _ = runner._run_model_node(make_state(), _FakeC4(), make_ctx(),
-                                              "query_understanding", "hi")
-        assert new_state.status == RequestStatus.FAILED
-        assert new_state.error is not None
-        assert new_state.error.error_code == "WORKFLOW_RETRY_LIMIT_EXCEEDED"
+    def test_duplicate_tool_call_budget_unit(self) -> None:
+        """同一节点内同一 (tool_name, input_hash) 出现两次 → 预算超限。"""
+        dup = [{"tool_name": "retrieve_recipes", "input_hash": "a" * 64}] * 2
+        err = WorkflowRunner._validate_tool_budget(dup)
+        assert err is not None
+        assert err.error_code == "WORKFLOW_RETRY_LIMIT_EXCEEDED"

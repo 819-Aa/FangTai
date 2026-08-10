@@ -60,7 +60,7 @@ class TestPureReducer:
         assert new_state.error.error_code == "FINAL_HEALTH_VALIDATION_FAILED"
 
     def test_completed(self) -> None:
-        new_state = reduce_workflow_state(make_state(), action="unified_review", verdict="PASS")
+        new_state = reduce_workflow_state(make_state(), action="unified_review", status="PASS")
         assert new_state.status == RequestStatus.COMPLETED
         assert new_state.is_terminal()
 
