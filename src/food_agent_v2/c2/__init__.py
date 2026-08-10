@@ -6,15 +6,11 @@
 
 from __future__ import annotations
 
-import json
 import random
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Optional
 
-from food_agent_v2.b5 import get_time_service, TimeProfileService
-from food_agent_v2.b6 import get_nutrition_service, NutritionScoringService
-
+from food_agent_v2.b5 import TimeProfileService, get_time_service
+from food_agent_v2.b6 import NutritionScoringService, get_nutrition_service
 
 # 菜单结构硬约束
 DEFAULT_DISH_COUNT = 5
@@ -149,7 +145,7 @@ class MenuPlanner:
         if constraints.strict_time_limit and plans:
             limit_s = constraints.strict_time_limit * 60
             fitting = [p for p in plans
-                       if p.strict_time_feasible != "false"
+                       if p.strict_time_feasible is not False
                        and (p.makespan_seconds is None or p.makespan_seconds <= limit_s)]
             if fitting:
                 plans = fitting
@@ -323,7 +319,12 @@ class MenuPlanner:
         return max(0.0, 1.0 - total / 7200)
 
     def _nutrition_score(self, rid: int, b6: NutritionScoringService) -> float:
-        return b6.score_recipe(rid).weighted_total
+        # T13：B6 在营养不可用时返回 weighted_total=None（不伪造中性分）。
+        # 这里把不可用维度按 0 贡献处理；完整权重重归一化在 T15 的 C2 重写中完成。
+        decomposition = b6.score_recipe(rid)
+        if not decomposition.available or decomposition.weighted_total is None:
+            return 0.0
+        return decomposition.weighted_total
 
     def _diversity_score(self, rid: int, already_selected: list[int]) -> float:
         """单菜多样性——基于菜品名称和检索字段的差异程度。"""
