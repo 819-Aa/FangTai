@@ -36,6 +36,7 @@ def commit_request_result(
     participant_refs: list[str] | None = None,
     error_code: str | None = None,
     error_message: str | None = None,
+    fencing_token: str | None = None,
 ) -> dict:
     """将请求终态 + 健康证据原子写入 MySQL（INV-010）。
 
@@ -55,7 +56,10 @@ def commit_request_result(
             "ON DUPLICATE KEY UPDATE request_count=request_count+1",
             (session_id, json.dumps(participant_refs or [], ensure_ascii=False)),
         )
-        # 2. 最终结果日志（结果 + 健康证据同一事务）
+        # 2. 最终结果日志（结果 + 健康证据同一事务）；fencing_token 端到端传递不丢弃
+        evidence_payload = dict(health_evidence or {})
+        if fencing_token is not None:
+            evidence_payload["_fencing_token"] = fencing_token
         cursor.execute(
             "INSERT INTO recommendation_logs "
             "(request_id, session_id, status, final_plan_id, health_evidence) "
@@ -63,7 +67,7 @@ def commit_request_result(
             "ON DUPLICATE KEY UPDATE status=VALUES(status), "
             "final_plan_id=VALUES(final_plan_id), health_evidence=VALUES(health_evidence)",
             (request_id, session_id, status, final_plan_id,
-             json.dumps(health_evidence, ensure_ascii=False)),
+             json.dumps(evidence_payload, ensure_ascii=False)),
         )
         # 3. 完成的菜单版本（依赖 sessions）
         if status == "completed" and final_plan_id:

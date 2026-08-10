@@ -69,6 +69,29 @@ def constraint_merge_key(c: EffectiveConstraint) -> tuple[str, str]:
     return (c.participant_ref, c.constraint_code or c.taboo_ingredient_name or c.constraint_id)
 
 
+def manifest_core(ctx: "SharedWorkflowContext") -> dict:
+    """不可压缩核心块完整结构（T18：逐字段覆盖，_core_block 与 compute_manifest_hash 共用）。"""
+    return {
+        # 完整 dict（含 raw_text + timestamp 等），不是仅 raw_text
+        "current_message": dict(ctx.current_message),
+        "constraints": [{
+            "participant_ref": c.participant_ref,
+            "constraint_code": c.constraint_code,
+            "taboo_ingredient_name": c.taboo_ingredient_name,
+            "scope": c.scope.value if isinstance(c.scope, ConstraintScope) else str(c.scope),
+            "effect": c.effect,
+            "source_refs": list(c.source_refs),
+            "constraint_id": c.constraint_id,
+        } for c in ctx.effective_constraints],
+        "current_menu": {
+            "plan_id": ctx.current_menu.plan_id,
+            "recipe_ids": list(ctx.current_menu.recipe_ids),
+            "menu_artifact_ref": ctx.current_menu.menu_artifact_ref,
+        },
+        "pending_clarifications": ctx.pending_clarifications,
+    }
+
+
 class B2PermanentConstraintLoader:
     """默认永久约束加载器：根据 participant_user_id_mapping 从 B2 固定档案派生。"""
 
@@ -93,6 +116,14 @@ class B2PermanentConstraintLoader:
 
 class SessionMemoryUnavailable(Exception):
     """已提交会话记忆（MySQL）读取失败；不得把 Redis 当作最终事实。"""
+
+
+class PermanentConstraintLoadFailed(Exception):
+    """B2 永久约束加载失败（fail-closed：不得降级为空约束继续运行）。"""
+
+
+class SessionLockLost(Exception):
+    """会话锁已失效（过期/被覆盖）；失锁后工具持久化与最终提交必须 fail-closed。"""
 
 
 # ---- SharedWorkflowContext ----
@@ -128,18 +159,8 @@ class SharedWorkflowContext:
     session_metadata: dict[str, Any] = field(default_factory=dict)
 
     def compute_manifest_hash(self) -> str:
-        """计算不可压缩核心块的规范哈希（T18 完整字段覆盖）。"""
-        immutable_data = {
-            "current_message": str(self.current_message.get("raw_text", "")),
-            "constraints": [constraint_identity(c) for c in self.effective_constraints],
-            "current_menu": {
-                "plan_id": self.current_menu.plan_id,
-                "recipe_ids": list(self.current_menu.recipe_ids),
-                "menu_artifact_ref": self.current_menu.menu_artifact_ref,
-            },
-            "pending_clarifications": self.pending_clarifications,
-        }
-        return canonical_json_hash(immutable_data)
+        """不可压缩核心块完整规范结构的哈希（与 _core_block 完全一致）。"""
+        return canonical_json_hash(manifest_core(self))
 
 
 # ---- ModelContext (角色投影) ----
@@ -221,6 +242,7 @@ class ContextService:
         self._events: dict[str, list[ConversationEvent]] = {}
         self._menu_histories: dict[str, list[dict]] = {}
         self._request_results: dict[str, dict] = {}
+        self._active_locks: dict[str, str] = {}  # session_id → fencing token
         self._redis = None  # 惰性初始化
         self._memory_source = memory_source  # 已提交边界来源（默认 MySQL）
         self._permanent_constraint_loader = permanent_constraint_loader
@@ -244,8 +266,28 @@ class ContextService:
             self._memory_source = default_mysql_session_memory_source()
         return self._memory_source
 
-    def _persist_session(self, ctx: SharedWorkflowContext) -> None:
-        """将会话状态写入 Redis。"""
+    # ---- 会话锁绑定（失锁 fail-closed）----
+
+    def bind_session_lock(self, session_id: str, token: str) -> None:
+        """绑定会话锁 token：此后该 session 的持久化/提交必须锁仍持有。"""
+        self._active_locks[session_id] = token
+
+    def unbind_session_lock(self, session_id: str) -> None:
+        self._active_locks.pop(session_id, None)
+
+    def _assert_lock_held(self, ctx: SharedWorkflowContext, token: str | None) -> None:
+        """失锁即抛 SessionLockLost（fail-closed：后续持久化/提交被拒绝）。"""
+        expected = self._active_locks.get(ctx.session_id)
+        if expected is None:
+            return  # 未绑定锁（无锁场景）→ 不校验
+        if token is not None and token != expected:
+            raise SessionLockLost("会话锁 token 不一致（stale token）")
+        if not self.is_session_lock_held(ctx.session_id, expected):
+            raise SessionLockLost("会话锁已失效（过期或被覆盖）")
+
+    def _persist_session(self, ctx: SharedWorkflowContext, token: str | None = None) -> None:
+        """将会话状态写入 Redis（失锁即抛 SessionLockLost）。"""
+        self._assert_lock_held(ctx, token)
         store = self._get_redis()
         # 会话状态（_restore_session 依赖它判断会话是否存在）
         store.save_session_state(ctx.session_id, {
@@ -408,12 +450,16 @@ class ContextService:
 
         # 约束先行（T18）：默认生产实现根据 participant_user_id_mapping 从 B2 加载
         # 完整永久约束（真实调用路径），再生成 ContextManifest；可显式传入覆盖。
+        # fail-closed：B2 加载异常不得降级为空约束继续运行。
         if permanent_constraints is None:
             try:
                 permanent_constraints = self._get_permanent_constraint_loader().load(
                     user_id_mapping)
-            except Exception:
-                permanent_constraints = []  # B2 不可用 → 无永久约束（健康工具稍后重派生）
+            except PermanentConstraintLoadFailed:
+                raise
+            except Exception as exc:
+                raise PermanentConstraintLoadFailed(
+                    f"B2 永久约束加载失败: {exc}") from exc
         if permanent_constraints:
             permanent = [c for c in permanent_constraints
                          if c.scope != ConstraintScope.TURN]
@@ -534,25 +580,8 @@ class ContextService:
 
     @staticmethod
     def _core_block(ctx: SharedWorkflowContext) -> dict:
-        """不可压缩核心块完整字段（INV-009 §9.1，T18 逐字段覆盖）。"""
-        return {
-            "current_message": str(ctx.current_message.get("raw_text", "")),
-            "constraints": [{
-                "participant_ref": c.participant_ref,
-                "constraint_code": c.constraint_code,
-                "taboo_ingredient_name": c.taboo_ingredient_name,
-                "scope": c.scope.value if isinstance(c.scope, ConstraintScope) else str(c.scope),
-                "effect": c.effect,
-                "source_refs": list(c.source_refs),
-                "constraint_id": c.constraint_id,
-            } for c in ctx.effective_constraints],
-            "current_menu": {
-                "plan_id": ctx.current_menu.plan_id,
-                "recipe_ids": list(ctx.current_menu.recipe_ids),
-                "menu_artifact_ref": ctx.current_menu.menu_artifact_ref,
-            },
-            "pending_clarifications": ctx.pending_clarifications,
-        }
+        """不可压缩核心块完整结构（与 manifest_core 完全一致）。"""
+        return manifest_core(ctx)
 
     @staticmethod
     def _core_block_hash(ctx: SharedWorkflowContext) -> str:
@@ -566,12 +595,10 @@ class ContextService:
         manifest = ctx.context_manifest
         core = self._core_block(ctx)
         manifest.immutable_block_hashes = {
-            "current_message": canonical_json_hash(core["current_message"]),
-            "constraints": canonical_json_hash(core["constraints"]),
-            "current_menu": canonical_json_hash(core["current_menu"]),
-            "pending_clarifications": canonical_json_hash(core["pending_clarifications"]),
+            block: canonical_json_hash(value) for block, value in core.items()
         }
-        manifest.manifest_hash = ctx.compute_manifest_hash()
+        # manifest_hash 直接基于完整核心块规范结构（与 _core_block 一致）
+        manifest.manifest_hash = canonical_json_hash(core)
 
     # ---- 角色投影 ----
 
@@ -635,8 +662,9 @@ class ContextService:
         self, request_id: str, final_status: str,
         menu_artifact_ref: str | None = None,
         health_summary_ref: str | None = None,
+        token: str | None = None,
     ) -> None:
-        """请求终态时提交会话状态（C4 §11.1）。"""
+        """请求终态时提交会话状态（C4 §11.1）；失锁即抛 SessionLockLost。"""
         # 找到该 request 对应的 session
         for sid, ctx in self._sessions.items():
             if ctx.request_id == request_id:
@@ -664,8 +692,8 @@ class ContextService:
                         self._menu_histories[sid] = self._menu_histories[sid][-5:]
                     ctx.menu_history = self._menu_histories[sid]
 
-                # 持久化到 Redis
-                self._persist_session(ctx)
+                # 持久化到 Redis（fencing token 校验，失锁即抛）
+                self._persist_session(ctx, token)
                 break
 
     # ---- 会话锁（fencing token，覆盖读取/运行/提交）----
@@ -705,13 +733,17 @@ class ContextService:
             except Exception:
                 pass  # Redis 不可用时降级为内存，不影响健康/提交
 
+    MANIFEST_BLOCK_KEYS = ("current_message", "constraints",
+                           "current_menu", "pending_clarifications")
+
     def validate_context_integrity(
         self, shared_context_ref: str,
     ) -> dict:
         """校验上下文完整性（C4 §11.1 / INV-009）。
 
-        逐块核对不可压缩核心块（current_message / 约束 / 当前菜单 / 待澄清），
-        任一字段变化即 CONTEXT_INTEGRITY_FAILED。
+        - immutable_block_hashes 的 key 集合必须精确完整（缺失/多余即失败）；
+        - 逐块核对不可压缩核心块，任一字段变化即 CONTEXT_INTEGRITY_FAILED；
+        - 同时核对 manifest_hash（基于完整核心块规范结构）。
         """
         ctx = self._sessions.get(shared_context_ref)
         if not ctx or not ctx.context_manifest:
@@ -721,9 +753,13 @@ class ContextService:
         stored = ctx.context_manifest.immutable_block_hashes
         current = self._core_block(ctx)
         changed: list[str] = []
-        for block, value in current.items():
-            if block in stored and stored[block] != canonical_json_hash(value):
+        if set(stored.keys()) != set(self.MANIFEST_BLOCK_KEYS):
+            changed.append("block_keys")
+        for block in self.MANIFEST_BLOCK_KEYS:
+            if block in stored and stored[block] != canonical_json_hash(current[block]):
                 changed.append(block)
+        if ctx.context_manifest.manifest_hash != canonical_json_hash(current):
+            changed.append("manifest_hash")
 
         valid = not changed
         return {

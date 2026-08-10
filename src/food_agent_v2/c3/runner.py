@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import json
+import threading
 import time
 import uuid
 from typing import Any
@@ -33,7 +34,7 @@ from food_agent_v2.c3.state import (
     reduce_workflow_state,
 )
 from food_agent_v2.c3.tool_handler import ToolContext, ToolHandler
-from food_agent_v2.c4 import ContextService
+from food_agent_v2.c4 import ContextService, PermanentConstraintLoadFailed
 from food_agent_v2.contracts.artifacts import (
     AnswerArtifact,
     ArtifactIntegrityError,
@@ -66,6 +67,9 @@ ARTIFACT_TYPES: dict[str, type[BaseModel]] = {
 
 class WorkflowRunner:
     """有界状态机执行器：build_id/node_id 注入 + 纯 reducer + 严格 Artifact 契约。"""
+
+    #: 会话锁 TTL（秒）；heartbeat 按 LOCK_TTL/3 续租，保证单个模型调用不会失锁。
+    LOCK_TTL = 30
 
     def __init__(
         self,
@@ -126,6 +130,56 @@ class WorkflowRunner:
             return
         release(session_id, token)
 
+    # ---- 锁心跳与绑定 ----
+
+    @staticmethod
+    def _bind_session_lock(c4: ContextService, session_id: str, token: str) -> None:
+        bind = getattr(c4, "bind_session_lock", None)
+        if bind is None:
+            return
+        bind(session_id, token)
+
+    @staticmethod
+    def _unbind_session_lock(c4: ContextService, session_id: str) -> None:
+        unbind = getattr(c4, "unbind_session_lock", None)
+        if unbind is None:
+            return
+        unbind(session_id)
+
+    def _start_heartbeat(self, c4: ContextService, session_id: str, token: str,
+                         lost: threading.Event, stop: threading.Event):
+        """持锁期间启动独立 heartbeat，按 LOCK_TTL/3 原子续租（单模型调用可超 TTL）。"""
+        renew = getattr(c4, "renew_session_lock", None)
+        if renew is None:
+            return None  # 测试 Fake 无锁支持 → 无 heartbeat
+        interval = max(0.2, self.LOCK_TTL / 3.0)
+        t = threading.Thread(
+            target=self._heartbeat_loop, args=(renew, session_id, token, lost, stop, interval),
+            daemon=True, name=f"c3-lock-heartbeat-{session_id}")
+        t.start()
+        return t
+
+    @staticmethod
+    def _heartbeat_loop(renew, session_id: str, token: str,
+                        lost: threading.Event, stop: threading.Event,
+                        interval: float) -> None:
+        while not stop.is_set():
+            try:
+                if not renew(session_id, token):
+                    lost.set()
+                    return
+            except Exception:
+                lost.set()
+                return
+            stop.wait(interval)
+
+    @staticmethod
+    def _stop_heartbeat(heartbeat, stop: threading.Event) -> None:
+        if heartbeat is None:
+            return
+        stop.set()
+        heartbeat.join(timeout=5)
+
     def _finalize_lock_failure(self, request_id: str, c4: ContextService) -> None:
         """锁不可用/被占用 → fail-closed 终态（不伪造放行）。"""
         state = WorkflowState(request_id=request_id, status=RequestStatus.FAILED)
@@ -145,16 +199,24 @@ class WorkflowRunner:
             # Redis 不可用/锁被占用 → fail-closed（不伪造 token 放行）
             self._finalize_lock_failure(request_id, c4)
             return
+        # 绑定锁到 C4：工具持久化/最终提交失锁即 fail-closed
+        self._bind_session_lock(c4, session_id, lock_token)
+        lost = threading.Event()
+        stop = threading.Event()
+        heartbeat = self._start_heartbeat(c4, session_id, lock_token, lost, stop)
         try:
             self._run_locked(request_id, session_id, message, participants,
-                             config, c4, lock_token)
+                             config, c4, lock_token, lost)
         finally:
+            # 先停并 join heartbeat，再原子释放（避免续租与释放竞态）
+            self._stop_heartbeat(heartbeat, stop)
+            self._unbind_session_lock(c4, session_id)
             self._release_session_lock(c4, session_id, lock_token)
 
     def _run_locked(self, request_id: str, session_id: str,
                     message: str, participants: list[dict],
                     config: dict | None, c4: ContextService,
-                    lock_token: str) -> None:
+                    lock_token: str, lost: threading.Event) -> None:
         """会话锁保护下的完整有界状态机体。"""
         build_id = self._resolve_build_id()
         participant_refs = [p["participant_ref"] for p in participants]
@@ -183,15 +245,21 @@ class WorkflowRunner:
         if _injection:
             state = self._fail(state, "UNTRUSTED_INSTRUCTION_DETECTED",
                                f"检测到指令注入: {_injection}")
-            self._finalize(state, request_id, c4)
+            self._finalize(state, request_id, c4, lock_token)
             return
 
-        ctx, _manifest = c4.build_shared_context(
-            session_id, participant_refs,
-            {"raw_text": message, "timestamp": time.time()},
-            user_id_mapping,
-            request_id=request_id,
-        )
+        try:
+            ctx, _manifest = c4.build_shared_context(
+                session_id, participant_refs,
+                {"raw_text": message, "timestamp": time.time()},
+                user_id_mapping,
+                request_id=request_id,
+            )
+        except PermanentConstraintLoadFailed as exc:
+            # 约束先行 fail-closed：永久约束加载失败 → failed，不进模型节点
+            state = self._fail(state, "PERMANENT_CONSTRAINT_LOAD_FAILED", str(exc))
+            self._finalize(state, request_id, c4, lock_token)
+            return
         state = reduce_workflow_state(
             state, action="set_context_ref", shared_context_ref=ctx.session_id)
 
@@ -199,7 +267,7 @@ class WorkflowRunner:
         if not integrity.get("valid", False):
             state = self._fail(state, "CONTEXT_INTEGRITY_FAILED",
                                f"上下文完整性校验失败: {integrity.get('reason', 'core mismatch')}")
-            self._finalize(state, request_id, c4)
+            self._finalize(state, request_id, c4, lock_token)
             return
 
         d1_api.publish_analysis_event(request_id, "context_ready",
@@ -216,8 +284,8 @@ class WorkflowRunner:
         feasible_artifact: FeasibleMenuArtifact | None = None
 
         while state.current_node is not None and not state.is_terminal():
-            # 续租会话锁 TTL（模型链路可能超 30s；stale token 执行中失锁即 fail）
-            if not self._renew_session_lock(c4, session_id, lock_token):
+            # heartbeat 失锁标记：单节点执行超 TTL 也可能失锁 → fail
+            if lost.is_set() or not self._renew_session_lock(c4, session_id, lock_token):
                 state = self._fail(state, "SESSION_LOCK_LOST",
                                    "会话锁已失效（TTL 过期或被覆盖）")
                 break
@@ -441,7 +509,7 @@ class WorkflowRunner:
                  "menu_hash": menu_hash},
             )
 
-        self._finalize(state, request_id, c4)
+        self._finalize(state, request_id, c4, lock_token)
 
     # ---- 状态机辅助 ----
 
@@ -986,8 +1054,11 @@ class WorkflowRunner:
         return False
 
     def _finalize(self, state: WorkflowState, request_id: str,
-                  c4: ContextService) -> None:
-        """终态提交。不修改 state（runner 已保证终态）。"""
+                  c4: ContextService, lock_token: str | None = None) -> None:
+        """终态提交。不修改 state（runner 已保证终态）。
+
+        fencing token 端到端传递到会话提交（T19 将作为 MySQL 提交强制参数）。
+        """
         effective_status = state.status.value
         error = state.error
 
@@ -1014,6 +1085,7 @@ class WorkflowRunner:
                     final_plan_id=fva.plan_id if isinstance(fva, FinalValidationArtifact) else "",
                     health_evidence=health_evidence,
                     participant_refs=state.participant_refs,
+                    fencing_token=lock_token,  # T18 端到端传递，T19 作为强制提交参数
                 )
             except Exception as e:  # noqa: BLE001
                 effective_status = RequestStatus.FAILED.value
@@ -1024,4 +1096,12 @@ class WorkflowRunner:
                             error={"code": error.error_code,
                                    "message": error.message}
                             if error else None)
-        c4.commit_session_state(request_id, effective_status)
+        commit_c4 = getattr(c4, "commit_session_state", None)
+        if commit_c4 is not None:
+            token_for_c4 = lock_token if lock_token != "no-lock-support" else None
+            import inspect as _inspect
+
+            if "token" in _inspect.signature(commit_c4).parameters:
+                commit_c4(request_id, effective_status, token=token_for_c4)
+            else:
+                commit_c4(request_id, effective_status)

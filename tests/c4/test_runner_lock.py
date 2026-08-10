@@ -83,7 +83,65 @@ class TestRunnerLock:
         assert c4.commit_calls == 1
 
 
+class TestRunnerHeartbeat:
+    def test_heartbeat_keeps_lock_during_long_node(self) -> None:
+        """单模型节点执行超过 LOCK_TTL：heartbeat 续租，锁不丢（fail 为模型错误而非失锁）。"""
+        _reset_d1()
+        import time
+
+        class _SlowLLM:
+            def __init__(self):
+                self.calls = 0
+
+            def invoke(self, *a, **k):
+                self.calls += 1
+                time.sleep(1.2)  # 超过 runner.LOCK_TTL=1
+                return {"status": "failed", "error": "boom", "content": ""}
+
+        class _EmptyLoader:
+            def load(self, mapping):
+                return []
+
+        c4 = ContextService(memory_source=InMemorySessionMemorySource(),
+                            permanent_constraint_loader=_EmptyLoader())
+        runner = WorkflowRunner(build_id=BID, llm=_SlowLLM(), c4=c4)
+        runner.LOCK_TTL = 1  # 缩短 TTL：单节点执行明显超过
+        runner.run(RID, "sess_hb", "推荐家常菜", [{"participant_ref": "p1", "user_id": "1"}])
+        status = d1_api.get_request_status(RID)[1]["status"]
+        assert status == "failed"
+        error = d1_api.get_request_status(RID)[1].get("error") or {}
+        # 是模型错误而非失锁（heartbeat 在长节点期间续租成功）
+        assert error.get("code") != "SESSION_LOCK_LOST"
+
+
 class TestC3ToC4ConstraintFirst:
+    def test_loader_exception_fails_closed(self) -> None:
+        """B2 永久约束加载异常 → runner failed（PERMANENT_CONSTRAINT_LOAD_FAILED），不进模型节点。"""
+        _reset_d1()
+
+        class _RaisingLoader:
+            def load(self, mapping):
+                raise RuntimeError("b2 down")
+
+        class _CountingLLM:
+            def __init__(self):
+                self.calls = 0
+
+            def invoke(self, *a, **k):
+                self.calls += 1
+                return {"status": "ok", "content": "{}", "tool_calls": []}
+
+        c4 = ContextService(memory_source=InMemorySessionMemorySource(),
+                            permanent_constraint_loader=_RaisingLoader())
+        llm = _CountingLLM()
+        runner = WorkflowRunner(build_id=BID, llm=llm, c4=c4)
+        runner.run(RID, "sess_c3fail", "推荐家常菜", [{"participant_ref": "p1", "user_id": "1"}])
+        status = d1_api.get_request_status(RID)[1]["status"]
+        assert status == "failed"
+        error = d1_api.get_request_status(RID)[1].get("error") or {}
+        assert error.get("code") == "PERMANENT_CONSTRAINT_LOAD_FAILED"
+        assert llm.calls == 0  # 不得进入第一个模型节点
+
     def test_runner_loads_permanent_constraints_via_c4(self) -> None:
         """真实 C3→C4：runner 调 build_shared_context，ContextManifest 前已加载永久约束。"""
         _reset_d1()

@@ -3,6 +3,7 @@
 依赖 MySQL/Redis 可用；不可用时跳过。
 """
 
+import time
 import uuid
 
 import pytest
@@ -80,6 +81,28 @@ class TestSessionLockFencing:
         assert store.acquire_session_lock(_unique("down"), "w") is None
         assert store.release_session_lock(_unique("down"), "x") is False
         assert store.is_session_lock_held_by(_unique("down"), "x") is False
+
+    def test_second_executor_cannot_acquire_beyond_ttl_with_heartbeat(self) -> None:
+        """单节点执行时间超过 TTL：第一执行者 heartbeat 续租，第二执行者始终不能获得锁。"""
+        from food_agent_v2.c4.redis_store import RedisSessionStore
+
+        store = RedisSessionStore()
+        store.LOCK_TTL = 1  # 缩短 TTL 模拟单节点执行超 TTL
+        sid = _unique("beyond")
+        t1 = store.acquire_session_lock(sid, "w1")
+        assert t1 is not None
+        for _ in range(3):
+            time.sleep(0.5)  # 累计超过原始 TTL=1s
+            # heartbeat 续租 → 锁保持
+            assert store.renew_session_lock(sid, t1) is True
+            assert store.is_session_lock_held_by(sid, t1) is True
+            # 第二执行者始终拿不到锁
+            assert store.acquire_session_lock(sid, "w2") is None
+        store.release_session_lock(sid, t1)
+        # 释放后第二执行者可获取
+        t2 = store.acquire_session_lock(sid, "w2")
+        assert t2 is not None
+        store.release_session_lock(sid, t2)
 
     def test_stale_token_cannot_release_or_hold(self) -> None:
         from food_agent_v2.c4.redis_store import RedisSessionStore

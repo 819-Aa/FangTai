@@ -253,6 +253,75 @@ class TestRestoreAuthority:
             svc._restore_session(uniq("fail"))
 
 
+class TestManifestFullCoverage:
+    """完整核心块覆盖：current_message 完整 dict、约束全字段、key 集合精确、manifest_hash 校验。"""
+
+    def _build(self):
+        svc = make_service()
+        sid = uniq("mfc")
+        ctx, manifest = svc.build_shared_context(
+            sid, ["p1"], {"raw_text": "第一轮", "timestamp": 1.0}, {"p1": 1},
+            request_id="r")
+        svc.store_temporary_constraint(sid, {
+            "constraint_code": "allergy_seafood", "participant_ref": "p1",
+            "source_refs": ["s1"], "scope": "session"})
+        return svc, sid, ctx
+
+    def test_valid_core_block_passes(self):
+        svc, sid, ctx = self._build()
+        assert svc.validate_context_integrity(sid)["valid"] is True
+
+    def test_current_message_timestamp_change_fails(self):
+        svc, sid, ctx = self._build()
+        ctx.current_message["timestamp"] = 2.0  # 完整 dict 字段变化
+        result = svc.validate_context_integrity(sid)
+        assert result["valid"] is False
+        assert "current_message" in result["changed_blocks"]
+
+    def test_constraint_effect_change_fails(self):
+        svc, sid, ctx = self._build()
+        ctx.effective_constraints[0].effect = "soft_prefer"
+        result = svc.validate_context_integrity(sid)
+        assert result["valid"] is False
+        assert "constraints" in result["changed_blocks"]
+
+    def test_constraint_source_refs_change_fails(self):
+        svc, sid, ctx = self._build()
+        ctx.effective_constraints[0].source_refs.append("hacked")
+        assert not svc.validate_context_integrity(sid)["valid"]
+
+    def test_constraint_scope_change_fails(self):
+        svc, sid, ctx = self._build()
+        ctx.effective_constraints[0].scope = ConstraintScope.TURN
+        assert not svc.validate_context_integrity(sid)["valid"]
+
+    def test_constraint_id_change_fails(self):
+        svc, sid, ctx = self._build()
+        ctx.effective_constraints[0].constraint_id = "hacked"
+        assert not svc.validate_context_integrity(sid)["valid"]
+
+    def test_missing_block_hash_fails(self):
+        svc, sid, ctx = self._build()
+        del ctx.context_manifest.immutable_block_hashes["constraints"]
+        result = svc.validate_context_integrity(sid)
+        assert result["valid"] is False
+        assert "block_keys" in result["changed_blocks"]
+
+    def test_extra_block_hash_fails(self):
+        svc, sid, ctx = self._build()
+        ctx.context_manifest.immutable_block_hashes["bogus"] = "0" * 64
+        result = svc.validate_context_integrity(sid)
+        assert result["valid"] is False
+        assert "block_keys" in result["changed_blocks"]
+
+    def test_fabricated_manifest_hash_fails(self):
+        svc, sid, ctx = self._build()
+        ctx.context_manifest.manifest_hash = "0" * 64
+        result = svc.validate_context_integrity(sid)
+        assert result["valid"] is False
+        assert "manifest_hash" in result["changed_blocks"]
+
+
 class TestRestoreCombined:
     def test_restore_from_mysql_committed_boundary(self) -> None:
         source = InMemorySessionMemorySource()
