@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Any, Optional
+from typing import Any
 
 from food_agent_v2.core.config import load_config
 
@@ -137,20 +137,43 @@ class RedisSessionStore:
                 return json.loads(raw)
         return None
 
-    # ---- 会话锁 ----
+    # ---- 会话锁（fencing token）----
 
-    def acquire_session_lock(self, session_id: str, worker_id: str) -> bool:
-        """获取会话锁（防止并发请求）。"""
+    def acquire_session_lock(self, session_id: str, worker_id: str) -> str | None:
+        """获取会话锁，返回单调递增的 fencing token；未获取返回 None。
+
+        fencing token 来自全局计数器，后获取的执行者 token 更大；过期执行者
+        （token 更小）不能释放或覆盖新请求持有的锁（文档 §7.1 / INV 会话锁）。
+        """
         self._connect()
         key = self._key("lock", "session", session_id)
-        if self._client:
-            return bool(self._client.set(key, worker_id, nx=True, ex=30))
-        return True  # Redis 不可用时放行
+        if not self._client:
+            # Redis 不可用时放行（返回唯一 token 供测试/降级路径一致使用）
+            return f"{worker_id}:{time.time_ns()}"
+        # 单调递增 fencing token（不复用，新锁 > 旧锁）
+        token = int(self._client.incr(self._key("lock", "fencing")))
+        acquired = bool(self._client.set(key, str(token), nx=True, ex=30))
+        if not acquired:
+            return None
+        return str(token)
 
-    def release_session_lock(self, session_id: str, worker_id: str) -> None:
+    def release_session_lock(self, session_id: str, token: str) -> bool:
+        """仅当存储的 token 与当前相等才释放；过期执行者不能释放新锁。"""
         self._connect()
         key = self._key("lock", "session", session_id)
-        if self._client:
-            current = self._client.get(key)
-            if current == worker_id:
-                self._client.delete(key)
+        if not self._client:
+            return True
+        current = self._client.get(key)
+        if current is not None and str(current) == str(token):
+            self._client.delete(key)
+            return True
+        return False
+
+    def is_session_lock_held_by(self, session_id: str, token: str) -> bool:
+        """fencing 校验：当前锁是否仍由该 token 持有（过期执行者被拒绝）。"""
+        self._connect()
+        key = self._key("lock", "session", session_id)
+        if not self._client:
+            return True
+        current = self._client.get(key)
+        return current is not None and str(current) == str(token)

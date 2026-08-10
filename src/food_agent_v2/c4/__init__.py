@@ -14,7 +14,6 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Optional
 
-
 # ---- 会话事件 ----
 
 class EventType(str, Enum):
@@ -179,18 +178,27 @@ class ContextService:
     角色投影（ModelContext）、菜单版本滚动。
     """
 
-    def __init__(self):
+    def __init__(self, memory_source: Any = None):
         self._sessions: dict[str, SharedWorkflowContext] = {}
         self._events: dict[str, list[ConversationEvent]] = {}
         self._menu_histories: dict[str, list[dict]] = {}
         self._request_results: dict[str, dict] = {}
         self._redis = None  # 惰性初始化
+        self._memory_source = memory_source  # 已提交边界来源（默认 MySQL）
 
     def _get_redis(self):
         if self._redis is None:
             from food_agent_v2.c4.redis_store import RedisSessionStore
             self._redis = RedisSessionStore()
         return self._redis
+
+    def _get_memory_source(self):
+        if self._memory_source is None:
+            from food_agent_v2.c4.mysql_repository import (
+                default_mysql_session_memory_source,
+            )
+            self._memory_source = default_mysql_session_memory_source()
+        return self._memory_source
 
     def _persist_session(self, ctx: SharedWorkflowContext) -> None:
         """将会话状态写入 Redis。"""
@@ -224,14 +232,56 @@ class ContextService:
         store.save_menu_history(ctx.session_id, ctx.menu_history)
 
     def _restore_session(self, session_id: str) -> dict | None:
-        """从 Redis 恢复会话。"""
+        """从 MySQL 已提交边界 + Redis 可恢复状态组合恢复（MySQL 权威）。
+
+        - MySQL：sessions 元数据、已提交 conversation_events、menu_versions；
+        - Redis：近期可恢复事件、会话级临时约束、运行期菜单。
+        事件按 event_id 去重（MySQL 已提交优先）；菜单版本以 MySQL 为准并补 Redis 更新。
+        """
+        committed_events: list[dict] = []
+        menu_versions: list[dict] = []
+        session_meta: dict = {}
+        try:
+            src = self._get_memory_source()
+            meta = src.load_session(session_id)
+            if meta:
+                session_meta = meta
+                committed_events = src.load_committed_events(session_id)
+                menu_versions = src.load_menu_versions(session_id)
+        except Exception:
+            pass  # MySQL 不可用 → 仅用 Redis 可恢复状态
+
         store = self._get_redis()
-        state = store.load_session_state(session_id)
-        if state:
-            state["constraints"] = store.load_constraints(session_id)
-            state["events"] = store.load_events(session_id)
-            state["menu_history"] = store.load_menu_history(session_id)
-        return state
+        redis_state = store.load_session_state(session_id)
+        redis_events = store.load_events(session_id)
+        redis_constraints = store.load_constraints(session_id)
+        redis_menu = store.load_menu_history(session_id)
+
+        if not redis_state and not session_meta and not committed_events and not redis_events:
+            return None
+
+        by_id: dict[str, dict] = {}
+        for e in committed_events:
+            by_id[e.get("event_id", "")] = e
+        for e in redis_events:
+            by_id.setdefault(e.get("event_id", ""), e)
+        merged_events = list(by_id.values())
+
+        menu_history = list(menu_versions)
+        committed_plan_ids = {m.get("plan_id") for m in menu_history}
+        for m in redis_menu:
+            if m.get("plan_id") not in committed_plan_ids:
+                menu_history.append(m)
+        menu_history = menu_history[-5:]
+
+        return {
+            "participant_refs": session_meta.get("participant_refs")
+                or (redis_state or {}).get("participant_refs", []),
+            "request_count": session_meta.get("request_count", 0),
+            "constraints": redis_constraints,
+            "events": merged_events,
+            "menu_history": menu_history,
+        }
 
     # ---- 会话管理 ----
 
@@ -244,8 +294,13 @@ class ContextService:
         self, session_id: str, participant_refs: list[str],
         current_message: dict, user_id_mapping: dict[str, int],
         request_id: str = "",
+        permanent_constraints: list[EffectiveConstraint] | None = None,
     ) -> tuple[SharedWorkflowContext, ContextManifest]:
-        """构建 SharedWorkflowContext（C4 §8.1）。"""
+        """构建 SharedWorkflowContext（C4 §8.1）。
+
+        T18 约束先行：构建 ContextManifest 前必须形成完整有效约束——
+        B2 固定档案永久约束（permanent_constraints）为权威基础，会话级临时约束追加。
+        """
         if not request_id:
             request_id = str(uuid.uuid4())[:8]
 
@@ -307,6 +362,18 @@ class ContextService:
                 events = []
                 pending = []
                 menu = CurrentMenu()
+
+        # 约束先行（T18）：B2 固定档案永久约束为权威基础，会话级约束追加；
+        # 必须在 ContextManifest 计算前形成完整 effective_constraints。
+        if permanent_constraints:
+            permanent = [c for c in permanent_constraints
+                         if c.scope != ConstraintScope.TURN]
+            permanent_keys = {(c.constraint_code or c.taboo_ingredient_name)
+                              for c in permanent}
+            constraints = permanent + [
+                c for c in constraints
+                if (c.constraint_code or c.taboo_ingredient_name) not in permanent_keys
+            ]
 
         ctx = SharedWorkflowContext(
             request_id=request_id,
@@ -390,6 +457,9 @@ class ContextService:
         events = ctx.conversation_events
         if len(events) <= 20:
             return False
+        # T18：压缩前记录不可压缩核心块哈希（INV-009 §9.3 逐块核对）
+        core_before = self._core_block_hash(ctx)
+        original_events = events[:]
         recent = events[-20:]
         old = events[:-20]
         # 去重：同 type + 同 summary 的旧事件只留一次
@@ -414,12 +484,42 @@ class ContextService:
             token_count_estimate=len(compressed_summary) // 2,
         )
         ctx.conversation_events = [compressed_event] + recent
+        # 压缩后核对核心块哈希不变（INV-009 §9.3）；变化则回滚压缩（fail-safe）
+        if self._core_block_hash(ctx) != core_before:
+            ctx.conversation_events = original_events
+            return False
         # 更新 manifest（不可压缩块哈希不变 → 完整性校验仍通过）
         if manifest:
             manifest.compression_count += 1
             manifest.total_token_estimate = sum(
                 e.token_count_estimate for e in ctx.conversation_events[-30:])
         return True
+
+    @staticmethod
+    def _core_block_hash(ctx: SharedWorkflowContext) -> str:
+        """不可压缩核心块（约束/菜单/待澄清）的规范哈希（INV-009）。"""
+        core = {
+            "constraints": [c.constraint_code or c.taboo_ingredient_name
+                            for c in ctx.effective_constraints],
+            "menu": ctx.current_menu.plan_id,
+            "clarifications": str(ctx.pending_clarifications),
+        }
+        return hashlib.sha256(
+            json.dumps(core, sort_keys=True, ensure_ascii=False).encode()
+        ).hexdigest()[:16]
+
+    def _recompute_manifest(self, ctx: SharedWorkflowContext) -> None:
+        """约束/菜单变更后重算 ContextManifest（约束先行：清单始终反映完整约束）。"""
+        if not ctx.context_manifest:
+            return
+        manifest = ctx.context_manifest
+        manifest.immutable_block_hashes["constraints"] = hashlib.sha256(
+            str([c.constraint_code for c in ctx.effective_constraints]).encode()
+        ).hexdigest()[:16]
+        manifest.immutable_block_hashes["menu"] = hashlib.sha256(
+            str(ctx.current_menu.plan_id or "").encode()).hexdigest()[:16]
+        manifest.immutable_block_hashes["core"] = self._core_block_hash(ctx)
+        manifest.manifest_hash = ctx.compute_manifest_hash()
 
     # ---- 角色投影 ----
 
@@ -501,8 +601,8 @@ class ContextService:
                 ctx.conversation_events.append(event)
                 self._events.setdefault(sid, []).append(event)
 
-                # 保存菜单到历史
-                if menu_artifact_ref and ctx.current_menu.plan_id:
+                # 失败/取消/中断不留下成功记忆（T18）：仅 completed 提交菜单版本
+                if final_status == "completed" and menu_artifact_ref and ctx.current_menu.plan_id:
                     self._menu_histories.setdefault(sid, []).append({
                         "plan_id": ctx.current_menu.plan_id,
                         "recipe_ids": ctx.current_menu.recipe_ids,
@@ -585,6 +685,7 @@ class ContextService:
                     scope=ConstraintScope.PERMANENT,
                 ))
         ctx.effective_constraints = eff
+        self._recompute_manifest(ctx)  # 约束先行：清单重算核心块
         self._persist_session(ctx)
 
     def store_temporary_constraint(
@@ -602,6 +703,7 @@ class ContextService:
                 scope=ConstraintScope(constraint.get("scope", "session")),
                 constraint_id=cid,
             ))
+            self._recompute_manifest(ctx)
         return cid
 
     def revoke_temporary_constraint(
@@ -614,6 +716,7 @@ class ContextService:
                 c for c in ctx.effective_constraints
                 if c.constraint_id != constraint_id or c.scope == ConstraintScope.PERMANENT
             ]
+            self._recompute_manifest(ctx)
 
     def get_effective_constraints(
         self, session_id: str,
