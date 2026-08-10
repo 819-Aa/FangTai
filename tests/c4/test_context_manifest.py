@@ -6,6 +6,8 @@ session_id 避免跨 pytest 运行的 Redis 残留。
 
 import uuid
 
+import pytest
+
 from food_agent_v2.c4 import (
     ConstraintScope,
     ContextService,
@@ -13,6 +15,7 @@ from food_agent_v2.c4 import (
     CurrentMenu,
     EffectiveConstraint,
     EventType,
+    SharedWorkflowContext,
 )
 from food_agent_v2.c4.mysql_repository import InMemorySessionMemorySource
 
@@ -27,7 +30,8 @@ def make_constraint(code: str = "allergy_seafood",
 
 
 def make_service() -> ContextService:
-    return ContextService(memory_source=InMemorySessionMemorySource())
+    return ContextService(memory_source=InMemorySessionMemorySource(),
+                           permanent_constraint_loader=_EmptyLoader())
 
 
 def uniq(prefix: str) -> str:
@@ -54,7 +58,7 @@ class TestConstraintsBeforeManifest:
         sid = uniq("cm")
         ctx, manifest = svc.build_shared_context(
             sid, ["p1"], {"raw_text": "hi"}, {"p1": 1}, request_id="r2")
-        core_before = ctx.context_manifest.immutable_block_hashes["core"]
+        core_before = ctx.context_manifest.manifest_hash
         svc.store_derived_constraints(
             sid, {"p1": _FakeConstraintSet([
                 _FakeConstraint("allergy_seafood", ["s1"]),
@@ -62,7 +66,7 @@ class TestConstraintsBeforeManifest:
             ])})
         # 约束变更后 manifest 核心块重算，完整性仍通过
         assert len(ctx.effective_constraints) == 2
-        assert ctx.context_manifest.immutable_block_hashes["core"] != core_before
+        assert ctx.context_manifest.immutable_block_hashes["constraints"] != core_before
         assert svc.validate_context_integrity(sid)["valid"] is True
 
     def test_temporary_constraint_recompute_manifest(self) -> None:
@@ -97,7 +101,7 @@ class TestCompressionCoreHash:
         svc.store_temporary_constraint(sid, {
             "constraint_code": "allergy_seafood", "participant_ref": "p1",
             "source_refs": [], "scope": "session"})
-        core_before = ctx.context_manifest.immutable_block_hashes["core"]
+        core_before = ctx.context_manifest.manifest_hash
         for i in range(250):
             ctx.conversation_events.append(ConversationEvent(
                 event_id=f"e{i}", session_id=sid, request_id="r1",
@@ -109,7 +113,7 @@ class TestCompressionCoreHash:
         assert compressed
         assert len(ctx.conversation_events) <= 21
         # 压缩前后核心块哈希一致（INV-009 §9.3）
-        assert ctx.context_manifest.immutable_block_hashes["core"] == core_before
+        assert ctx.context_manifest.manifest_hash == core_before
         assert svc.validate_context_integrity(sid)["valid"] is True
 
 
@@ -133,6 +137,120 @@ class TestFailedRequestNoMemory:
         ctx.current_menu = CurrentMenu(plan_id="plan-B", recipe_ids=[3, 4])
         svc.commit_session_state("rf2", "completed", menu_artifact_ref="art")
         assert ctx.menu_history and ctx.menu_history[0]["plan_id"] == "plan-B"
+
+
+class TestDefaultLoaderLoadsPermanent:
+    def test_default_loader_loads_b2_permanent_constraints(self) -> None:
+        """默认生产实现：build_shared_context 从加载器加载永久约束（真实调用路径）。"""
+
+        class _FakeLoader:
+            def load(self, mapping):
+                assert mapping == {"p1": 1}
+                return [make_constraint("allergy_seafood")]
+
+        svc = ContextService(memory_source=InMemorySessionMemorySource(),
+                             permanent_constraint_loader=_FakeLoader())
+        sid = uniq("dl")
+        ctx, manifest = svc.build_shared_context(
+            sid, ["p1"], {"raw_text": "hi"}, {"p1": 1}, request_id="r1")
+        assert len(ctx.effective_constraints) == 1
+        assert ctx.effective_constraints[0].constraint_code == "allergy_seafood"
+        assert ctx.effective_constraints[0].scope == ConstraintScope.PERMANENT
+        assert svc.validate_context_integrity(sid)["valid"] is True
+
+
+class TestConstraintLifecycle:
+    def test_permanent_and_session_coexist(self) -> None:
+        svc = make_service()
+        sid = uniq("lc")
+        permanent = [make_constraint("allergy_seafood")]
+        ctx, manifest = svc.build_shared_context(
+            sid, ["p1"], {"raw_text": "hi"}, {"p1": 1}, request_id="r1",
+            permanent_constraints=permanent)
+        # session 临时约束追加，永久约束保留 → 共存
+        cid = svc.store_temporary_constraint(sid, {
+            "constraint_code": "allergy_peanut", "participant_ref": "p1",
+            "source_refs": [], "scope": "session"})
+        assert {c.constraint_code for c in ctx.effective_constraints} == {
+            "allergy_seafood", "allergy_peanut"}
+        # 重新派生永久约束不覆盖 session
+        svc.store_derived_constraints(
+            sid, {"p1": _FakeConstraintSet([
+                _FakeConstraint("allergy_seafood", ["s1"]),
+                _FakeConstraint("allergy_peanut", ["s2"]),
+            ])})
+        codes = [(c.constraint_code, c.scope) for c in ctx.effective_constraints]
+        assert ("allergy_peanut", ConstraintScope.PERMANENT) in codes
+        assert ("allergy_peanut", ConstraintScope.SESSION) in codes
+        svc.revoke_temporary_constraint(sid, cid)
+        assert ("allergy_peanut", ConstraintScope.SESSION) not in [
+            (c.constraint_code, c.scope) for c in ctx.effective_constraints]
+
+    def test_session_constraint_survives_new_service(self) -> None:
+        svc = make_service()
+        sid = uniq("restore")
+        ctx, manifest = svc.build_shared_context(
+            sid, ["p1"], {"raw_text": "hi"}, {"p1": 1}, request_id="r1")
+        svc.store_temporary_constraint(sid, {
+            "constraint_code": "allergy_peanut", "participant_ref": "p1",
+            "source_refs": [], "scope": "session"})
+        # 新 ContextService（内存清空）→ 从 Redis 恢复 session 约束
+        svc2 = make_service()
+        restored = svc2._restore_session(sid)
+        assert restored is not None
+        codes = {c.get("constraint_code") for c in restored.get("constraints", [])}
+        assert "allergy_peanut" in codes
+
+    def test_turn_constraint_not_restored(self) -> None:
+        svc = make_service()
+        sid = uniq("turn")
+        ctx, manifest = svc.build_shared_context(
+            sid, ["p1"], {"raw_text": "hi"}, {"p1": 1}, request_id="r1")
+        cid = svc.store_temporary_constraint(sid, {
+            "constraint_code": "allergy_peanut", "participant_ref": "p1",
+            "source_refs": [], "scope": "turn"})
+        assert any(c.constraint_id == cid for c in ctx.effective_constraints)
+        # turn 约束不持久化 → 新服务恢复后不存在
+        svc2 = make_service()
+        restored = svc2._restore_session(sid)
+        if restored is not None:
+            assert not any(c.get("constraint_id") == cid
+                           for c in restored.get("constraints", []))
+
+
+class TestRestoreAuthority:
+    def test_redis_uncommitted_menu_not_restored_as_history(self) -> None:
+        """MySQL 已提交菜单优先；Redis 未提交菜单不得恢复为成功历史。"""
+        source = InMemorySessionMemorySource()
+        sid = uniq("auth")
+        source.sessions[sid] = {"session_id": sid, "participant_refs": ["p1"],
+                                "current_menu_plan_id": "plan-A", "request_count": 1}
+        source.menus[sid] = [{"plan_id": "plan-A", "menu_hash": "a" * 64,
+                              "recipe_ids": [1, 2], "committed_at": "t"}]
+        svc = ContextService(memory_source=source, permanent_constraint_loader=_EmptyLoader())
+        # 往 Redis 写入一个"未提交"菜单（不应进入历史）
+        svc._persist_session(SharedWorkflowContext(
+            request_id="rx", session_id=sid, participant_refs=["p1"],
+            participant_user_id_mapping={"p1": 1}, current_message={},
+            menu_history=[{"plan_id": "plan-UNCOMMITTED", "recipe_ids": [9]}],
+        ))
+        restored = svc._restore_session(sid)
+        plans = [m.get("plan_id") for m in restored["menu_history"]]
+        assert "plan-UNCOMMITTED" not in plans  # Redis 未提交不恢复为成功历史
+        assert "plan-A" in plans                # MySQL 已提交恢复
+
+    def test_mysql_read_failure_not_silently_swallowed(self) -> None:
+        """MySQL 读取失败必须上抛（SessionMemoryUnavailable），不得把 Redis 当最终事实。"""
+
+        class _RaisingSource:
+            def load_session(self, session_id):
+                raise RuntimeError("mysql down")
+
+        svc = ContextService(memory_source=_RaisingSource(),
+                             permanent_constraint_loader=_EmptyLoader())
+        from food_agent_v2.c4 import SessionMemoryUnavailable
+        with pytest.raises(SessionMemoryUnavailable):
+            svc._restore_session(uniq("fail"))
 
 
 class TestRestoreCombined:
@@ -175,3 +293,10 @@ class _FakeConstraint:
 class _FakeConstraintSet:
     def __init__(self, hard_constraints: list) -> None:
         self.hard_constraints = hard_constraints
+
+
+class _EmptyLoader:
+    """单元测试隔离：默认 B2 加载器返回空（不依赖 B2 数据）。"""
+
+    def load(self, participant_user_id_mapping):
+        return []

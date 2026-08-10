@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import time
 from typing import Any
 
 from food_agent_v2.core.config import load_config
@@ -23,6 +22,7 @@ class RedisSessionStore:
     """
 
     TTL_SECONDS = 86400  # 24h
+    LOCK_TTL = 30  # 会话锁 TTL（秒），支持续租
 
     def __init__(self):
         cfg = load_config()
@@ -142,38 +142,58 @@ class RedisSessionStore:
     def acquire_session_lock(self, session_id: str, worker_id: str) -> str | None:
         """获取会话锁，返回单调递增的 fencing token；未获取返回 None。
 
-        fencing token 来自全局计数器，后获取的执行者 token 更大；过期执行者
-        （token 更小）不能释放或覆盖新请求持有的锁（文档 §7.1 / INV 会话锁）。
+        - Redis 不可用：返回 None（不放行，fail-closed，不伪造 token）；
+        - fencing token 来自全局计数器，后获取的执行者 token 更大；过期执行者
+          （token 更小）不能释放或覆盖新请求持有的锁。
         """
         self._connect()
         key = self._key("lock", "session", session_id)
         if not self._client:
-            # Redis 不可用时放行（返回唯一 token 供测试/降级路径一致使用）
-            return f"{worker_id}:{time.time_ns()}"
+            return None  # Redis 不可用 → 不放行
         # 单调递增 fencing token（不复用，新锁 > 旧锁）
         token = int(self._client.incr(self._key("lock", "fencing")))
-        acquired = bool(self._client.set(key, str(token), nx=True, ex=30))
+        acquired = bool(self._client.set(key, str(token), nx=True, ex=self.LOCK_TTL))
         if not acquired:
             return None
         return str(token)
 
-    def release_session_lock(self, session_id: str, token: str) -> bool:
-        """仅当存储的 token 与当前相等才释放；过期执行者不能释放新锁。"""
+    def renew_session_lock(self, session_id: str, token: str) -> bool:
+        """续租会话锁 TTL（仅当 token 仍持有锁，原子 Lua）。"""
         self._connect()
         key = self._key("lock", "session", session_id)
         if not self._client:
-            return True
-        current = self._client.get(key)
-        if current is not None and str(current) == str(token):
-            self._client.delete(key)
-            return True
-        return False
+            return False
+        lua = """
+        local cur = redis.call('GET', KEYS[1])
+        if cur == ARGV[1] then
+            return redis.call('EXPIRE', KEYS[1], ARGV[2])
+        end
+        return 0
+        """
+        result = self._client.eval(lua, 1, key, str(token), self.LOCK_TTL)
+        return bool(result)
+
+    def release_session_lock(self, session_id: str, token: str) -> bool:
+        """原子释放会话锁（Lua compare-and-delete）；仅当存储 token 匹配才删除。"""
+        self._connect()
+        key = self._key("lock", "session", session_id)
+        if not self._client:
+            return False
+        lua = """
+        local cur = redis.call('GET', KEYS[1])
+        if cur == ARGV[1] then
+            return redis.call('DEL', KEYS[1])
+        end
+        return 0
+        """
+        result = self._client.eval(lua, 1, key, str(token))
+        return bool(result)
 
     def is_session_lock_held_by(self, session_id: str, token: str) -> bool:
         """fencing 校验：当前锁是否仍由该 token 持有（过期执行者被拒绝）。"""
         self._connect()
         key = self._key("lock", "session", session_id)
         if not self._client:
-            return True
+            return False  # 无 Redis → 视为未持有（不得放行提交）
         current = self._client.get(key)
         return current is not None and str(current) == str(token)

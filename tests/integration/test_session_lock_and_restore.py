@@ -56,6 +56,42 @@ class TestSessionLockFencing:
         # 正确 token 释放
         assert store.release_session_lock(sid, t1) is True
 
+    def test_lock_renewal_extends_ttl(self) -> None:
+        from food_agent_v2.c4.redis_store import RedisSessionStore
+
+        store = RedisSessionStore()
+        sid = _unique("renew")
+        token = store.acquire_session_lock(sid, "worker1")
+        assert token is not None
+        assert store.renew_session_lock(sid, token) is True
+        assert store.is_session_lock_held_by(sid, token) is True
+        # 旧 token 续租失败
+        assert store.renew_session_lock(sid, "999") is False
+        store.release_session_lock(sid, token)
+
+    def test_redis_down_acquire_returns_none(self) -> None:
+        from food_agent_v2.c4.redis_store import RedisSessionStore
+
+        store = RedisSessionStore()
+        # 模拟 Redis 不可用：不可达端口 → _connect 失败 → _client=None
+        store._client = None
+        store._host = "127.0.0.1"
+        store._port = 1
+        assert store.acquire_session_lock(_unique("down"), "w") is None
+        assert store.release_session_lock(_unique("down"), "x") is False
+        assert store.is_session_lock_held_by(_unique("down"), "x") is False
+
+    def test_stale_token_cannot_release_or_hold(self) -> None:
+        from food_agent_v2.c4.redis_store import RedisSessionStore
+
+        store = RedisSessionStore()
+        sid = _unique("stale")
+        t1 = store.acquire_session_lock(sid, "w1")
+        assert t1 is not None
+        assert store.release_session_lock(sid, t1) is True  # 释放后
+        # stale token 不再持有 → 不能提交成功结果
+        assert store.is_session_lock_held_by(sid, t1) is False
+
     def test_fencing_token_monotonic_and_stale_rejected(self) -> None:
         from food_agent_v2.c4.redis_store import RedisSessionStore
 

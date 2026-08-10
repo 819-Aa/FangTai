@@ -95,12 +95,68 @@ class WorkflowRunner:
 
         return default_mysql_repository().ready_build_id()
 
+    # ---- 会话锁接线（fencing token，覆盖读取/运行/提交）----
+
+    @staticmethod
+    def _acquire_session_lock(c4: ContextService, session_id: str) -> str | None:
+        """获取会话锁；c4 无锁支持（测试 Fake）返回哨兵；Redis 不可用/占用返回 None。"""
+        acquire = getattr(c4, "acquire_session_lock", None)
+        if acquire is None:
+            return "no-lock-support"  # 测试 Fake 显式无锁支持
+        return acquire(session_id, "runner")
+
+    @staticmethod
+    def _renew_session_lock(c4: ContextService, session_id: str, token: str) -> bool:
+        renew = getattr(c4, "renew_session_lock", None)
+        if renew is None:
+            return True  # 测试 Fake 无锁支持
+        return renew(session_id, token)
+
+    @staticmethod
+    def _session_lock_held(c4: ContextService, session_id: str, token: str) -> bool:
+        is_held = getattr(c4, "is_session_lock_held", None)
+        if is_held is None:
+            return True  # 测试 Fake 无锁支持
+        return is_held(session_id, token)
+
+    @staticmethod
+    def _release_session_lock(c4: ContextService, session_id: str, token: str) -> None:
+        release = getattr(c4, "release_session_lock", None)
+        if release is None:
+            return
+        release(session_id, token)
+
+    def _finalize_lock_failure(self, request_id: str, c4: ContextService) -> None:
+        """锁不可用/被占用 → fail-closed 终态（不伪造放行）。"""
+        state = WorkflowState(request_id=request_id, status=RequestStatus.FAILED)
+        state.error = WorkflowError(
+            "SESSION_LOCK_UNAVAILABLE",
+            "会话锁不可用或被占用（Redis 不可用或并发请求）",
+            failed_node=NodeType.CONTEXT_BUILDING)
+        self._finalize(state, request_id, c4)
+
     def run(self, request_id: str, session_id: str,
             message: str, participants: list[dict],
             config: dict | None = None) -> None:
-        """执行完整有界状态机。"""
-        build_id = self._resolve_build_id()
+        """执行完整有界状态机（会话锁覆盖同一 session 的读取/运行/提交）。"""
         c4 = self._get_c4()
+        lock_token = self._acquire_session_lock(c4, session_id)
+        if lock_token is None:
+            # Redis 不可用/锁被占用 → fail-closed（不伪造 token 放行）
+            self._finalize_lock_failure(request_id, c4)
+            return
+        try:
+            self._run_locked(request_id, session_id, message, participants,
+                             config, c4, lock_token)
+        finally:
+            self._release_session_lock(c4, session_id, lock_token)
+
+    def _run_locked(self, request_id: str, session_id: str,
+                    message: str, participants: list[dict],
+                    config: dict | None, c4: ContextService,
+                    lock_token: str) -> None:
+        """会话锁保护下的完整有界状态机体。"""
+        build_id = self._resolve_build_id()
         participant_refs = [p["participant_ref"] for p in participants]
         user_id_mapping = {p["participant_ref"]: int(p["user_id"]) for p in participants}
 
@@ -160,6 +216,11 @@ class WorkflowRunner:
         feasible_artifact: FeasibleMenuArtifact | None = None
 
         while state.current_node is not None and not state.is_terminal():
+            # 续租会话锁 TTL（模型链路可能超 30s；stale token 执行中失锁即 fail）
+            if not self._renew_session_lock(c4, session_id, lock_token):
+                state = self._fail(state, "SESSION_LOCK_LOST",
+                                   "会话锁已失效（TTL 过期或被覆盖）")
+                break
             node = state.current_node
             tool_ctx.node_id = node.value  # 每个节点入口注入真实 node_id
 
@@ -355,6 +416,12 @@ class WorkflowRunner:
                 state, action="fail",
                 error=WorkflowError("WORKFLOW_TERMINAL_VIOLATION",
                                     f"Non-terminal at commit: {state.status}"))
+
+        # stale token 不得提交成功结果（fencing 校验；锁已被覆盖/过期 → failed）
+        if state.status == RequestStatus.COMPLETED and \
+                not self._session_lock_held(c4, session_id, lock_token):
+            state = self._fail(state, "SESSION_LOCK_LOST",
+                               "提交时会话锁已失效（stale token）")
 
         state = reduce_workflow_state(state, action="atomic_commit")
 

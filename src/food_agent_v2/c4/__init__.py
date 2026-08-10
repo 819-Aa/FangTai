@@ -6,13 +6,13 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 import time
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
+
+from food_agent_v2.contracts.build import canonical_json_hash
 
 # ---- 会话事件 ----
 
@@ -59,6 +59,42 @@ class EffectiveConstraint:
     constraint_id: str = ""
 
 
+def constraint_identity(c: EffectiveConstraint) -> str:
+    """约束的确定性身份（participant_ref + constraint_code/taboo）。"""
+    return f"{c.participant_ref}:{c.constraint_code or c.taboo_ingredient_name or c.constraint_id}"
+
+
+def constraint_merge_key(c: EffectiveConstraint) -> tuple[str, str]:
+    """合并去重键：participant_ref + 约束身份（不得只按 constraint_code 全局去重）。"""
+    return (c.participant_ref, c.constraint_code or c.taboo_ingredient_name or c.constraint_id)
+
+
+class B2PermanentConstraintLoader:
+    """默认永久约束加载器：根据 participant_user_id_mapping 从 B2 固定档案派生。"""
+
+    def load(self, participant_user_id_mapping: dict[str, int]) -> list[EffectiveConstraint]:
+        from food_agent_v2.b2 import UserHealthProfileService
+
+        svc = UserHealthProfileService()
+        svc.load()
+        out: list[EffectiveConstraint] = []
+        for ref, uid in (participant_user_id_mapping or {}).items():
+            cs = svc.derive_constraints(uid, ref)
+            for c in getattr(cs, "hard_constraints", []) or []:
+                out.append(EffectiveConstraint(
+                    constraint_code=getattr(c, "constraint_code", None),
+                    taboo_ingredient_name=getattr(c, "taboo_ingredient_name", None),
+                    participant_ref=ref,
+                    source_refs=list(getattr(c, "source_refs", []) or []),
+                    scope=ConstraintScope.PERMANENT,
+                ))
+        return out
+
+
+class SessionMemoryUnavailable(Exception):
+    """已提交会话记忆（MySQL）读取失败；不得把 Redis 当作最终事实。"""
+
+
 # ---- SharedWorkflowContext ----
 
 @dataclass
@@ -92,17 +128,18 @@ class SharedWorkflowContext:
     session_metadata: dict[str, Any] = field(default_factory=dict)
 
     def compute_manifest_hash(self) -> str:
-        """计算不可压缩块的哈希。"""
+        """计算不可压缩核心块的规范哈希（T18 完整字段覆盖）。"""
         immutable_data = {
             "current_message": str(self.current_message.get("raw_text", "")),
-            "constraints": [c.constraint_code or c.taboo_ingredient_name
-                          for c in self.effective_constraints],
-            "current_menu": self.current_menu.plan_id,
-            "clarifications": str(self.pending_clarifications),
+            "constraints": [constraint_identity(c) for c in self.effective_constraints],
+            "current_menu": {
+                "plan_id": self.current_menu.plan_id,
+                "recipe_ids": list(self.current_menu.recipe_ids),
+                "menu_artifact_ref": self.current_menu.menu_artifact_ref,
+            },
+            "pending_clarifications": self.pending_clarifications,
         }
-        return hashlib.sha256(
-            json.dumps(immutable_data, sort_keys=True, ensure_ascii=False).encode()
-        ).hexdigest()
+        return canonical_json_hash(immutable_data)
 
 
 # ---- ModelContext (角色投影) ----
@@ -178,13 +215,20 @@ class ContextService:
     角色投影（ModelContext）、菜单版本滚动。
     """
 
-    def __init__(self, memory_source: Any = None):
+    def __init__(self, memory_source: Any = None,
+                 permanent_constraint_loader: Any = None):
         self._sessions: dict[str, SharedWorkflowContext] = {}
         self._events: dict[str, list[ConversationEvent]] = {}
         self._menu_histories: dict[str, list[dict]] = {}
         self._request_results: dict[str, dict] = {}
         self._redis = None  # 惰性初始化
         self._memory_source = memory_source  # 已提交边界来源（默认 MySQL）
+        self._permanent_constraint_loader = permanent_constraint_loader
+
+    def _get_permanent_constraint_loader(self):
+        if self._permanent_constraint_loader is None:
+            self._permanent_constraint_loader = B2PermanentConstraintLoader()
+        return self._permanent_constraint_loader
 
     def _get_redis(self):
         if self._redis is None:
@@ -209,7 +253,7 @@ class ContextService:
             "request_count": len(ctx.conversation_events),
             "saved_at": time.time(),
         })
-        # 序列化约束
+        # 序列化约束（turn 约束不跨请求持久化，T18）
         constraints_data = [{
             "constraint_code": c.constraint_code,
             "taboo_ingredient_name": c.taboo_ingredient_name,
@@ -217,7 +261,7 @@ class ContextService:
             "source_refs": c.source_refs,
             "scope": c.scope.value if isinstance(c.scope, ConstraintScope) else c.scope,
             "constraint_id": c.constraint_id,
-        } for c in ctx.effective_constraints]
+        } for c in ctx.effective_constraints if c.scope != ConstraintScope.TURN]
         store.save_constraints(ctx.session_id, constraints_data)
 
         # 序列化事件
@@ -248,14 +292,15 @@ class ContextService:
                 session_meta = meta
                 committed_events = src.load_committed_events(session_id)
                 menu_versions = src.load_menu_versions(session_id)
-        except Exception:
-            pass  # MySQL 不可用 → 仅用 Redis 可恢复状态
+        except Exception as exc:
+            # T18：不得静默吞掉 MySQL 读取失败后把 Redis 当最终事实
+            raise SessionMemoryUnavailable(
+                f"已提交会话记忆读取失败: {exc}") from exc
 
         store = self._get_redis()
         redis_state = store.load_session_state(session_id)
         redis_events = store.load_events(session_id)
         redis_constraints = store.load_constraints(session_id)
-        redis_menu = store.load_menu_history(session_id)
 
         if not redis_state and not session_meta and not committed_events and not redis_events:
             return None
@@ -267,18 +312,16 @@ class ContextService:
             by_id.setdefault(e.get("event_id", ""), e)
         merged_events = list(by_id.values())
 
-        menu_history = list(menu_versions)
-        committed_plan_ids = {m.get("plan_id") for m in menu_history}
-        for m in redis_menu:
-            if m.get("plan_id") not in committed_plan_ids:
-                menu_history.append(m)
-        menu_history = menu_history[-5:]
+        # T18：菜单历史只来自 MySQL 已提交边界；Redis 未提交菜单不得恢复为成功历史
+        menu_history = list(menu_versions)[-5:]
 
         return {
             "participant_refs": session_meta.get("participant_refs")
                 or (redis_state or {}).get("participant_refs", []),
             "request_count": session_meta.get("request_count", 0),
-            "constraints": redis_constraints,
+            # turn 约束不跨进程恢复
+            "constraints": [c for c in redis_constraints
+                            if c.get("scope") != ConstraintScope.TURN.value],
             "events": merged_events,
             "menu_history": menu_history,
         }
@@ -363,16 +406,21 @@ class ContextService:
                 pending = []
                 menu = CurrentMenu()
 
-        # 约束先行（T18）：B2 固定档案永久约束为权威基础，会话级约束追加；
-        # 必须在 ContextManifest 计算前形成完整 effective_constraints。
+        # 约束先行（T18）：默认生产实现根据 participant_user_id_mapping 从 B2 加载
+        # 完整永久约束（真实调用路径），再生成 ContextManifest；可显式传入覆盖。
+        if permanent_constraints is None:
+            try:
+                permanent_constraints = self._get_permanent_constraint_loader().load(
+                    user_id_mapping)
+            except Exception:
+                permanent_constraints = []  # B2 不可用 → 无永久约束（健康工具稍后重派生）
         if permanent_constraints:
             permanent = [c for c in permanent_constraints
                          if c.scope != ConstraintScope.TURN]
-            permanent_keys = {(c.constraint_code or c.taboo_ingredient_name)
-                              for c in permanent}
+            permanent_keys = {constraint_merge_key(c) for c in permanent}
             constraints = permanent + [
                 c for c in constraints
-                if (c.constraint_code or c.taboo_ingredient_name) not in permanent_keys
+                if constraint_merge_key(c) not in permanent_keys
             ]
 
         ctx = SharedWorkflowContext(
@@ -405,26 +453,15 @@ class ContextService:
         )
         ctx.conversation_events.append(event)
 
-        # 计算清单
-        core_block = {
-            "constraints": [c.constraint_code or c.taboo_ingredient_name
-                            for c in constraints],
-            "menu": menu.plan_id,
-            "clarifications": str(pending),
-        }
+        # 计算清单（T18：逐块规范哈希，完整覆盖核心字段）
+        core_block = self._core_block(ctx)
         manifest = ContextManifest(
             manifest_hash=ctx.compute_manifest_hash(),
             immutable_block_hashes={
-                "message": hashlib.sha256(
-                    str(current_message).encode()).hexdigest()[:16],
-                "constraints": hashlib.sha256(
-                    str([c.constraint_code for c in constraints]).encode()
-                ).hexdigest()[:16],
-                "menu": hashlib.sha256(
-                    str(menu.plan_id or "").encode()).hexdigest()[:16],
-                "core": hashlib.sha256(
-                    json.dumps(core_block, sort_keys=True, ensure_ascii=False).encode()
-                ).hexdigest()[:16],
+                "current_message": canonical_json_hash(core_block["current_message"]),
+                "constraints": canonical_json_hash(core_block["constraints"]),
+                "current_menu": canonical_json_hash(core_block["current_menu"]),
+                "pending_clarifications": canonical_json_hash(core_block["pending_clarifications"]),
             },
             total_token_estimate=sum(
                 e.token_count_estimate for e in ctx.conversation_events[-20:]
@@ -496,29 +533,44 @@ class ContextService:
         return True
 
     @staticmethod
-    def _core_block_hash(ctx: SharedWorkflowContext) -> str:
-        """不可压缩核心块（约束/菜单/待澄清）的规范哈希（INV-009）。"""
-        core = {
-            "constraints": [c.constraint_code or c.taboo_ingredient_name
-                            for c in ctx.effective_constraints],
-            "menu": ctx.current_menu.plan_id,
-            "clarifications": str(ctx.pending_clarifications),
+    def _core_block(ctx: SharedWorkflowContext) -> dict:
+        """不可压缩核心块完整字段（INV-009 §9.1，T18 逐字段覆盖）。"""
+        return {
+            "current_message": str(ctx.current_message.get("raw_text", "")),
+            "constraints": [{
+                "participant_ref": c.participant_ref,
+                "constraint_code": c.constraint_code,
+                "taboo_ingredient_name": c.taboo_ingredient_name,
+                "scope": c.scope.value if isinstance(c.scope, ConstraintScope) else str(c.scope),
+                "effect": c.effect,
+                "source_refs": list(c.source_refs),
+                "constraint_id": c.constraint_id,
+            } for c in ctx.effective_constraints],
+            "current_menu": {
+                "plan_id": ctx.current_menu.plan_id,
+                "recipe_ids": list(ctx.current_menu.recipe_ids),
+                "menu_artifact_ref": ctx.current_menu.menu_artifact_ref,
+            },
+            "pending_clarifications": ctx.pending_clarifications,
         }
-        return hashlib.sha256(
-            json.dumps(core, sort_keys=True, ensure_ascii=False).encode()
-        ).hexdigest()[:16]
+
+    @staticmethod
+    def _core_block_hash(ctx: SharedWorkflowContext) -> str:
+        """不可压缩核心块的规范哈希（INV-009，canonical JSON）。"""
+        return canonical_json_hash(ContextService._core_block(ctx))
 
     def _recompute_manifest(self, ctx: SharedWorkflowContext) -> None:
         """约束/菜单变更后重算 ContextManifest（约束先行：清单始终反映完整约束）。"""
         if not ctx.context_manifest:
             return
         manifest = ctx.context_manifest
-        manifest.immutable_block_hashes["constraints"] = hashlib.sha256(
-            str([c.constraint_code for c in ctx.effective_constraints]).encode()
-        ).hexdigest()[:16]
-        manifest.immutable_block_hashes["menu"] = hashlib.sha256(
-            str(ctx.current_menu.plan_id or "").encode()).hexdigest()[:16]
-        manifest.immutable_block_hashes["core"] = self._core_block_hash(ctx)
+        core = self._core_block(ctx)
+        manifest.immutable_block_hashes = {
+            "current_message": canonical_json_hash(core["current_message"]),
+            "constraints": canonical_json_hash(core["constraints"]),
+            "current_menu": canonical_json_hash(core["current_menu"]),
+            "pending_clarifications": canonical_json_hash(core["pending_clarifications"]),
+        }
         manifest.manifest_hash = ctx.compute_manifest_hash()
 
     # ---- 角色投影 ----
@@ -616,6 +668,28 @@ class ContextService:
                 self._persist_session(ctx)
                 break
 
+    # ---- 会话锁（fencing token，覆盖读取/运行/提交）----
+
+    def acquire_session_lock(self, session_id: str, worker_id: str) -> str | None:
+        """获取会话锁，返回 fencing token；未获取（锁被占用/Redis 不可用）返回 None。"""
+        store = self._get_redis()
+        return store.acquire_session_lock(session_id, worker_id)
+
+    def renew_session_lock(self, session_id: str, token: str) -> bool:
+        """续租会话锁 TTL（仅当 token 仍持有锁）。"""
+        store = self._get_redis()
+        return store.renew_session_lock(session_id, token)
+
+    def release_session_lock(self, session_id: str, token: str) -> bool:
+        """原子释放会话锁（Lua compare-and-delete）。"""
+        store = self._get_redis()
+        return store.release_session_lock(session_id, token)
+
+    def is_session_lock_held(self, session_id: str, token: str) -> bool:
+        """fencing 校验：当前锁是否仍由该 token 持有（stale token 被拒绝）。"""
+        store = self._get_redis()
+        return store.is_session_lock_held_by(session_id, token)
+
     def record_session_event(
         self, request_id: str, terminal_status: str,
         stage_events: list[dict],
@@ -636,27 +710,27 @@ class ContextService:
     ) -> dict:
         """校验上下文完整性（C4 §11.1 / INV-009）。
 
-        只校验不可压缩核心块（有效健康约束 / 当前菜单 / 待澄清事项），
-        不含随轮次变化的 current_message——这样多轮会话不会误报。
+        逐块核对不可压缩核心块（current_message / 约束 / 当前菜单 / 待澄清），
+        任一字段变化即 CONTEXT_INTEGRITY_FAILED。
         """
         ctx = self._sessions.get(shared_context_ref)
         if not ctx or not ctx.context_manifest:
-            return {"valid": False, "reason": "context not found"}
+            return {"valid": False, "reason": "context not found",
+                    "error_code": "CONTEXT_INTEGRITY_FAILED"}
 
-        core = {
-            "constraints": [c.constraint_code or c.taboo_ingredient_name
-                            for c in ctx.effective_constraints],
-            "menu": ctx.current_menu.plan_id,
-            "clarifications": str(ctx.pending_clarifications),
-        }
-        current_core_hash = hashlib.sha256(
-            json.dumps(core, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:16]
-        stored_core_hash = ctx.context_manifest.immutable_block_hashes.get("core", "")
+        stored = ctx.context_manifest.immutable_block_hashes
+        current = self._core_block(ctx)
+        changed: list[str] = []
+        for block, value in current.items():
+            if block in stored and stored[block] != canonical_json_hash(value):
+                changed.append(block)
 
+        valid = not changed
         return {
-            "valid": (not stored_core_hash) or current_core_hash == stored_core_hash,
-            "current_core_hash": current_core_hash,
-            "stored_core_hash": stored_core_hash,
+            "valid": valid,
+            "error_code": None if valid else "CONTEXT_INTEGRITY_FAILED",
+            "changed_blocks": changed,
+            "current_core_hash": canonical_json_hash(current),
         }
 
     # ---- 约束管理 ----
@@ -673,25 +747,33 @@ class ContextService:
         if session_id not in self._sessions:
             return
         ctx = self._sessions[session_id]
-        eff: list[EffectiveConstraint] = []
+        # 派生永久约束（B2 权威基础），不得覆盖 session/turn 约束
+        derived: list[EffectiveConstraint] = []
         for ref, cs in (constraint_sets or {}).items():
             hard = getattr(cs, "hard_constraints", []) if cs else []
             for c in hard:
-                eff.append(EffectiveConstraint(
+                derived.append(EffectiveConstraint(
                     constraint_code=getattr(c, "constraint_code", None),
                     taboo_ingredient_name=getattr(c, "taboo_ingredient_name", None),
                     participant_ref=ref,
                     source_refs=list(getattr(c, "source_refs", []) or []),
                     scope=ConstraintScope.PERMANENT,
                 ))
-        ctx.effective_constraints = eff
+        # 派生永久约束相互去重（键 = participant_ref + constraint identity）；
+        # 现有 session/turn 约束全部保留（永久 + session 可共存，不覆盖）
+        kept = [c for c in ctx.effective_constraints
+                if c.scope != ConstraintScope.PERMANENT]
+        permanent_map: dict[tuple[str, str], EffectiveConstraint] = {}
+        for c in derived:
+            permanent_map[constraint_merge_key(c)] = c
+        ctx.effective_constraints = list(permanent_map.values()) + kept
         self._recompute_manifest(ctx)  # 约束先行：清单重算核心块
         self._persist_session(ctx)
 
     def store_temporary_constraint(
         self, session_id: str, constraint: dict,
     ) -> str:
-        """B2→C4：存储 B2 验证后的临时约束。"""
+        """B2→C4：存储 B2 验证后的临时约束（立即持久化）。"""
         cid = str(uuid.uuid4())[:8]
         if session_id in self._sessions:
             ctx = self._sessions[session_id]
@@ -704,12 +786,13 @@ class ContextService:
                 constraint_id=cid,
             ))
             self._recompute_manifest(ctx)
+            self._persist_session(ctx)
         return cid
 
     def revoke_temporary_constraint(
         self, session_id: str, constraint_id: str,
     ) -> None:
-        """B2→C4：撤销临时约束。"""
+        """B2→C4：撤销临时约束（立即持久化）。"""
         if session_id in self._sessions:
             ctx = self._sessions[session_id]
             ctx.effective_constraints = [
@@ -717,6 +800,7 @@ class ContextService:
                 if c.constraint_id != constraint_id or c.scope == ConstraintScope.PERMANENT
             ]
             self._recompute_manifest(ctx)
+            self._persist_session(ctx)
 
     def get_effective_constraints(
         self, session_id: str,
