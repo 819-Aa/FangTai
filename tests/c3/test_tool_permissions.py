@@ -10,7 +10,7 @@ import pytest
 
 from food_agent_v2.c3 import ROLE_POLICIES, NodeValidator
 from food_agent_v2.c3.receipts import ReceiptBindingError, ToolReceipt, validate_workflow_receipt
-from food_agent_v2.c3.state import NodeType, WorkflowState
+from food_agent_v2.c3.state import NodeType, WorkflowError, WorkflowState
 from food_agent_v2.c3.tool_handler import ToolContext, ToolHandler
 
 RID = UUID("11111111-1111-1111-1111-111111111111")
@@ -62,6 +62,7 @@ class TestReceiptValidation:
             request_id=RID,
             node_id="query_understanding",
             input_hash="a" * 64,
+            build_id=BID,
         )
 
     def test_receipt_reused_across_request_rejected(self) -> None:
@@ -72,6 +73,7 @@ class TestReceiptValidation:
                 request_id=UUID(int=9),
                 node_id="query_understanding",
                 input_hash="a" * 64,
+                build_id=BID,
             )
         assert excinfo.value.code == "RECEIPT_BINDING_MISMATCH"
 
@@ -83,6 +85,7 @@ class TestReceiptValidation:
                 request_id=RID,
                 node_id="menu_decision",
                 input_hash="a" * 64,
+                build_id=BID,
             )
         assert excinfo.value.code == "RECEIPT_BINDING_MISMATCH"
 
@@ -94,13 +97,26 @@ class TestReceiptValidation:
                 request_id=RID,
                 node_id="query_understanding",
                 input_hash="c" * 64,
+                build_id=BID,
+            )
+        assert excinfo.value.code == "RECEIPT_BINDING_MISMATCH"
+
+    def test_receipt_reused_across_build_rejected(self) -> None:
+        receipt = make_receipt()
+        with pytest.raises(ReceiptBindingError) as excinfo:
+            validate_workflow_receipt(
+                receipt,
+                request_id=RID,
+                node_id="query_understanding",
+                input_hash="a" * 64,
+                build_id=UUID(int=5),
             )
         assert excinfo.value.code == "RECEIPT_BINDING_MISMATCH"
 
 
 class TestRequiredTools:
     def _query_state(self) -> WorkflowState:
-        state = WorkflowState(request_id="r1")
+        state = WorkflowState(request_id=str(RID), build_id=str(BID))
         state.current_node = NodeType.QUERY_UNDERSTANDING
         return state
 
@@ -124,6 +140,64 @@ class TestRequiredTools:
             self._query_state(), ROLE_POLICIES["query_understanding"], {"ok": 1}, [make_receipt()]
         )
         assert error is None
+
+
+class TestReceiptIdentityFailClosed:
+    """NodeValidator 必须验证必需工具回执的完整身份（request/node/input/build）。
+
+    跨 request、跨 node、跨 build 或缺失身份的伪造回执一律不能通过必需工具检查。
+    """
+
+    def _query_state(self) -> WorkflowState:
+        state = WorkflowState(request_id=str(RID), build_id=str(BID))
+        state.current_node = NodeType.QUERY_UNDERSTANDING
+        return state
+
+    def _post(self, receipt) -> WorkflowError | None:
+        return NodeValidator.post_check(
+            self._query_state(), ROLE_POLICIES["query_understanding"], {"ok": 1}, [receipt]
+        )
+
+    def test_cross_request_forgery_rejected(self) -> None:
+        error = self._post(make_receipt(request_id=UUID(int=9)))
+        assert error is not None
+        assert error.error_code == "RECEIPT_BINDING_MISMATCH"
+
+    def test_cross_node_forgery_rejected(self) -> None:
+        error = self._post(make_receipt(node_id="menu_decision"))
+        assert error is not None
+        assert error.error_code == "RECEIPT_BINDING_MISMATCH"
+
+    def test_cross_build_forgery_rejected(self) -> None:
+        error = self._post(make_receipt(build_id=UUID(int=5)))
+        assert error is not None
+        assert error.error_code == "RECEIPT_BINDING_MISMATCH"
+
+    def test_zero_build_rejected(self) -> None:
+        error = self._post(make_receipt(build_id=UUID(int=0)))
+        assert error is not None
+        assert error.error_code == "RECEIPT_BINDING_MISMATCH"
+
+    def test_empty_build_rejected(self) -> None:
+        receipt = make_receipt().model_dump()
+        receipt["build_id"] = ""
+        error = self._post(receipt)
+        assert error is not None
+        assert error.error_code == "RECEIPT_BINDING_MISMATCH"
+
+    def test_missing_build_field_rejected(self) -> None:
+        receipt = make_receipt().model_dump()
+        del receipt["build_id"]
+        error = self._post(receipt)
+        assert error is not None
+        assert error.error_code == "RECEIPT_BINDING_MISMATCH"
+
+    def test_missing_input_hash_rejected(self) -> None:
+        receipt = make_receipt().model_dump()
+        receipt["input_hash"] = ""
+        error = self._post(receipt)
+        assert error is not None
+        assert error.error_code == "RECEIPT_BINDING_MISMATCH"
 
 
 class TestToolHandlerReceipts:
@@ -162,6 +236,7 @@ class TestToolHandlerReceipts:
             request_id=RID,
             node_id=r["node_id"],
             input_hash=r["input_hash"],
+            build_id=BID,
         )
 
     def test_same_input_same_hash_distinct_call_id(self) -> None:
@@ -178,3 +253,31 @@ class TestToolHandlerReceipts:
         handler = ToolHandler(ctx)
         handler.execute("get_current_menu", {})
         assert ctx.tool_receipts == handler.receipts
+
+    def _assert_fails_closed(self, ctx: ToolContext) -> None:
+        handler = ToolHandler(ctx)
+        result = handler.execute("get_current_menu", {})
+        assert "error" in result                      # 工具调用失败，不返回领域结果
+        receipt = handler.receipts[-1]
+        assert receipt["success"] is False            # 不产生有效回执
+        assert "RECEIPT_BINDING_MISMATCH" in receipt["error_code"]
+
+    def test_missing_node_id_fails_closed(self) -> None:
+        ctx = ToolContext(request_id=str(RID), build_id=str(BID))
+        self._assert_fails_closed(ctx)
+
+    def test_missing_request_id_fails_closed(self) -> None:
+        ctx = ToolContext(node_id="query_understanding", build_id=str(BID))
+        self._assert_fails_closed(ctx)
+
+    def test_empty_build_fails_closed(self) -> None:
+        ctx = ToolContext(request_id=str(RID), node_id="query_understanding")
+        self._assert_fails_closed(ctx)
+
+    def test_invalid_build_fails_closed(self) -> None:
+        ctx = ToolContext(request_id=str(RID), node_id="query_understanding", build_id="not-a-uuid")
+        self._assert_fails_closed(ctx)
+
+    def test_zero_build_fails_closed(self) -> None:
+        ctx = ToolContext(request_id=str(RID), node_id="query_understanding", build_id=str(UUID(int=0)))
+        self._assert_fails_closed(ctx)

@@ -188,7 +188,11 @@ class NodeValidator:
     def post_check(state: WorkflowState, policy: RolePolicy, output_artifact: dict | None, tool_receipts: list) -> WorkflowError | None:
         received: dict[str, bool] = {}
         for r in tool_receipts:
-            name = r.tool_name if hasattr(r, "tool_name") else r.get("tool_name", "")
+            # INV-007：必需工具回执必须携带与 State 一致的完整身份（request/node/input/build）
+            identity_err = NodeValidator._check_receipt_identity(state, r)
+            if identity_err:
+                return identity_err
+            name = _receipt_get(r, "tool_name") or ""
             if not name:
                 continue
             success = bool(r.success) if hasattr(r, "success") else bool(r.get("success", True))
@@ -201,6 +205,49 @@ class NodeValidator:
         if policy.output_artifact_type and not output_artifact:
             return WorkflowError("SCHEMA_VALIDATION_FAILED", "缺少输出 Artifact", failed_node=state.current_node)
         return None
+
+    @staticmethod
+    def _check_receipt_identity(state: WorkflowState, r: Any) -> WorkflowError | None:
+        """回执必须携带完整且与当前 State 一致的 request/node/build/input 身份。
+
+        fail-closed：任一字段缺失、非法或与 State 不一致即拒绝（RECEIPT_BINDING_MISMATCH），
+        跨 request/node/build 的伪造回执无法通过必需工具检查。
+        """
+        request_id = _receipt_get(r, "request_id")
+        node_id = _receipt_get(r, "node_id")
+        build_id = _receipt_get(r, "build_id")
+        input_hash = _receipt_get(r, "input_hash")
+        for field_name, value in (("request_id", request_id), ("node_id", node_id),
+                                  ("build_id", build_id), ("input_hash", input_hash)):
+            if value is None or value == "":
+                return WorkflowError(
+                    "RECEIPT_BINDING_MISMATCH", f"回执缺少绑定身份: {field_name}",
+                    failed_node=state.current_node,
+                )
+        if str(request_id) != str(state.request_id):
+            return WorkflowError("RECEIPT_BINDING_MISMATCH", "回执 request_id 与 State 不一致", failed_node=state.current_node)
+        if str(node_id) != str(state.current_node or ""):
+            return WorkflowError("RECEIPT_BINDING_MISMATCH", "回执 node_id 与 State 不一致", failed_node=state.current_node)
+        if not state.build_id:
+            return WorkflowError("RECEIPT_BINDING_MISMATCH", "State 未注入 build_id，拒绝未绑定回执", failed_node=state.current_node)
+        if str(build_id) != str(state.build_id):
+            return WorkflowError("RECEIPT_BINDING_MISMATCH", "回执 build_id 与 State 不一致", failed_node=state.current_node)
+        if not _is_sha256(input_hash):
+            return WorkflowError("RECEIPT_BINDING_MISMATCH", "回执 input_hash 非法（需 64 位十六进制）", failed_node=state.current_node)
+        return None
+
+
+def _receipt_get(receipt: Any, key: str) -> Any:
+    """从 dict 或对象回执中读取字段。"""
+    if isinstance(receipt, dict):
+        return receipt.get(key)
+    return getattr(receipt, key, None)
+
+
+def _is_sha256(value: Any) -> bool:
+    """契约 Sha256Hash：64 位十六进制。"""
+    return (isinstance(value, str) and len(value) == 64
+            and all(c in "0123456789abcdefABCDEF" for c in value))
 
 
 # ---- 状态转换（遗留可变实现）----

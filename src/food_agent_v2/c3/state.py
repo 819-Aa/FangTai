@@ -67,6 +67,7 @@ class WorkflowState:
     previous_node: NodeType | None = None
     shared_context_ref: str | None = None
     participant_refs: list[str] = field(default_factory=list)
+    build_id: str = ""  # 请求的构建身份（T17 由 runner 注入；空值即未绑定 → 校验 fail-closed）
 
     query_plan_artifact: dict | None = None
     health_evaluation_artifact: dict | None = None

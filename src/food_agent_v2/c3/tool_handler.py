@@ -46,17 +46,47 @@ class ToolHandler:
         if handler is None:
             return {"error": f"TOOL_NOT_IMPLEMENTED: {tool_name}"}
 
+        # fail-closed：request/node/build 身份不完整 → 不调用领域服务，不产生有效回执
+        binding_error = self._binding_error()
+        if binding_error is not None:
+            self._record_receipt({
+                "tool_name": tool_name,
+                "tool_call_id": uuid.uuid4().hex,
+                "request_id": self._ctx.request_id,
+                "node_id": self._ctx.node_id,
+                "input_hash": "",
+                "output_hash": "",
+                "build_id": self._ctx.build_id,
+                "success": False,
+                "error_code": binding_error,
+                "arguments_summary": {k: str(v)[:80] for k, v in arguments.items()},
+                "result_summary": "",
+            })
+            return {"error": binding_error, "tool": tool_name}
+
         try:
             result = handler(arguments, self._ctx)
-            success = not (isinstance(result, dict) and "error" in result)
-            error_code = result.get("error") if isinstance(result, dict) and "error" in result else None
         except Exception as e:
             result = {"error": f"TOOL_EXECUTION_FAILED: {e}", "tool": tool_name}
-            success = False
-            error_code = "TOOL_EXECUTION_FAILED"
 
+        success = not (isinstance(result, dict) and "error" in result)
+        error_code = result.get("error") if isinstance(result, dict) and "error" in result else None
         self._emit_receipt(tool_name, arguments, result, success, error_code)
         return result
+
+    def _binding_error(self) -> str | None:
+        """缺失/非法 request/node/build 时返回错误码（fail-closed，绝不跳过）。"""
+        missing = []
+        if _coerce_uuid(self._ctx.request_id) is None:
+            missing.append("request_id")
+        if not self._ctx.node_id:
+            missing.append("node_id")
+        build_id = _coerce_uuid(self._ctx.build_id)
+        if build_id is None or build_id == UUID(int=0):
+            missing.append("build_id")
+        if missing:
+            return f"RECEIPT_BINDING_MISMATCH: 缺失或非法绑定身份: {missing}"
+        return None
 
     def _emit_receipt(self, tool_name: str, arguments: dict, result: dict,
                       success: bool, error_code: str | None) -> dict:
@@ -74,35 +104,31 @@ class ToolHandler:
             "arguments_summary": {k: str(v)[:80] for k, v in arguments.items()},
             "result_summary": json.dumps(result, ensure_ascii=False, default=str)[:300],
         }
-        self._validate_binding(receipt)
+        # 契约校验：request/node/input/build 一致才产生有效回执
+        validate_workflow_receipt(
+            ToolReceipt(
+                request_id=UUID(receipt["request_id"]),
+                node_id=receipt["node_id"],
+                tool_call_id=receipt["tool_call_id"],
+                tool_name=receipt["tool_name"],
+                input_hash=receipt["input_hash"],
+                output_hash=receipt["output_hash"],
+                build_id=UUID(receipt["build_id"]),
+                success=receipt["success"],
+                error_code=receipt["error_code"],
+            ),
+            request_id=UUID(receipt["request_id"]),
+            node_id=receipt["node_id"],
+            input_hash=receipt["input_hash"],
+            build_id=UUID(receipt["build_id"]),
+        )
+        self._record_receipt(receipt)
+        return receipt
+
+    def _record_receipt(self, receipt: dict) -> None:
         self._receipts.append(receipt)
         # 同时写入请求级上下文（runner 从 ToolContext 提取节点回执）
         self._ctx.tool_receipts.append(receipt)
-        return receipt
-
-    def _validate_binding(self, receipt: dict) -> None:
-        """回执必须绑定当前 request/node/input/build；不一致即抛 ReceiptBindingError。"""
-        request_id = _coerce_uuid(receipt["request_id"])
-        if request_id is None or not receipt["node_id"]:
-            # runner 未注入 request/node 身份时跳过严格契约校验（T17 接线后恒有身份）
-            return
-        contract = ToolReceipt(
-            request_id=request_id,
-            node_id=receipt["node_id"],
-            tool_call_id=receipt["tool_call_id"],
-            tool_name=receipt["tool_name"],
-            input_hash=receipt["input_hash"],
-            output_hash=receipt["output_hash"],
-            build_id=_coerce_uuid(receipt["build_id"]) or UUID(int=0),
-            success=receipt["success"],
-            error_code=receipt["error_code"],
-        )
-        validate_workflow_receipt(
-            contract,
-            request_id=contract.request_id,
-            node_id=contract.node_id,
-            input_hash=contract.input_hash,
-        )
 
     @property
     def receipts(self) -> list[dict]:

@@ -43,8 +43,9 @@ def validate_receipt_binding(
     request_id: UUID,
     node_id: str,
     input_hash: str,
+    build_id: UUID,
 ) -> None:
-    """回执只能用于其绑定的 request/node/input。任一不一致即拒绝。"""
+    """回执只能用于其绑定的 request/node/input/build。任一不一致即拒绝。"""
     mismatches: list[str] = []
     if receipt.request_id != request_id:
         mismatches.append("request_id")
@@ -52,8 +53,10 @@ def validate_receipt_binding(
         mismatches.append("node_id")
     if receipt.input_hash != input_hash:
         mismatches.append("input_hash")
+    if receipt.build_id != build_id:
+        mismatches.append("build_id")
     if mismatches:
         raise ReceiptBindingError(
             "RECEIPT_BINDING_MISMATCH",
-            f"回执复用于不同 request/node/input: {mismatches}",
+            f"回执复用于不同 request/node/input/build: {mismatches}",
         )

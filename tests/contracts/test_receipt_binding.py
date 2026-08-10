@@ -63,6 +63,7 @@ class TestReceiptBinding:
                 request_id=UUID(int=9),
                 node_id=receipt.node_id,
                 input_hash=receipt.input_hash,
+                build_id=receipt.build_id,
             )
         assert excinfo.value.code == "RECEIPT_BINDING_MISMATCH"
 
@@ -74,6 +75,7 @@ class TestReceiptBinding:
                 request_id=receipt.request_id,
                 node_id="menu_decision",
                 input_hash=receipt.input_hash,
+                build_id=receipt.build_id,
             )
         assert excinfo.value.code == "RECEIPT_BINDING_MISMATCH"
 
@@ -85,6 +87,19 @@ class TestReceiptBinding:
                 request_id=receipt.request_id,
                 node_id=receipt.node_id,
                 input_hash="c" * 64,
+                build_id=receipt.build_id,
+            )
+        assert excinfo.value.code == "RECEIPT_BINDING_MISMATCH"
+
+    def test_receipt_rejected_for_different_build(self) -> None:
+        receipt = make_receipt()
+        with pytest.raises(ReceiptBindingError) as excinfo:
+            validate_receipt_binding(
+                receipt,
+                request_id=receipt.request_id,
+                node_id=receipt.node_id,
+                input_hash=receipt.input_hash,
+                build_id=UUID(int=5),
             )
         assert excinfo.value.code == "RECEIPT_BINDING_MISMATCH"
 
@@ -95,4 +110,5 @@ class TestReceiptBinding:
             request_id=receipt.request_id,
             node_id=receipt.node_id,
             input_hash=receipt.input_hash,
+            build_id=receipt.build_id,
         )
