@@ -1,7 +1,8 @@
 # H04 全新隔离卷初始化与固定产物读取设计
 
-- 状态：`REVIEW_REQUIRED`
+- 状态：`APPROVED`
 - 日期：2026-08-10
+- 实施提交：`ae016cd`（H04 收口提交见其后独立提交）
 - 适用范围：T09/H04、T11–T14 固定数据 Repository
 - 批准方向：项目所有者已批准“保留旧卷、新建隔离卷初始化；T09 保存不可变产物，T11 起由类型化 Repository 读取”
 
@@ -99,7 +100,11 @@ Qdrant 在线配置仍只暴露 `recipe_retrieval_v2`。该名称是发布别名
 ## 6. H04 初始化顺序
 
 1. 记录当前 Git HEAD、BuildManifest SHA-256、旧容器与旧卷清单。
-2. 校验工作树干净，且 `builder_version == HEAD`。
+2. 校验工作树干净。`builder_version` 是固定数据构建提交（本次为 `4eae6ac`），必须存在于本仓库；
+   它与 H04 实施提交可以不同。已接受的执行偏差：固定数据在 `4eae6ac` 构建，H04 实施提交
+   （`109cbc7` 及之后的 `ae016cd`）与构建提交的差异仅含 H04 spec 文档（docs-only，无代码变更），
+   因此**不重建固定数据**；`data-verify` 与 `data-initialize` 只要求 builder commit 存在
+   （`git cat-file` 验证），不要求与实施 HEAD 相等。
 3. 执行 `data-verify`，重新验证固定源、19 项 Artifact、散列、计数、构建身份和 13 道门禁。
 4. 创建并启动 `food_agent_v2_h04` 的 MySQL/Qdrant/Redis 与三个全新卷。
 5. 等待三个服务健康；记录新容器、新卷和创建时间。
