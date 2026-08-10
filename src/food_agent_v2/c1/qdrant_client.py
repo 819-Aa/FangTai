@@ -2,11 +2,7 @@
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
 from food_agent_v2.core.config import load_config
-from food_agent_v2.core.paths import CLEANED_DIR
 
 # 模块级 BGE-M3 模型缓存：避免每次检索都重新加载 ~2GB 模型（文档 07 §13：启动预热，首轮不承担冷加载）
 _embedding_model = None
@@ -66,49 +62,15 @@ class QdrantVectorStore:
     def available(self) -> bool:
         return self._connect()
 
-    def index_documents(self, rag_path: Path | None = None) -> int:
-        """将 RAG 文档生成向量并写入 Qdrant。"""
-        if rag_path is None:
-            rag_path = CLEANED_DIR / "rag_documents.jsonl"
-        if not rag_path.exists():
-            return 0
-        if not self._connect():
-            return 0
+    def index_documents(self, rag_path=None) -> int:
+        """直接构建路径已移除（T14/INV-023）。
 
-        docs = []
-        with rag_path.open("r", encoding="utf-8") as f:
-            for line in f:
-                if line.strip():
-                    docs.append(json.loads(line))
-
-        # 分批嵌入
-        from qdrant_client.models import PointStruct
-
-        model = _get_embedding_model()
-
-        total = 0
-        for i in range(0, len(docs), 32):
-            batch = docs[i : i + 32]
-            texts = [d["searchable_text"][:512] for d in batch]
-            embeddings = model.encode(texts, normalize_embeddings=True)
-
-            points = [
-                PointStruct(
-                    id=d["recipe_id"],
-                    vector=emb.tolist(),
-                    payload={
-                        "document_id": d["document_id"],
-                        "name": d["name"],
-                        "searchable_fields": d.get("searchable_fields", {}),
-                        "step_summary": d.get("step_summary"),
-                    },
-                )
-                for d, emb in zip(batch, embeddings, strict=True)
-            ]
-            self._client.upsert(collection_name=self._collection, points=points)
-            total += len(points)
-
-        return total
+        固定 RAG 索引只在 H04 隔离初始化事务内构建并发布；请使用
+        ``food-agent-v2 data-initialize --manifest ... --confirm-empty-v2``。
+        """
+        raise RuntimeError(
+            "DIRECT_QDRANT_INDEX_REMOVED: use data-initialize for verified indexing"
+        )
 
     def search(self, query_text: str, top_k: int = 50) -> list[tuple[int, float]]:
         """向量检索（BGE-M3 嵌入 + Qdrant 搜索）。

@@ -32,11 +32,8 @@ ONLINE_PACKAGES = [
 ]
 
 #: 已登记的历史边界违规 -> 消除任务。实现任务消除后必须同步删除对应条目。
-KNOWN_VIOLATIONS: dict[str, str] = {
-    "src/food_agent_v2/c1/__init__.py::file_ref::rag_documents.jsonl": "T14",
-    "src/food_agent_v2/c1/__init__.py::file_ref::time_profiles.jsonl": "T14",
-    "src/food_agent_v2/c1/qdrant_client.py::file_ref::rag_documents.jsonl": "T14",
-}
+#: T11-T14 已消除全部在线/离线边界违规，登记表为空（检测集与登记集均为空）。
+KNOWN_VIOLATIONS: dict[str, str] = {}
 
 
 @dataclass(frozen=True)
