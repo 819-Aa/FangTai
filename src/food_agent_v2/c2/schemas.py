@@ -1,11 +1,22 @@
 """C2 菜单规划领域 Schema（T15）。
 
 FeasibleMenu 携带内容寻址 plan_id 与 menu_hash；相同输入产生相同身份。
+menu_hash 的唯一权威：canonical_json_hash({"plan_id", "recipe_ids": sorted})，
+B4/C3/Answer/SSE 必须复用本函数，不得另行定义。
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+
+from food_agent_v2.contracts.build import canonical_json_hash
+
+
+def menu_hash_for(plan_id: str, recipe_ids: list[int]) -> str:
+    """规范 menu_hash（唯一权威，T17 全链路统一）。"""
+    return canonical_json_hash(
+        {"plan_id": plan_id, "recipe_ids": sorted(int(r) for r in recipe_ids)}
+    )
 
 DEFAULT_DISH_COUNT = 5
 MIN_DISH_COUNT = 2

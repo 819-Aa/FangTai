@@ -318,16 +318,33 @@ def _generate_feasible_menus(args: dict, ctx: ToolContext) -> dict:
 
 
 def _validate_selected_menu_health(args: dict, ctx: ToolContext) -> dict:
-    """B4 最终健康校验：重新加载 B2 当前约束 + B3 食材事实，绑定真实 menu_hash。
+    """B4 最终健康校验：绑定 C2 唯一权威 menu_hash，产出可引用 FinalValidationArtifact。
 
-    返回完整权威 B4 结果并写入请求级上下文（禁止从截断 result_summary 拼造）。
+    FinalValidationArtifact 带稳定 artifact_id 写入请求级上下文；模型经
+    final_validation_ref 引用（禁止从截断 result_summary 拼造、禁止占位 hash）。
     """
     from food_agent_v2.b2 import UserHealthProfileService
     from food_agent_v2.b3.recipe_views import get_view_builder
     from food_agent_v2.b4 import HealthRuleEngine
+    from food_agent_v2.c2.schemas import menu_hash_for
+    from food_agent_v2.contracts.artifacts import (
+        FinalValidationArtifact,
+        ParticipantRecipeHealthResult,
+    )
 
     plan_id = args.get("plan_id", "")
     recipe_ids = [int(r) for r in args.get("recipe_ids", [])]
+
+    # 唯一权威 menu_hash：从 C2 可行方案读取并核对规范 hash（C3/B4 不得另行定义）
+    feasible = ctx.previous_results.get("feasible_menus", [])
+    plan = next((p for p in feasible if getattr(p, "plan_id", "") == plan_id), None)
+    if plan is None:
+        return {"error": f"UNKNOWN_PLAN_ID: {plan_id}", "verdict": None, "plan_id": plan_id}
+    plan_menu_hash = getattr(plan, "menu_hash", "")
+    canonical = menu_hash_for(plan_id, recipe_ids)
+    if not plan_menu_hash or plan_menu_hash != canonical:
+        return {"error": f"MENU_HASH_MISMATCH: {plan_id}", "verdict": None, "plan_id": plan_id}
+    menu_hash = plan_menu_hash
 
     builder = get_view_builder()
     ing_map: dict[int, list[int]] = {}
@@ -346,25 +363,46 @@ def _validate_selected_menu_health(args: dict, ctx: ToolContext) -> dict:
         cs = b2.derive_constraints(uid, ref)
         all_constraints[ref] = cs.hard_constraints
 
-    # 绑定与最终菜单一致的规范 menu_hash（禁止占位 hash，INV-001）
-    menu_hash = _sha256(sorted(recipe_ids))
     result = engine.validate_selected_menu(
         recipe_ids, ing_map, all_constraints, plan_id, menu_hash
     )
-    final_validation = {
+
+    # 权威可引用 FinalValidationArtifact（menu_artifact_ref 指向健康规划产出的 FeasibleMenuArtifact）
+    feasible_artifact = ctx.previous_results.get("feasible_menu_artifact")
+    fv_artifact = FinalValidationArtifact(
+        artifact_id=uuid.uuid4(),
+        request_id=UUID(ctx.request_id),
+        plan_id=plan_id,
+        menu_artifact_ref=str(getattr(feasible_artifact, "artifact_id", "") or ""),
+        participant_refs=tuple(ctx.participant_user_mapping.keys()),
+        recipe_ids=tuple(recipe_ids),
+        participant_recipe_results=tuple(
+            ParticipantRecipeHealthResult(
+                participant_ref=r.participant_ref,
+                recipe_id=r.recipe_id,
+                status=r.verdict,
+                exclusion_hits=tuple(h.get("constraint_code") or "" for h in r.hitting_constraints),
+                constraint_refs=tuple(r.evidence_refs),
+                evaluated_ingredient_ids=(),
+                ingredient_set_evidence_paths=(),
+                coverage_refs=(),
+                input_fingerprint=_sha256([r.recipe_id, r.participant_ref, r.verdict]),
+            )
+            for r in result.participant_recipe_results
+        ),
+        menu_hash=menu_hash,
+        input_fingerprint=_sha256([plan_id, sorted(recipe_ids)]),
+        status=result.verdict,
+    )
+    ctx.previous_results["final_validation"] = fv_artifact
+    return {
         "verdict": result.verdict,
         "plan_id": plan_id,
         "recipe_ids": recipe_ids,
         "menu_hash": menu_hash,
-        "participant_recipe_results": [
-            {"recipe_id": r.recipe_id, "participant_ref": r.participant_ref,
-             "status": r.verdict}
-            for r in result.participant_recipe_results
-        ],
-        "evidence_refs": list(result.evidence_refs),
+        "final_validation_ref": str(fv_artifact.artifact_id),
+        "details": "final validation complete",
     }
-    ctx.previous_results["final_validation"] = final_validation
-    return final_validation
 
 
 def _expand_retrieval(args: dict, ctx: ToolContext) -> dict:

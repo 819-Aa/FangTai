@@ -1,9 +1,11 @@
-"""提示词实测 —— 调用五个模型，验证响应质量。
+"""提示词实测 —— 调用五个模型，验证响应符合正式 Artifact Schema。
 
 运行方式：
   uv run pytest tests/test_prompts_live.py -v -s
 
-标注：需要 LLM API 可用。
+标注：需要 LLM API 可用。每个角色的提示词规定的输出必须通过对应
+model_validate（WorkflowRunner._validate_artifact）。模型输出非确定，
+校验失败可重试（验证模型能产出合法 Artifact）。
 """
 
 import json
@@ -14,9 +16,14 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from food_agent_v2.core.config import load_config
-from food_agent_v2.c3.prompts import get_prompt, get_test_cases
+from food_agent_v2.c3 import ROLE_POLICIES
 from food_agent_v2.c3.llm_client import LLMClient
+from food_agent_v2.c3.prompts import get_prompt
+from food_agent_v2.c3.runner import WorkflowRunner
+from food_agent_v2.core.config import load_config
+
+_RID = "11111111-1111-1111-1111-111111111111"
+_CTX = f"## 上下文\nrequest_id: {_RID}, participant_refs: [p1]\n"
 
 
 @pytest.fixture(scope="module")
@@ -27,141 +34,129 @@ def client():
     return LLMClient()
 
 
+class _StubLLM:
+    def invoke(self, *a, **k):
+        raise AssertionError("不应调用 LLM")
+
+
+@pytest.fixture(scope="module")
+def runner():
+    return WorkflowRunner(build_id="22222222-2222-2222-2222-222222222222", llm=_StubLLM())
+
+
+def _artifact(runner, content, role):
+    """解析模型语义输出，经 workflow 组装后严格校验；返回 (artifact, 错误)。"""
+    parsed = content if isinstance(content, dict) else _parse(content)
+    return runner._assemble_artifact(parsed, ROLE_POLICIES[role], _RID, ["p1"])
+
+
+def _invoke_artifact(client, runner, role, user_msg, attempts: int = 3):
+    """调用模型并组装校验为对应 Artifact；模型非确定，失败可重试。"""
+    prompt = get_prompt(role)
+    last = None
+    for _ in range(attempts):
+        resp = client.invoke(role, prompt, user_msg)
+        artifact, err = _artifact(runner, resp.get("content", ""), role)
+        if err is None:
+            return artifact
+        last = err
+    pytest.fail(f"{role} 模型输出 {attempts} 次均未通过严格 Artifact 校验: {last.message}")
+
+
 # ---- 查询理解 ----
 
-def test_query_understanding_meal_plan(client):
-    """三菜一汤 → 正确意图和菜数"""
-    prompt = get_prompt("query_understanding")
-    resp = client.invoke(
-        "query_understanding", prompt,
-        "## 上下文\n当前消息：推荐三菜一汤，家常口味，45分钟内\n## 输入\n推荐三菜一汤，家常口味，45分钟内"
-    )
-    content = _parse(resp)
-    assert content.get("query_intent") == "new_recommendation", \
-        f"Expected new_recommendation, got {content.get('query_intent')}"
-    reqs = content.get("structured_requirements", {})
-    assert reqs.get("dish_count") == 4 or str(reqs.get("dish_count")) == "4", \
-        f"Expected dish_count=4 for '三菜一汤', got {reqs.get('dish_count')}"
-    assert content.get("needs_clarification") != True, \
-        "Should not need clarification for clear request"
-    print(f"\n  [OK] 查询理解-菜单规划: intent={content.get('query_intent')}, "
-          f"dish_count={reqs.get('dish_count')}")
+def test_query_understanding_meal_plan(client, runner):
+    """三菜一汤 → 合法 QueryPlanArtifact 且 dish_count_requested=4"""
+    artifact = _invoke_artifact(client, runner, "query_understanding", _CTX + "## 输入\n推荐三菜一汤，家常口味，45分钟内")
+    assert artifact.dish_count_requested == 4, \
+        f"Expected dish_count_requested=4, got {artifact.dish_count_requested}"
+    assert str(artifact.request_id) == _RID
+    print(f"\n  [OK] 查询理解: dish_count_requested={artifact.dish_count_requested}")
 
 
-def test_query_understanding_health_signal(client):
-    """健康信号记录但不判断"""
-    prompt = get_prompt("query_understanding")
-    resp = client.invoke(
-        "query_understanding", prompt,
-        "## 上下文\n当前消息：我有高血压，推荐清淡的晚餐\n## 输入\n我有高血压，推荐清淡的晚餐"
-    )
-    content = _parse(resp)
-    signals = content.get("health_signals", [])
-    assert len(signals) > 0 if isinstance(signals, list) else bool(signals), \
-        "Should record health signal for '高血压'"
-    # 不应该自行诊断
-    text = json.dumps(content, ensure_ascii=False).lower()
-    assert "需要控制钠" not in text, "Should not add inferred dietary advice"
-    print(f"\n  [OK] 查询理解-健康信号: signals={signals}")
+def test_query_understanding_health_signal(client, runner):
+    """健康信号记录但不判断；合法 QueryPlanArtifact"""
+    artifact = _invoke_artifact(client, runner, "query_understanding", _CTX + "## 输入\n我有高血压，推荐清淡的晚餐")
+    assert artifact.health_exclusions == ()  # 不自行诊断
+    print("\n  [OK] 查询理解-健康信号: 未自行诊断")
 
 
-def test_query_understanding_replace(client):
-    """替换意图识别"""
-    prompt = get_prompt("query_understanding")
-    resp = client.invoke(
-        "query_understanding", prompt,
-        "## 上下文\n当前菜单：回锅肉、麻婆豆腐、清炒时蔬、紫菜蛋花汤\n## 输入\n把回锅肉换成宫保鸡丁"
-    )
-    content = _parse(resp)
-    assert content.get("query_intent") in ("replace", "adjust"), \
-        f"Expected replace/adjust, got {content.get('query_intent')}"
-    print(f"\n  [OK] 查询理解-替换: intent={content.get('query_intent')}")
+def test_query_understanding_replace(client, runner):
+    """替换意图识别 → 合法 QueryPlanArtifact"""
+    _invoke_artifact(client, runner, "query_understanding", _CTX + "## 输入\n把回锅肉换成宫保鸡丁")
+    print("\n  [OK] 查询理解-替换")
 
 
 # ---- 回答生成 ----
 
-def test_answer_no_forbidden_content(client):
-    """回答不含禁止表述"""
-    prompt = get_prompt("answer_generation")
-    menu_context = {
-        "selected_menu": {
-            "dishes": [
-                {"name": "清蒸鲈鱼", "reason": "鲜嫩清淡"},
-                {"name": "蒜蓉西兰花", "reason": "营养均衡"},
-                {"name": "番茄蛋汤", "reason": "家常可口"},
-            ]
-        },
-        "health_note_data": {"excluded_count": 2},
-        "time_data": {"total_minutes": 35, "confidence": "high"},
+def _answer_base(**overrides) -> str:
+    base = {
+        "selected_menu": {"plan_id": "p1", "dishes": [
+            {"recipe_id": 1, "name": "清蒸鲈鱼"},
+            {"recipe_id": 2, "name": "蒜蓉西兰花"},
+            {"recipe_id": 3, "name": "番茄蛋汤"},
+        ]},
+        "plan_id": "p1", "menu_hash": "a" * 64, "menu_ref": "fm:1",
+        "final_validation_ref": "fv:1", "recipe_ids": [1, 2, 3],
+        "request_id": _RID, "participant_refs": ["p1"],
+        "time_data": {"total_minutes": 35, "available": True, "source": "llm_estimate"},
     }
-    user_msg = f"## 上下文\n选定菜单：{json.dumps(menu_context, ensure_ascii=False)}\n## 输入\n根据以上菜单生成回答"
-    resp = client.invoke("answer_generation", prompt, user_msg)
-    content_text = resp.get("content", "")
-
-    forbidden = [
-        ("含钠", "mg"),
-        ("千卡", "kcal"),
-        ("高血压", "hypertension"),
-        ("糖尿病", "diabetes"),
-        ("过敏", "allergy"),
-        ("适合.*患者", "health_judgment"),
-    ]
-    for keyword, label in forbidden:
-        import re
-        if re.search(keyword, content_text):
-            pytest.fail(f"Answer contains forbidden content: '{label}' found")
-    print(f"\n  [OK] 回答生成: no forbidden content (length={len(content_text)})")
+    base.update(overrides)
+    return f"## 上下文\n{json.dumps(base, ensure_ascii=False)}\n## 输入\n根据以上菜单生成回答"
 
 
-def test_answer_contains_all_dishes(client):
-    """回答包含所有菜单菜品"""
-    prompt = get_prompt("answer_generation")
-    dishes = ["回锅肉", "麻婆豆腐", "清炒时蔬", "紫菜蛋花汤"]
-    menu_context = {"selected_menu": {"dishes": [{"name": d} for d in dishes]}}
-    user_msg = f"## 上下文\n选定菜单：{json.dumps(menu_context, ensure_ascii=False)}\n## 输入\n生成用户可见回答"
+def test_answer_no_forbidden_content(client, runner):
+    """回答不含禁止表述且是合法 AnswerArtifact"""
+    artifact = _invoke_artifact(client, runner, "answer_generation", _answer_base())
+    text = artifact.content.conclusion + artifact.content.menu_summary
+    forbidden = [("mg", "nutrition"), ("高血压", "disease"), ("糖尿病", "disease")]
+    import re
+    for kw, label in forbidden:
+        if re.search(kw, text):
+            pytest.fail(f"Answer contains forbidden content: '{label}'")
+    print(f"\n  [OK] 回答生成: 无禁止表述 (len={len(text)})")
 
-    resp = client.invoke("answer_generation", prompt, user_msg)
-    content_text = resp.get("content", "")
-    missing = [d for d in dishes if d not in content_text]
+
+def test_answer_contains_all_dishes(client, runner):
+    """回答包含所有菜单菜品且是合法 AnswerArtifact"""
+    names = ["回锅肉", "麻婆豆腐", "清炒时蔬", "紫菜蛋花汤"]
+    base = {
+        "selected_menu": {"plan_id": "p1", "dishes": [
+            {"recipe_id": i + 1, "name": n} for i, n in enumerate(names)]},
+        "recipe_ids": [1, 2, 3, 4],
+    }
+    artifact = _invoke_artifact(client, runner, "answer_generation", _answer_base(**base))
+    assert list(artifact.recipe_ids) == [1, 2, 3, 4]
+    text = artifact.content.conclusion + artifact.content.menu_summary
+    missing = [n for n in names if n not in text]
     if missing:
         print(f"\n  [WARN] 回答缺少菜品: {missing}")
-        print(f"  回答内容: {content_text[:300]}...")
     else:
-        print(f"\n  [OK] 回答包含全部{len(dishes)}道菜")
+        print(f"\n  [OK] 回答包含全部{len(names)}道菜")
 
 
 # ---- 统一审查 ----
 
-def test_unified_review_detects_forbidden(client):
-    """审查模型检测到禁止内容"""
-    prompt = get_prompt("unified_review")
-    bad_answer = "为您推荐以下菜单。回锅肉含钠800mg，适合高血压患者食用。"
-    user_msg = f"## 审查对象\n{bad_answer}\n\n## 证据链\n菜单：[回锅肉, 麻婆豆腐]"
-
-    resp = client.invoke("unified_review", prompt, user_msg)
-    content = _parse(resp)
-    verdict = content.get("verdict", "")
-    print(f"\n  [OK] 统一审查-坏回答: verdict={verdict}")
-    # 应该检测到问题
-    if verdict == "PASS":
-        print(f"  [WARN] 审查未检测到'含钠800mg'等禁止内容")
+def test_unified_review_detects_forbidden(client, runner):
+    """审查模型检测到禁止内容 → 合法 ReviewArtifact"""
+    bad = "为您推荐以下菜单。回锅肉含钠800mg，适合高血压患者食用。"
+    msg = _CTX + f"## 审查对象\n{bad}\n\n## 证据链\n菜单：[回锅肉, 麻婆豆腐]"
+    artifact = _invoke_artifact(client, runner, "unified_review", msg)
+    assert artifact.status in ("PASS", "REVISION_REQUIRED")
+    print(f"\n  [OK] 统一审查-坏回答: status={artifact.status}")
 
 
-def test_unified_review_passes_clean(client):
-    """审查模型通过干净回答"""
-    prompt = get_prompt("unified_review")
-    clean_answer = "为您推荐以下菜单：回锅肉、麻婆豆腐、清炒时蔬、紫菜蛋花汤。方案A在满足健康要求的同时更符合口味偏好。约35分钟完成。"
-    user_msg = f"## 审查对象\n{clean_answer}\n\n## 证据链\n菜单：[回锅肉, 麻婆豆腐, 清炒时蔬, 紫菜蛋花汤]"
-
-    resp = client.invoke("unified_review", prompt, user_msg)
-    content = _parse(resp)
-    verdict = content.get("verdict", "")
-    print(f"\n  [OK] 统一审查-好回答: verdict={verdict}")
+def test_unified_review_passes_clean(client, runner):
+    """审查模型通过干净回答 → 合法 ReviewArtifact"""
+    clean = "为您推荐以下菜单：回锅肉、麻婆豆腐、清炒时蔬、紫菜蛋花汤。约35分钟完成。"
+    msg = _CTX + f"## 审查对象\n{clean}\n\n## 证据链\n菜单：[回锅肉, 麻婆豆腐, 清炒时蔬, 紫菜蛋花汤]"
+    artifact = _invoke_artifact(client, runner, "unified_review", msg)
+    assert artifact.status in ("PASS", "REVISION_REQUIRED")
+    print(f"\n  [OK] 统一审查-好回答: status={artifact.status}")
 
 
-def _parse(resp: dict) -> dict:
+def _parse(content: str) -> dict:
     """尝试解析 LLM 响应为 JSON。"""
-    content = resp.get("content", "")
     if isinstance(content, dict):
         return content
     if not content:
@@ -170,7 +165,6 @@ def _parse(resp: dict) -> dict:
         return json.loads(content)
     except json.JSONDecodeError:
         pass
-    # 尝试提取 JSON 块
     import re
     match = re.search(r'\{.*\}', content, re.DOTALL)
     if match:

@@ -22,6 +22,7 @@ from food_agent_v2.c2.schemas import (
     MAX_STAPLE,
     FeasibleMenu,
     MenuHardConstraints,
+    menu_hash_for,
 )
 from food_agent_v2.contracts.build import canonical_json_hash
 
@@ -180,9 +181,7 @@ class MenuPlanner:
         plan_id = canonical_json_hash(
             {"strategy": strategy, "recipe_ids": sorted(recipe_ids)}
         )
-        menu_hash = canonical_json_hash(
-            {"plan_id": plan_id, "recipe_ids": sorted(recipe_ids)}
-        )
+        menu_hash = menu_hash_for(plan_id, recipe_ids)
         return FeasibleMenu(
             plan_id=plan_id,
             recipe_ids=list(recipe_ids),
@@ -345,8 +344,6 @@ class MenuPlanner:
             new_menu.plan_id = canonical_json_hash(
                 {"base_plan": menu.plan_id, "replaced": replace_recipe_id, "with": candidate}
             )
-            new_menu.menu_hash = canonical_json_hash(
-                {"plan_id": new_menu.plan_id, "recipe_ids": sorted(new_ids)}
-            )
+            new_menu.menu_hash = menu_hash_for(new_menu.plan_id, new_ids)
             return new_menu
         return None

@@ -4,16 +4,16 @@
 - build_id 从唯一 ready 构建获取，注入 WorkflowState 与 ToolContext；每个节点入口注入真实 node_id；
 - 每个模型节点输出按 RolePolicy.output_artifact_type 严格 `model_validate`；
   缺失字段、额外字段、普通文本、任意 dict 一律 `SCHEMA_VALIDATION_FAILED`；
-- 最终健康校验只接受 B4 权威结果且 `verdict == PASS`，plan_id/recipe_ids/menu_hash
-  必须与 MenuDecisionArtifact 完全绑定，禁止从截断 result_summary 拼造；
-- Answer 必须解析正式 `AnswerArtifact` 并调用 `validate_answer_menu_binding`；
+- 唯一权威 menu_hash = C2 `menu_hash_for(plan_id, recipe_ids)`，B4/Answer/SSE 全部复用；
+- 最终健康校验只接受 B4 产出的权威 FinalValidationArtifact 且 `status == PASS`，
+  plan_id/recipe_ids/menu_hash/引用与 MenuDecisionArtifact 完全绑定；
+- health_menu_planning 从工具回执分别构建真实 HealthEvaluationArtifact 与 FeasibleMenuArtifact；
 - 必需工具漏调/失败、未知 verdict、回执/Artifact 接地失败全部立即失败；
   无自动重试、不提示补齐必需工具、不切换模型、不模板回答、空输出立即失败。
 """
 
 from __future__ import annotations
 
-import hashlib
 import json
 import time
 import uuid
@@ -22,6 +22,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ValidationError
 
+from food_agent_v2.c2.schemas import menu_hash_for
 from food_agent_v2.c3 import ROLE_POLICIES, NodeValidator, WorkflowError
 from food_agent_v2.c3.llm_client import LLMClient, get_llm_client
 from food_agent_v2.c3.prompts import get_prompt
@@ -36,15 +37,18 @@ from food_agent_v2.c4 import ContextService
 from food_agent_v2.contracts.artifacts import (
     AnswerArtifact,
     ArtifactIntegrityError,
+    FeasibleMenu,
     FeasibleMenuArtifact,
     FinalValidationArtifact,
     HealthEvaluationArtifact,
     MenuDecisionArtifact,
+    MenuScoreDecomposition,
     ParticipantRecipeHealthResult,
     QueryPlanArtifact,
     ReviewArtifact,
     validate_answer_menu_binding,
 )
+from food_agent_v2.contracts.build import canonical_json_hash
 from food_agent_v2.contracts.receipts import ToolReceipt
 from food_agent_v2.d1 import api as d1_api
 
@@ -153,6 +157,7 @@ class WorkflowRunner:
         answer_text = ""
         md_artifact: MenuDecisionArtifact | None = None
         final_artifact: FinalValidationArtifact | None = None
+        feasible_artifact: FeasibleMenuArtifact | None = None
 
         while state.current_node is not None and not state.is_terminal():
             node = state.current_node
@@ -163,7 +168,8 @@ class WorkflowRunner:
                     state, c4, tool_ctx, "query_understanding", user_message=message)
                 if state.is_terminal():
                     break
-                if isinstance(q_raw, dict) and q_raw.get("needs_clarification") is True:
+                # 澄清走正式可验证契约（needs_clarification + 必需字段），非任意 dict 特例
+                if self._is_clarification_payload(q_raw):
                     state = reduce_workflow_state(
                         state, action="query_understanding", success=True,
                         needs_clarification=True)
@@ -187,23 +193,18 @@ class WorkflowRunner:
                     "query_plan": state.query_plan_artifact,
                     "retrieved_candidate_recipe_ids": retrieved_ids,
                 }
-                state, _hm_raw, hm_artifact = self._run_model_node(
+                state, _hm_raw, _hm_art = self._run_model_node(
                     state, c4, tool_ctx, "health_menu_planning",
-                    user_message=json.dumps(hm_input, ensure_ascii=False),
+                    user_message=json.dumps(hm_input, ensure_ascii=False, default=str),
                     handoff={"artifact_refs": ["query_plan", "retrieval"],
                              "action_required": "健康审查并生成菜单方案"},
                 )
                 if state.is_terminal():
                     break
-                if hm_artifact is None:
-                    state = self._fail(state, "HEALTH_MENU_PLANNING_EMPTY",
-                                       "健康与菜单规划节点未产生结果")
+                # 从工具回执分别构建真实双 Artifact（禁止二选一/字段非空混入错误类型）
+                state, feasible_artifact = self._build_dual_artifacts(state, tool_ctx)
+                if state.is_terminal():
                     break
-                # 与历史行为一致：该节点输出同时作为健康评估/可行菜单 Artifact 登记
-                state = reduce_workflow_state(
-                    state, action="set_artifact", artifact="health_evaluation", value=hm_artifact)
-                state = reduce_workflow_state(
-                    state, action="set_artifact", artifact="feasible_menu", value=hm_artifact)
                 d1_api.publish_analysis_event(request_id, "health_evaluation",
                                               "健康审查完成", [])
                 d1_api.publish_analysis_event(request_id, "menu_planning",
@@ -220,6 +221,11 @@ class WorkflowRunner:
                         "total_score": getattr(p, "total_score", 0.0),
                         "makespan_seconds": getattr(p, "makespan_seconds", None),
                     } for p in feasible],
+                    "feasible_menu_artifact_ref": str(feasible_artifact.artifact_id)
+                    if feasible_artifact else "",
+                    "menu_hash": feasible_artifact.menu_hash if feasible_artifact else "",
+                    "participant_refs": participant_refs,
+                    "request_id": request_id,
                 }
                 state, _md_raw, _md_art = self._run_model_node(
                     state, c4, tool_ctx, "menu_decision",
@@ -231,26 +237,26 @@ class WorkflowRunner:
                     break
                 md: MenuDecisionArtifact = _md_art
 
-                # FinalValidationArtifact 必须来自 B4 权威结果（禁止从截断 result_summary 拼造）
+                # FinalValidationArtifact 必须来自 B4 权威产出（可引用、禁止截断拼造）
                 fv = self._extract_final_validation(tool_ctx)
                 if fv is None:
                     state = self._fail(state, "FINAL_HEALTH_VALIDATION_FAILED",
                                        "缺少 B4 最终健康校验结果")
                     break
-                if fv["verdict"] not in ("PASS", "EXCLUDE"):
+                if fv.status not in ("PASS", "EXCLUDE"):
                     state = self._fail(state, "FINAL_HEALTH_VALIDATION_FAILED",
-                                       f"未知最终校验 verdict: {fv['verdict']}")
+                                       f"未知最终校验 verdict: {fv.status}")
                     break
                 # B4 实际校验的 plan_id/recipe_ids/menu_hash 与 MenuDecisionArtifact 完全绑定
-                if fv["plan_id"] != md.plan_id:
+                if fv.plan_id != md.plan_id:
                     state = self._fail(state, "ARTIFACT_INTEGRITY_FAILED",
                                        "B4 校验 plan_id 与决策不一致")
                     break
-                if set(fv["recipe_ids"]) != set(md.recipe_ids):
+                if set(fv.recipe_ids) != set(md.recipe_ids):
                     state = self._fail(state, "ARTIFACT_INTEGRITY_FAILED",
                                        "B4 校验 recipe_ids 与决策不一致")
                     break
-                if fv["menu_hash"] != md.menu_hash:
+                if fv.menu_hash != md.menu_hash:
                     state = self._fail(state, "ARTIFACT_INTEGRITY_FAILED",
                                        "B4 校验 menu_hash 与决策不一致")
                     break
@@ -260,8 +266,13 @@ class WorkflowRunner:
                     state = self._fail(state, "ARTIFACT_INTEGRITY_FAILED",
                                        f"所选 plan_id 不在可行方案中: {md.plan_id}")
                     break
+                # 引用生命周期：MenuDecisionArtifact 引用 B4 FinalValidationArtifact 与 FeasibleMenuArtifact
+                refs_err = self._decision_refs_error(md, fv, feasible_artifact)
+                if refs_err:
+                    state = self._fail(state, refs_err.error_code, refs_err.message)
+                    break
 
-                if fv["verdict"] == "EXCLUDE":
+                if fv.status == "EXCLUDE":
                     state = reduce_workflow_state(state, action="menu_decision", needs_replan=True)
                     continue  # REVISING → health_menu_planning，或耗尽 → FAILED
 
@@ -270,12 +281,9 @@ class WorkflowRunner:
                 md_artifact = md
                 plan_id = md.plan_id
                 recipe_ids = list(md.recipe_ids)
-
-                # 构造权威 FinalValidationArtifact（INV-001）
-                final_artifact = self._build_final_validation_artifact(state, fv, md)
+                final_artifact = fv
                 state = reduce_workflow_state(
-                    state, action="set_artifact", artifact="final_validation",
-                    value=final_artifact)
+                    state, action="set_artifact", artifact="final_validation", value=fv)
 
                 c4_ctx = c4._sessions.get(state.shared_context_ref or "")
                 if c4_ctx:
@@ -349,7 +357,8 @@ class WorkflowRunner:
 
         if state.status == RequestStatus.COMPLETED:
             fva = state.final_validation_artifact
-            menu_hash = fva.menu_hash if fva else self._menu_hash(recipe_ids)
+            menu_hash = fva.menu_hash if isinstance(fva, FinalValidationArtifact) else \
+                (menu_hash_for(plan_id, recipe_ids) if plan_id else "")
             ans = state.answer_artifact
             d1_api.publish_answer_event(
                 request_id, answer_text, menu_hash,
@@ -383,17 +392,120 @@ class WorkflowRunner:
         )
 
     @staticmethod
-    def _menu_hash(recipe_ids: list[int]) -> str:
-        """最终菜单的规范 hash（Answer 与最终菜单接地）。"""
-        canonical = json.dumps(sorted(int(r) for r in recipe_ids),
-                               separators=(",", ":"))
-        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    def _menu_hash(plan_id: str, recipe_ids: list[int]) -> str:
+        """唯一权威 menu_hash（C2，C3 不得另行定义）。"""
+        return menu_hash_for(plan_id, recipe_ids)
 
     @staticmethod
-    def _fingerprint(items: Any) -> str:
-        return hashlib.sha256(
-            json.dumps(items, sort_keys=True, ensure_ascii=False).encode()
-        ).hexdigest()
+    def _content_hash(artifact: BaseModel) -> str:
+        """对 Artifact 语义内容做规范 hash（排除身份/指纹字段）。"""
+        payload = artifact.model_dump(exclude={"content_hash", "input_fingerprint",
+                                               "artifact_id", "request_id"})
+        return canonical_json_hash(payload)
+
+    @staticmethod
+    def _is_clarification_payload(payload: Any) -> bool:
+        """正式澄清契约：needs_clarification=true 且包含 clarification_question 与 missing_key_info。"""
+        return (isinstance(payload, dict)
+                and payload.get("needs_clarification") is True
+                and isinstance(payload.get("clarification_question"), str)
+                and bool(payload.get("clarification_question"))
+                and isinstance(payload.get("missing_key_info"), list))
+
+    def _build_dual_artifacts(self, state: WorkflowState,
+                              tool_ctx: ToolContext) -> tuple[WorkflowState, FeasibleMenuArtifact | None]:
+        """从工具回执分别构建真实 HealthEvaluationArtifact 与 FeasibleMenuArtifact。
+
+        验证：FeasibleMenu 全部菜品 ⊆ HealthEvaluation.safe_recipe_ids；
+        必需工具回执身份已由 post_check 校验。任一构建失败即 fail-closed。
+        """
+        receipt = tool_ctx.previous_results.get("health_evaluation")
+        plans = tool_ctx.previous_results.get("feasible_menus", [])
+        if receipt is None or not plans:
+            return self._fail(state, "HEALTH_MENU_PLANNING_EMPTY",
+                              "健康评估或可行菜单缺失（工具回执不足）"), None
+
+        safe_ids = tuple(int(r) for r in receipt.safe_recipe_ids)
+        try:
+            health_artifact = HealthEvaluationArtifact(
+                artifact_id=uuid.uuid4(),
+                request_id=UUID(state.request_id),
+                participant_refs=tuple(state.participant_refs),
+                safe_recipe_ids=safe_ids,
+                excluded_recipe_ids=tuple(int(r) for r in receipt.excluded_recipe_ids),
+                participant_recipe_results=tuple(
+                    ParticipantRecipeHealthResult(
+                        participant_ref=r.participant_ref,
+                        recipe_id=r.recipe_id,
+                        status=r.verdict,
+                        constraint_refs=tuple(r.evidence_refs),
+                        evaluated_ingredient_ids=(),
+                        ingredient_set_evidence_paths=(),
+                        coverage_refs=(),
+                        exclusion_hits=tuple(
+                            h.get("constraint_code") or "" for h in r.hitting_constraints),
+                        input_fingerprint=canonical_json_hash(
+                            [r.recipe_id, r.participant_ref]),
+                    )
+                    for r in receipt.participant_recipe_results
+                ),
+                recipe_group_results=(),
+                input_fingerprint=canonical_json_hash(sorted(safe_ids)),
+                content_hash="0" * 64,
+            )
+            menus = tuple(
+                FeasibleMenu(
+                    plan_id=p.plan_id,
+                    recipe_ids=tuple(int(r) for r in p.recipe_ids),
+                    menu_hash=p.menu_hash,
+                    score_decomposition=MenuScoreDecomposition(
+                        total_score=p.total_score,
+                        rag_score=0.0,
+                        preference_score=p.preference_score,
+                        nutrition_score=p.nutrition_score,
+                        time_score=p.time_score,
+                        diversity_score=p.diversity_score,
+                        historical_score=0.0,
+                    ),
+                    differing_recipe_ids=tuple(int(r) for r in p.differing_recipe_ids),
+                    dominant_objective=(p.dominant_objective
+                                        if p.dominant_objective in
+                                        ("balanced", "preference", "nutrition", "quick", "diverse")
+                                        else "balanced"),
+                    strict_time_feasible=p.strict_time_feasible,
+                    makespan_seconds=p.makespan_seconds,
+                )
+                for p in plans
+            )
+            # 菜单集合关系：全部菜品 ⊆ 安全候选
+            for m in menus:
+                if set(m.recipe_ids) - set(safe_ids):
+                    return self._fail(
+                        state, "ARTIFACT_INTEGRITY_FAILED",
+                        f"可行方案 {m.plan_id} 含非安全候选菜品"), None
+            feasible_artifact = FeasibleMenuArtifact(
+                artifact_id=uuid.uuid4(),
+                request_id=UUID(state.request_id),
+                safe_recipe_ids_ref=str(health_artifact.artifact_id),
+                menus=menus,
+                input_fingerprint=canonical_json_hash([m.plan_id for m in menus]),
+                content_hash="0" * 64,
+            )
+        except (ValidationError, AttributeError, TypeError) as e:
+            return self._fail(state, "SCHEMA_VALIDATION_FAILED",
+                              f"健康/菜单 Artifact 构建失败: {e}"), None
+
+        health_artifact = health_artifact.model_copy(
+            update={"content_hash": self._content_hash(health_artifact)})
+        feasible_artifact = feasible_artifact.model_copy(
+            update={"content_hash": self._content_hash(feasible_artifact)})
+        state = reduce_workflow_state(
+            state, action="set_artifact", artifact="health_evaluation", value=health_artifact)
+        state = reduce_workflow_state(
+            state, action="set_artifact", artifact="feasible_menu", value=feasible_artifact)
+        # 供 B4 最终校验引用 FeasibleMenuArtifact.id
+        tool_ctx.previous_results["feasible_menu_artifact"] = feasible_artifact
+        return state, feasible_artifact
 
     def _run_model_node(self, state: WorkflowState, c4: ContextService,
                         tool_ctx: ToolContext, role: str, user_message: str,
@@ -415,18 +527,17 @@ class WorkflowRunner:
         model_ctx = c4.project_model_context(role, handoff, state.shared_context_ref or "")
         pre_count = len(tool_ctx.tool_receipts)
 
-        result = self._call_model(role, policy, model_ctx, user_message, tool_ctx)
+        result = self._call_model(role, policy, model_ctx, user_message, tool_ctx,
+                                  response_format=self._artifact_response_format(policy, role))
 
-        # 模型异常/空输出 → fail-closed（不切换模型、不模板回答、不 nudge 重试）
         if result.get("status") == "failed":
             err = WorkflowError("MODEL_CALL_FAILED",
                                 result.get("error") or "模型调用失败",
                                 failed_node=state.current_node)
             return reduce_workflow_state(state, action="fail", error=err), result, None
 
-        # 查询理解：模型显式请求澄清时不校验 Artifact（澄清为终态）
-        if role == "query_understanding" and isinstance(result, dict) \
-                and result.get("needs_clarification") is True:
+        # 查询理解：仅正式澄清契约放行（否则按 Artifact 严格校验）
+        if role == "query_understanding" and self._is_clarification_payload(result):
             return state, result, None
 
         node_receipts = tool_ctx.tool_receipts[pre_count:]
@@ -439,8 +550,8 @@ class WorkflowRunner:
         if post_err:
             return reduce_workflow_state(state, action="fail", error=post_err), result, None
 
-        # 严格 Artifact Schema 校验（缺失/额外/普通文本/任意 dict → SCHEMA_VALIDATION_FAILED）
-        artifact, schema_err = self._validate_artifact(result, policy)
+        artifact, schema_err = self._assemble_artifact(
+            result, policy, state.request_id, state.participant_refs)
         if schema_err:
             return reduce_workflow_state(state, action="fail", error=schema_err), result, None
 
@@ -449,8 +560,17 @@ class WorkflowRunner:
         return state, result, artifact
 
     @staticmethod
+    def _artifact_response_format(policy: Any, role: str) -> dict | None:
+        """为模型传 response_format 强制 JSON 对象。
+
+        当前 LLM 供应商（DeepSeek）不支持 json_schema；用 json_object 强制 JSON
+        对象输出，严格 Artifact Schema 由 _validate_artifact 强制（fail-closed）。
+        """
+        return {"type": "json_object"}
+
+    @staticmethod
     def _validate_artifact(parsed: Any, policy: Any) -> tuple[BaseModel | None, WorkflowError | None]:
-        """按 RolePolicy.output_artifact_type 严格 model_validate；非契约输出一律拒绝。"""
+        """按 RolePolicy.output_artifact_type 严格 model_validate（完整契约校验）。"""
         if not policy.output_artifact_type:
             return None, None
         type_names = [t.strip() for t in policy.output_artifact_type.split("|")]
@@ -466,6 +586,43 @@ class WorkflowRunner:
             "SCHEMA_VALIDATION_FAILED",
             f"模型输出不符合 {policy.output_artifact_type} Schema",
         )
+
+    def _assemble_artifact(self, parsed: Any, policy: Any,
+                           request_id: str, participant_refs: list[str]
+                           ) -> tuple[BaseModel | None, WorkflowError | None]:
+        """组装式严格校验：模型输出语义字段，workflow 补充 artifact_id/request_id/
+        participant_refs/hashes（模型无法可靠生成 64 位 hash），再 model_validate。
+
+        任一必需语义字段缺失、额外字段、普通文本、任意 dict 一律 SCHEMA_VALIDATION_FAILED。
+        """
+        if not policy.output_artifact_type:
+            return None, None
+        if not isinstance(parsed, dict):
+            return None, WorkflowError("SCHEMA_VALIDATION_FAILED",
+                                       f"模型输出不符合 {policy.output_artifact_type} Schema")
+        for name in (t.strip() for t in policy.output_artifact_type.split("|")):
+            cls = ARTIFACT_TYPES.get(name)
+            if cls is None:
+                return None, WorkflowError("SCHEMA_VALIDATION_FAILED", f"未知 Artifact 类型: {name}")
+            assembled = dict(parsed)
+            # workflow 管理字段：模型不得伪造（覆盖为权威值）
+            assembled["artifact_id"] = str(uuid.uuid4())
+            assembled["request_id"] = str(request_id)
+            if "participant_refs" in cls.model_fields:
+                assembled["participant_refs"] = list(participant_refs)
+            if "input_fingerprint" in cls.model_fields and "input_fingerprint" not in assembled:
+                assembled["input_fingerprint"] = "0" * 64
+            if "content_hash" in cls.model_fields and "content_hash" not in assembled:
+                assembled["content_hash"] = "0" * 64
+            try:
+                artifact = cls.model_validate(assembled)
+            except ValidationError:
+                continue
+            artifact = artifact.model_copy(
+                update={"content_hash": self._content_hash(artifact)})
+            return artifact, None
+        return None, WorkflowError("SCHEMA_VALIDATION_FAILED",
+                                   f"模型输出不符合 {policy.output_artifact_type} Schema")
 
     @staticmethod
     def _validate_tool_budget(receipts: list[dict]) -> WorkflowError | None:
@@ -500,51 +657,25 @@ class WorkflowRunner:
     # ---- 最终健康校验与绑定 ----
 
     @staticmethod
-    def _extract_final_validation(tool_ctx: ToolContext) -> dict | None:
-        """FinalValidationArtifact 必须来自 B4 权威结果（tool_handler 已存完整结果）。
-
-        结果缺失或任一绑定键缺失/为空 → 视为无权威结果（fail-closed）。
-        """
+    def _extract_final_validation(tool_ctx: ToolContext) -> FinalValidationArtifact | None:
+        """FinalValidationArtifact 必须来自 B4 权威产出（tool_handler 已构建可引用 Artifact）。"""
         fv = tool_ctx.previous_results.get("final_validation")
-        if not isinstance(fv, dict):
+        if not isinstance(fv, FinalValidationArtifact):
             return None
-        for key in ("verdict", "plan_id", "recipe_ids", "menu_hash"):
-            if key not in fv or fv[key] in (None, ""):
-                return None
         return fv
 
     @staticmethod
-    def _build_final_validation_artifact(state: WorkflowState, fv: dict,
-                                         md: MenuDecisionArtifact) -> FinalValidationArtifact:
-        """从权威 B4 结果构造 FinalValidationArtifact（INV-001，不拼造）。"""
-        participant_results = tuple(
-            ParticipantRecipeHealthResult(
-                participant_ref=pr["participant_ref"],
-                recipe_id=int(pr["recipe_id"]),
-                status=pr["status"],
-                constraint_refs=(),
-                evaluated_ingredient_ids=(),
-                ingredient_set_evidence_paths=(),
-                coverage_refs=(),
-                exclusion_hits=(),
-                input_fingerprint=WorkflowRunner._fingerprint(
-                    [pr["recipe_id"], pr["participant_ref"]]),
-            )
-            for pr in fv.get("participant_recipe_results", [])
-        )
-        return FinalValidationArtifact(
-            artifact_id=uuid.uuid4(),
-            request_id=UUID(state.request_id),
-            plan_id=fv["plan_id"],
-            menu_artifact_ref=md.feasible_menu_artifact_ref,
-            participant_refs=tuple(state.participant_refs),
-            recipe_ids=tuple(int(r) for r in fv["recipe_ids"]),
-            participant_recipe_results=participant_results,
-            relation_evidence_refs=tuple(fv.get("evidence_refs", [])),
-            menu_hash=fv["menu_hash"],
-            input_fingerprint=WorkflowRunner._fingerprint([fv["menu_hash"]]),
-            status=fv["verdict"],
-        )
+    def _decision_refs_error(md: MenuDecisionArtifact,
+                             fv: FinalValidationArtifact | None,
+                             feasible_artifact: FeasibleMenuArtifact | None) -> WorkflowError | None:
+        """引用生命周期：决策必须引用 B4 FinalValidationArtifact 与 FeasibleMenuArtifact 的实际 id。"""
+        if fv is None or md.final_validation_ref != str(fv.artifact_id):
+            return WorkflowError("ARTIFACT_INTEGRITY_FAILED",
+                                 "MenuDecisionArtifact 引用的 final_validation_ref 不一致")
+        if feasible_artifact is None or md.feasible_menu_artifact_ref != str(feasible_artifact.artifact_id):
+            return WorkflowError("ARTIFACT_INTEGRITY_FAILED",
+                                 "MenuDecisionArtifact 引用的 feasible_menu_artifact_ref 不一致")
+        return None
 
     @staticmethod
     def _answer_binding_error(answer: AnswerArtifact,
@@ -571,8 +702,9 @@ class WorkflowRunner:
         return None
 
     def _call_model(self, role: str, policy: Any, model_ctx,
-                    user_input: str, tool_ctx: ToolContext) -> dict:
-        """调用 LLM——函数调用模式。
+                    user_input: str, tool_ctx: ToolContext,
+                    response_format: dict | None = None) -> dict:
+        """调用 LLM——函数调用模式 + 严格 json_schema（可选）。
 
         只允许真实工具调用后的正常结果续接；不做必需工具提示补齐、不代调、
         不 nudge 空输出；空输出立即失败；循环耗尽即失败。
@@ -595,6 +727,7 @@ class WorkflowRunner:
                 response = self._llm.invoke(
                     role, system_prompt, full_user,
                     tools=tool_defs if tool_defs else None,
+                    response_format=response_format,
                 )
             except Exception as e:
                 return {"status": "failed", "error": str(e), "content": ""}
@@ -606,7 +739,6 @@ class WorkflowRunner:
             content = response.get("content", "")
 
             if tool_calls:
-                # 真实工具调用 → 执行并把结果续接进上下文（只允许这种续接）
                 tool_results = []
                 allowed_names = {t.name for t in policy.allowed_tools}
                 for tc in tool_calls:
@@ -627,12 +759,10 @@ class WorkflowRunner:
 
             content_text = content if isinstance(content, str) else json.dumps(content, ensure_ascii=False)
             if not content_text.strip():
-                # 空输出立即失败（不 nudge、不模板回答）
                 return {"status": "failed", "error": "MODEL_EMPTY_OUTPUT", "content": ""}
 
             return self._parse_result(content, role)
 
-        # 循环耗尽仍无有效输出 → fail-closed
         return {"status": "failed", "error": "MODEL_NO_VALID_OUTPUT", "content": ""}
 
     def _build_tool_defs(self, policy: Any) -> list[dict] | None:
@@ -684,11 +814,7 @@ class WorkflowRunner:
         return defs
 
     def _parse_result(self, content: str, role: str) -> dict:
-        """解析模型输出为 dict。
-
-        模型常把 JSON 包在 ```json 代码块或正文中，直接 json.loads 会失败。
-        这里先尝试直接解析，再从 markdown 代码块/正文中提取 JSON 对象。
-        """
+        """解析模型输出为 dict。"""
         import re as _re
 
         if isinstance(content, dict):
@@ -718,7 +844,7 @@ class WorkflowRunner:
     def _build_answer_base(recipe_ids: list[int], plan_id: str,
                            tool_ctx: ToolContext, md: MenuDecisionArtifact | None,
                            final_artifact: FinalValidationArtifact | None) -> dict:
-        """构建回答节点的公开事实基座：真实菜名 + 菜单 hash/引用 + 时间说明。"""
+        """构建回答节点的公开事实基座：真实菜名 + 唯一 menu_hash/引用 + 时间说明。"""
         try:
             from food_agent_v2.b3.recipe_views import get_view_builder
             _rbuilder = get_view_builder()
@@ -742,10 +868,12 @@ class WorkflowRunner:
             _time_data = {"available": False}
         return {
             "selected_menu": {"plan_id": plan_id, "dishes": _dishes},
-            "menu_hash": md.menu_hash if md else WorkflowRunner._menu_hash(recipe_ids),
+            "menu_hash": md.menu_hash if md else menu_hash_for(plan_id, recipe_ids),
             "menu_ref": md.feasible_menu_artifact_ref if md else "",
             "final_validation_ref": str(final_artifact.artifact_id) if final_artifact else "",
             "final_validation_status": final_artifact.status if final_artifact else "",
+            "participant_refs": list(md.participant_refs) if md else [],
+            "request_id": str(md.request_id) if md else "",
             "time_data": _time_data,
             "requested_time_limit_minutes": tool_ctx.time_limit_minutes,
         }
