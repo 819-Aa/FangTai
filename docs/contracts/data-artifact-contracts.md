@@ -60,6 +60,21 @@ created_at: UTC timestamp
 
 Artifact 可以拆成多个物理文件，但逻辑主键、计数和散列不能改变。不得用空列表、默认分数或占位字符串伪装“已生成”。
 
+实际构建共 **19 项已验证 Artifact**，以 `BuildManifest.artifacts` 为权威清单：
+
+```text
+recipe_source_rows(2000)  recipe_classifications(2000)  ingredient_occurrences(17521)
+ingredient_registry(1781)  ingredient_aliases(21)        ingredient_forms(381)
+ingredient_crosswalk(431)  recipe_ingredient_relations(17505)
+step_tasks(1914)           nutrition_features(1914)      recipe_health_views(1914)
+recipe_nutrition_input_views(1914)  recipe_retrieval_build_views(1914)
+recipe_step_binding_views(1914)     rag_documents(1914)
+health_relations(985)      health_relation_coverage(38)  health_relation_decisions(65854)
+user_profiles(50)
+```
+
+计数以该构建的 `BuildManifest.artifacts[*].row_count` 为准；任何与 Manifest 计数不一致的初始化不得发布。
+
 ## 4. 分类契约
 
 每个 `recipe_id` 恰好有一个封闭枚举分类：
@@ -128,3 +143,36 @@ API -> Application/Workflow -> 领域服务 -> Repository -> MySQL/Qdrant/Redis
 - 每个门禁的命令、退出码、stdout/stderr 文件散列。
 
 只有报告 `passed=true` 且所有 P0 门禁为零，才允许初始化。
+
+## 10. MySQL 构建登记与在线读取契约
+
+### 10.1 `data_builds`
+
+每个构建一行，保存：
+
+- `build_id`；
+- `source_manifest_hash`；
+- `builder_version`（Git commit SHA）；
+- BuildManifest 与质量报告 SHA-256；
+- 19 项 Artifact 计数；
+- `initializing | ready` 状态与初始化时间。
+
+在线系统只接受**恰好一个 `ready` 构建**；零个或多个 `ready` 构建都必须 fail-closed。
+
+### 10.2 `fixed_artifact_records`
+
+按 `build_id + artifact_name + record_index` 无损保存 BuildManifest 已验证的 19 项 JSON 记录。
+所有记录必须携带与 `data_builds` 一致的 `build_id` 与 `source_manifest_hash`。
+
+T09 不在旧领域表（`recipes`/`ingredients` 等）双写固定事实；旧领域表保留但不作为 T11–T14
+固定事实来源。
+
+### 10.3 在线读取契约
+
+- T11–T14 Repository 从 `data_builds` 解析唯一 `ready build_id`，按 `build_id + artifact_name`
+  读取固定记录，用领域 Pydantic Schema 反序列化并验证主键、引用与构建身份；未知 ID、记录缺失、
+  Schema 错误、构建身份不一致时 fail-closed；禁止回退到 JSONL、原始 CSV 或旧领域表。
+- Qdrant 在线配置只暴露 `recipe_retrieval_v2`（发布别名，指向本次构建的物理 staging collection）；
+  在线客户端不得自动创建缺失集合。
+- 固定数据只有 2,000 条菜品、1,781 个食材身份和 65,854 条健康决定，Repository 可在启动时按
+  Artifact 批量读取并建立内存只读映射，无需增量同步或运行时版本切换。

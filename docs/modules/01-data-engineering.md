@@ -421,3 +421,54 @@ B1 不负责在线运行时的 Agent 越界读取防护——该防护由 `modul
 - `07-rag-retrieval.md`消费菜品检索文档并召回真实菜品。
 
 上述模块可以细化内部算法，但不得改变本模块确立的数据流顺序、标准ID连接、健康硬筛选边界、营养软排序边界和固定数据离线处理前提。
+
+## 19. 固定事实存储与 H04 隔离初始化
+
+### 19.1 T09 固定事实存储
+
+T09 只维护两个权威固定数据表（见 [数据 Artifact 契约 §10](../contracts/data-artifact-contracts.md)）：
+
+- `data_builds`：每个构建一行，保存 `build_id`、`source_manifest_hash`、`builder_version`、
+  BuildManifest 与质量报告 SHA-256、19 项 Artifact 计数以及 `initializing | ready` 状态与初始化时间。
+  在线系统只接受**恰好一个 `ready` 构建**；零个或多个 `ready` 构建都必须 fail-closed。
+- `fixed_artifact_records`：按 `build_id + artifact_name + record_index` 无损保存 BuildManifest
+  已验证的 19 项 JSON 记录。所有记录必须携带与 `data_builds` 一致的 `build_id` 与 `source_manifest_hash`。
+
+T09 不再把同一事实双写进 `recipes`、`ingredients` 等旧领域表；旧领域表保留但不作为
+T11–T14 固定事实来源，删除它们不属于本变更。
+
+### 19.2 H04 隔离环境
+
+H04 使用独立 Compose project `food_agent_v2_h04` 启动全新 MySQL/Qdrant/Redis 与三个全新卷，
+旧容器与旧卷（2026-08-07 创建）保持停止且不删除、不清空、不复用：
+
+- 容器：`food_agent_v2_h04_mysql`、`food_agent_v2_h04_qdrant`、`food_agent_v2_h04_redis`；
+- 卷：`food_agent_v2_h04_mysql_v2_data`、`food_agent_v2_h04_qdrant_v2_data`、
+  `food_agent_v2_h04_redis_v2_data`；
+- 端口沿用 V2 配置 `3307/6335/6336/6380`。
+
+`docker-compose.yml` 的 `container_name` 已参数化为环境变量并保留原默认值：
+`MYSQL_CONTAINER_NAME`/`QDRANT_CONTAINER_NAME`/`REDIS_CONTAINER_NAME` 默认分别为
+`food_agent_v2_mysql`/`food_agent_v2_qdrant`/`food_agent_v2_redis`。默认开发环境行为不变。
+
+初始化顺序：`data-verify` 复核固定源、19 项 Artifact、散列、计数与全部门禁 → 启动 H04 隔离环境
+并等待健康 → `data-initialize --confirm-empty-v2`（再次确认 MySQL 固定表为空且 Qdrant 最终名不存在）
+→ 一个 MySQL 事务写入构建登记与全部固定记录 → 构建隔离 Qdrant staging collection 并核对
+1,914 个 recipe_id → 发布唯一别名 `recipe_retrieval_v2` → 提交 MySQL → 从真实存储复核。
+
+任何失败都必须回滚本次明确命名的资源且不得触碰旧容器/旧卷；回滚不完整返回
+`INITIALIZATION_ROLLBACK_INCOMPLETE`。
+
+### 19.3 T11–T14 类型化 Repository 边界
+
+从 T11 开始，领域 Repository 必须：
+
+1. 从 `data_builds` 解析唯一 `ready build_id`；
+2. 按 `build_id + artifact_name` 一次读取需要的固定记录；
+3. 使用领域 Pydantic Schema 反序列化并验证主键、引用和构建身份；
+4. 在进程内构建只读索引，供 B3/B4/B5/B6 查询；
+5. 未知 ID、记录缺失、Schema 错误、构建身份不一致时 fail-closed；
+6. 禁止回退到 JSONL、原始 CSV、旧 `program` 或未声明的领域表。
+
+Qdrant 在线配置只暴露 `recipe_retrieval_v2`（发布别名，指向本次构建的物理 staging collection）；
+在线客户端不得自动创建缺失集合。

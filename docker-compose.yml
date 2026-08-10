@@ -1,7 +1,7 @@
 services:
   mysql:
     image: mysql:8.0
-    container_name: food_agent_v2_mysql
+    container_name: ${MYSQL_CONTAINER_NAME:-food_agent_v2_mysql}
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-foodagent_v2}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-food_agent_v2}
@@ -20,7 +20,7 @@ services:
 
   qdrant:
     image: qdrant/qdrant:latest
-    container_name: food_agent_v2_qdrant
+    container_name: ${QDRANT_CONTAINER_NAME:-food_agent_v2_qdrant}
     environment:
       QDRANT__SERVICE__GRPC_PORT: 6334
     ports:
@@ -36,7 +36,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: food_agent_v2_redis
+    container_name: ${REDIS_CONTAINER_NAME:-food_agent_v2_redis}
     ports:
       - "${REDIS_PORT:-6380}:6379"
     volumes:
