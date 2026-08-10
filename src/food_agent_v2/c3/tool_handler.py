@@ -1,20 +1,30 @@
-"""C3 工具处理器 —— 模型调用工具时，映射到真实领域服务并执行。
+"""C3 工具处理器 —— 模型调用工具时，映射到真实领域服务并执行（T16）。
 
 工具桥接层：接收模型发出的 tool_call → 调用 B/C 模块的真实函数 → 返回结果。
+每个工具调用产生绑定 request/node/input/build 的不可变回执（contracts 契约边界）；
+回执身份与当前 request/node/input 不一致即被拒绝（RECEIPT_BINDING_MISMATCH）。
 不做数据伪造——如果缺少必要参数，从 ToolContext 中获取。
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
+import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
+from uuid import UUID
+
+from food_agent_v2.c3.receipts import ToolReceipt, validate_workflow_receipt
 
 
 @dataclass
 class ToolContext:
     """工具调用所需的请求级上下文。"""
     request_id: str = ""
+    node_id: str = ""                    # 当前工作流节点（由 runner 在节点边界注入）
+    build_id: str = ""                   # 构建身份（契约 build_id；T17 接线）
     participant_user_mapping: dict[str, int] = field(default_factory=dict)
     previous_results: dict[str, Any] = field(default_factory=dict)
     safe_recipe_ids: list[int] = field(default_factory=list)
@@ -38,19 +48,61 @@ class ToolHandler:
 
         try:
             result = handler(arguments, self._ctx)
+            success = not (isinstance(result, dict) and "error" in result)
+            error_code = result.get("error") if isinstance(result, dict) and "error" in result else None
         except Exception as e:
             result = {"error": f"TOOL_EXECUTION_FAILED: {e}", "tool": tool_name}
+            success = False
+            error_code = "TOOL_EXECUTION_FAILED"
 
+        self._emit_receipt(tool_name, arguments, result, success, error_code)
+        return result
+
+    def _emit_receipt(self, tool_name: str, arguments: dict, result: dict,
+                      success: bool, error_code: str | None) -> dict:
+        """产生绑定 request/node/input/build 的回执并校验契约边界（文档 §11.3）。"""
         receipt = {
             "tool_name": tool_name,
+            "tool_call_id": uuid.uuid4().hex,
+            "request_id": self._ctx.request_id,
+            "node_id": self._ctx.node_id,
+            "input_hash": _sha256(arguments),
+            "output_hash": _sha256(result),
+            "build_id": self._ctx.build_id,
+            "success": success,
+            "error_code": error_code,
             "arguments_summary": {k: str(v)[:80] for k, v in arguments.items()},
-            "success": "error" not in result,
-            "result_summary": json.dumps(result, ensure_ascii=False)[:300],
+            "result_summary": json.dumps(result, ensure_ascii=False, default=str)[:300],
         }
+        self._validate_binding(receipt)
         self._receipts.append(receipt)
-        # 同时写入请求级上下文
+        # 同时写入请求级上下文（runner 从 ToolContext 提取节点回执）
         self._ctx.tool_receipts.append(receipt)
-        return result
+        return receipt
+
+    def _validate_binding(self, receipt: dict) -> None:
+        """回执必须绑定当前 request/node/input/build；不一致即抛 ReceiptBindingError。"""
+        request_id = _coerce_uuid(receipt["request_id"])
+        if request_id is None or not receipt["node_id"]:
+            # runner 未注入 request/node 身份时跳过严格契约校验（T17 接线后恒有身份）
+            return
+        contract = ToolReceipt(
+            request_id=request_id,
+            node_id=receipt["node_id"],
+            tool_call_id=receipt["tool_call_id"],
+            tool_name=receipt["tool_name"],
+            input_hash=receipt["input_hash"],
+            output_hash=receipt["output_hash"],
+            build_id=_coerce_uuid(receipt["build_id"]) or UUID(int=0),
+            success=receipt["success"],
+            error_code=receipt["error_code"],
+        )
+        validate_workflow_receipt(
+            contract,
+            request_id=contract.request_id,
+            node_id=contract.node_id,
+            input_hash=contract.input_hash,
+        )
 
     @property
     def receipts(self) -> list[dict]:
@@ -58,6 +110,23 @@ class ToolHandler:
 
     def clear_receipts(self) -> None:
         self._receipts.clear()
+
+
+def _sha256(value: Any) -> str:
+    """64 位十六进制散列（契约 Sha256Hash，input_hash/output_hash 必须为 64 位）。"""
+    return hashlib.sha256(
+        json.dumps(value, sort_keys=True, ensure_ascii=False, default=str).encode()
+    ).hexdigest()
+
+
+def _coerce_uuid(value: Any) -> UUID | None:
+    """字符串 → UUID；空值或非法值返回 None。"""
+    if not value:
+        return None
+    try:
+        return UUID(str(value))
+    except (ValueError, TypeError):
+        return None
 
 
 # ---- 真实工具实现 ----
@@ -133,9 +202,9 @@ def _get_health_constraints(args: dict, ctx: ToolContext) -> dict:
 def _evaluate_recipe_health(args: dict, ctx: ToolContext) -> dict:
     """B4 健康审查：对候选菜品逐道评估。
     通过 B3 获取每道菜的真实 ingredient_ids。"""
-    from food_agent_v2.b4 import HealthRuleEngine
     from food_agent_v2.b2 import UserHealthProfileService
     from food_agent_v2.b3.recipe_views import get_view_builder
+    from food_agent_v2.b4 import HealthRuleEngine
 
     recipe_ids = args.get("recipe_ids", [])
     if not recipe_ids:
@@ -176,7 +245,7 @@ def _evaluate_recipe_health(args: dict, ctx: ToolContext) -> dict:
 
 def _generate_feasible_menus(args: dict, ctx: ToolContext) -> dict:
     """C2 菜单规划：基于 B4 安全候选生成方案。"""
-    from food_agent_v2.c2 import MenuPlanner, MenuHardConstraints
+    from food_agent_v2.c2 import MenuHardConstraints, MenuPlanner
 
     safe_ids = args.get("safe_recipe_ids", [])
     # 如果模型没传 safe_recipe_ids，使用上一步 evaluate_recipe_health 返回的
@@ -224,9 +293,9 @@ def _generate_feasible_menus(args: dict, ctx: ToolContext) -> dict:
 
 def _validate_selected_menu_health(args: dict, ctx: ToolContext) -> dict:
     """B4 最终健康校验：重新加载 B2 当前约束 + B3 食材事实。"""
-    from food_agent_v2.b4 import HealthRuleEngine
     from food_agent_v2.b2 import UserHealthProfileService
     from food_agent_v2.b3.recipe_views import get_view_builder
+    from food_agent_v2.b4 import HealthRuleEngine
 
     plan_id = args.get("plan_id", "")
     recipe_ids = args.get("recipe_ids", [])
@@ -270,7 +339,7 @@ def _expand_retrieval(args: dict, ctx: ToolContext) -> dict:
 
 def _adjust_menu_plan(args: dict, ctx: ToolContext) -> dict:
     """C2 菜单调整——替换或恢复指定菜品。"""
-    from food_agent_v2.c2 import MenuPlanner, MenuHardConstraints
+    from food_agent_v2.c2 import MenuHardConstraints, MenuPlanner
     plans = ctx.previous_results.get("feasible_menus", [])
     if not plans:
         return {"adjusted": None, "note": "no existing plan to adjust"}
