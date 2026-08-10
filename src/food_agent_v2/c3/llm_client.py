@@ -12,6 +12,15 @@ from typing import Any
 from food_agent_v2.core.config import load_config
 
 
+class ModelInvocationError(Exception):
+    """模型调用确定性失败（T17：不模板回答，fail-closed 交由 runner 转 MODEL_CALL_FAILED）。"""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(f"{code}: {message}")
+        self.code = code
+        self.message = message
+
+
 class LLMClient:
     """五模型 LLM 调用客户端。
 
@@ -54,7 +63,9 @@ class LLMClient:
         model = self._llm_config.model_for_role(role)
 
         if not self._api_key or not self._base_url:
-            return self._mock_response(role, user_message[:100])
+            # T17：无模型配置即确定性失败，绝不返回模板/mock 响应
+            raise ModelInvocationError(
+                "MODEL_NOT_CONFIGURED", "缺少 LLM API 配置（api_key/base_url）")
 
         return self._call_openai(
             model=model,
@@ -72,6 +83,7 @@ class LLMClient:
     ) -> dict:
         """通过 OpenAI 兼容 API 调用。"""
         import time as _time
+
         from openai import OpenAI
 
         client = OpenAI(
@@ -122,17 +134,6 @@ class LLMClient:
                 "model": model,
             },
         }
-
-    def _mock_response(self, role: str, user_preview: str) -> dict:
-        """离线模式：返回占位响应。"""
-        return {
-            "content": json.dumps({"status": "mock", "role": role}, ensure_ascii=False),
-            "tool_calls": [],
-            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "elapsed_ms": 0, "model": "mock"},
-            "_mock": True,
-            "_preview": user_preview,
-        }
-
 
 # 全局单例
 _client: LLMClient | None = None

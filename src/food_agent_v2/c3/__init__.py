@@ -6,8 +6,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -61,38 +59,6 @@ def detect_untrusted_instruction(text: str) -> str | None:
         if m:
             return m.group(0)[:60]
     return None
-
-
-# ---- 工具回执（遗留 shim）----
-# 权威 ToolReceipt 是 contracts/receipts.py（经 c3.receipts 再导出）。此处保留
-# _LegacyToolReceipt 仅为 runner.py（T17 文件）在迁移前继续工作；T17 完成后删除。
-
-@dataclass
-class _LegacyToolReceipt:
-    receipt_id: str
-    tool_name: str
-    called_by_node: NodeType
-    role: str
-    parameter_hash: str
-    result_hash: str
-    evidence_refs: list[str] = field(default_factory=list)
-    timestamp: float = field(default_factory=time.time)
-
-    @staticmethod
-    def hash_params(params: dict) -> str:
-        return hashlib.sha256(
-            json.dumps(params, sort_keys=True, ensure_ascii=False).encode()
-        ).hexdigest()[:16]
-
-    @staticmethod
-    def hash_result(result: Any) -> str:
-        return hashlib.sha256(
-            json.dumps(str(result), sort_keys=True, ensure_ascii=False).encode()
-        ).hexdigest()[:16]
-
-
-#: 遗留别名：仅供 runner.py 在 T17 迁移前使用，勿在新代码中引用。
-ToolReceipt = _LegacyToolReceipt
 
 
 # ---- 角色策略 ----

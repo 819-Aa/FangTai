@@ -115,11 +115,25 @@ def _next_counter(state: WorkflowState, counter_name: str, limit: int) -> tuple[
     return current + 1, True
 
 
+_ARTIFACT_FIELD = {
+    "query_plan": "query_plan_artifact",
+    "health_evaluation": "health_evaluation_artifact",
+    "feasible_menu": "feasible_menu_artifact",
+    "menu_decision": "menu_decision_artifact",
+    "final_validation": "final_validation_artifact",
+    "answer": "answer_artifact",
+    "review": "review_artifact",
+}
+
+
 def reduce_workflow_state(state: WorkflowState, *, action: str, **params) -> WorkflowState:
     """纯 reducer：按 action 返回新状态，绝不修改原 state。
 
-    支持的 action 与 WorkflowTransition 对齐；必需工具失败/漏调路径在
-    校验层（receipts/validator）立即失败，不在此自动重试。
+    转换 action（context_building/query_understanding/health_menu_planning/
+    menu_decision/answer_generation/unified_review/atomic_commit）决定终态与
+    下一节点；runner 支持 action（set_node/set_context_ref/set_artifact/
+    record_receipts/set_status/fail）用于节点入口与 Artifact/回执登记。
+    必需工具失败/漏调路径在校验层（receipts/validator）立即失败，不在此自动重试。
     """
     if action == "context_building":
         if not params.get("manifest_valid"):
@@ -205,5 +219,40 @@ def reduce_workflow_state(state: WorkflowState, *, action: str, **params) -> Wor
 
     if action == "atomic_commit":
         return replace(state, current_node=NodeType.ATOMIC_COMMIT)
+
+    # ---- runner 支持动作 ----
+
+    if action == "set_node":
+        return replace(state, current_node=params["node"])
+
+    if action == "set_context_ref":
+        return replace(state, shared_context_ref=params["shared_context_ref"])
+
+    if action == "set_status":
+        return replace(
+            state,
+            status=params["status"],
+            current_node=params.get("node") or state.current_node,
+        )
+
+    if action == "set_artifact":
+        field_name = _ARTIFACT_FIELD.get(params["artifact"])
+        if field_name is None:
+            raise ValueError(f"未知 artifact: {params['artifact']}")
+        return replace(state, **{field_name: params["value"]})
+
+    if action == "record_receipts":
+        return replace(
+            state,
+            tool_receipts=list(state.tool_receipts) + list(params["receipts"]),
+        )
+
+    if action == "fail":
+        return replace(
+            state,
+            status=RequestStatus.FAILED,
+            current_node=params.get("node") or state.current_node,
+            error=params["error"],
+        )
 
     raise ValueError(f"未知 reducer action: {action}")
