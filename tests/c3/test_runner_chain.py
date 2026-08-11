@@ -7,6 +7,7 @@ tools 与 response_format。依赖 MySQL 可用（工具执行真实领域服务
 
 import json
 import re
+import uuid
 from types import SimpleNamespace
 
 import pytest
@@ -16,6 +17,11 @@ from food_agent_v2.d1 import api as d1_api
 
 RID = "11111111-1111-1111-1111-111111111111"
 BID = "22222222-2222-2222-2222-222222222222"
+
+
+def _fresh_rid() -> str:
+    """每个用例独立的 request_id（幂等提交按 request 唯一，避免跨次运行污染 DB）。"""
+    return str(uuid.uuid4())
 
 
 def _mysql_available() -> bool:
@@ -179,13 +185,14 @@ def _reset_d1(request_id: str = RID) -> None:
 
 class TestScriptedRunnerChain:
     def test_full_chain_query_to_review(self) -> None:
-        _reset_d1()
+        rid = _fresh_rid()
+        _reset_d1(rid)
 
         runner = _make_runner()
-        runner.run(RID, "sess_chain", "推荐三菜一汤，家常口味，45分钟内",
+        runner.run(rid, "sess_chain", "推荐三菜一汤，家常口味，45分钟内",
                    [{"participant_ref": "p1", "user_id": "1"}])
 
-        status = d1_api.get_request_status(RID)[1]["status"]
+        status = d1_api.get_request_status(rid)[1]["status"]
         assert status == "completed", f"全链路未 completed: {status}"
 
         # 五角色全部执行
@@ -195,11 +202,12 @@ class TestScriptedRunnerChain:
 
     def test_menu_decision_matches_plan_menu_hash(self) -> None:
         """真实 MENU_DECISION 分支：决策 menu_hash 必须等于所选 FeasibleMenu.menu_hash。"""
-        _reset_d1()
+        rid = _fresh_rid()
+        _reset_d1(rid)
 
         runner = _make_runner()
-        runner.run(RID, "sess_hash", "推荐家常菜三菜一汤", [{"participant_ref": "p1", "user_id": "1"}])
-        status = d1_api.get_request_status(RID)[1]["status"]
+        runner.run(rid, "sess_hash", "推荐家常菜三菜一汤", [{"participant_ref": "p1", "user_id": "1"}])
+        status = d1_api.get_request_status(rid)[1]["status"]
         assert status == "completed", f"menu_hash 绑定链路失败: {status}"
 
 
@@ -241,10 +249,11 @@ class TestFingerprintBinding:
 class TestHealthNodeDualArtifact:
     def test_real_health_node_builds_two_artifacts(self) -> None:
         """真实 health_menu_planning 节点：状态中两个字段类型不同、引用正确。"""
-        _reset_d1()
+        rid = _fresh_rid()
+        _reset_d1(rid)
 
         runner = _make_runner()
         # 执行完整链路（health 分支为真实节点），completed 即证明双 Artifact 通过 menu 前置校验
-        runner.run(RID, "sess_health", "推荐家常菜", [{"participant_ref": "p1", "user_id": "1"}])
-        status = d1_api.get_request_status(RID)[1]["status"]
+        runner.run(rid, "sess_health", "推荐家常菜", [{"participant_ref": "p1", "user_id": "1"}])
+        status = d1_api.get_request_status(rid)[1]["status"]
         assert status == "completed"

@@ -210,6 +210,56 @@ class TestTransactionalOutbox:
         assert dispatched == 2
         assert _outbox_status(rid) == {"dispatched": 2, "pending": 1}
 
+    def test_second_dispatcher_blocks_while_seq1_inflight(self) -> None:
+        """seq1（answer_ready）in-flight 时，第二 dispatcher 不得发布 seq2（result_committed）；
+        最终顺序必须固定 answer_ready → result_committed（不依赖 D1 去重掩盖）。"""
+        _reset_d1()
+        rid, sid = _unique("r"), _unique("s")
+        d1_api._requests[rid] = {"request_id": rid, "status": "running",
+                                 "session_id": sid, "created_at": "t"}
+        _commit(rid, sid, "9")
+
+        blocker = _BlockingAfterAnswerDispatcher()
+
+        def worker():
+            blocker.dispatch_request(rid)
+
+        t = threading.Thread(target=worker)
+        t.start()
+        assert blocker.answer_published.wait(timeout=10), "answer_ready 未发布"
+        # seq1 已被 blocker 领取并发布，但在 mark 前阻塞 → 行保持 dispatching
+        assert _outbox_status(rid) == {"dispatching": 1, "pending": 1}
+
+        # 第二 dispatcher：seq1 被 in-flight 持有且前序未完成 → 不得发布任何事件
+        second = OutboxDispatcher(d1_api=d1_api)
+        assert second.dispatch_request(rid) == 0
+        assert _event_types(rid) == ["answer_ready"]
+        assert "result_committed" not in _event_types(rid)
+
+        # 释放阻塞 → 原 dispatcher 完成 seq1 后继续 seq2，最终顺序固定
+        blocker.release.set()
+        t.join(timeout=15)
+        assert not t.is_alive()
+        assert _event_types(rid) == ["answer_ready", "result_committed"]
+        assert _outbox_status(rid) == {"dispatched": 2}
+
+
+class _BlockingAfterAnswerDispatcher(OutboxDispatcher):
+    """发布 answer_ready 后阻塞在 _publish 内（保持 seq1 in-flight），供测试驱动。"""
+
+    def __init__(self):
+        super().__init__(d1_api)
+        self.answer_published = threading.Event()
+        self.release = threading.Event()
+
+    def _publish(self, request_id: str, event_type: str, payload: dict,
+                 event_id: str) -> None:
+        super()._publish(request_id, event_type, payload, event_id)
+        if event_type == "answer_ready":
+            self.answer_published.set()
+            if not self.release.wait(timeout=15):
+                raise RuntimeError("blocker timed out waiting for release")
+
 
 class _FailingDispatcher(OutboxDispatcher):
     def __init__(self, fail_on: str):

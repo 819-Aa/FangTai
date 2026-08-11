@@ -1,7 +1,8 @@
 """Transactional outbox + dispatcher（T19）。
 
 - success SSE（answer_ready / result_committed）只由事务提交后的 outbox dispatcher 发布；
-- 同一 request 严格按 seq 发布：前序事件失败或仍 pending 时禁止发布任何后序事件；
+- 同一 request 严格按 seq 发布：前序事件失败、仍 pending 或被其他 dispatcher in-flight
+  持有时，一律禁止领取/发布任何后序事件（claim 内 NOT EXISTS 未 dispatched 前序）；
 - 稳定 outbox event_id 传入 D1 SSE（相同 event_id 重复发布只产生一份事实）；
 - claim 只从 pending 原子转换（claim_token + claimed_at 租约）；只有超出租约的
   dispatching 才允许恢复；mark/release 校验 claim_token 所有权 → 双 dispatcher 互斥；
@@ -46,19 +47,29 @@ class OutboxDispatcher:
             self._d1_api = d1_api
         return self._d1_api
 
-    def _claim(self, event_id: str, claim_token: str) -> bool:
-        """原子领取：只从 pending 转换，或恢复超出租约的 dispatching。
+    def _claim(self, event_id: str, claim_token: str,
+               request_id: str, seq: int) -> bool:
+        """原子领取当前最小未完成 seq：只从 pending 转换，或恢复超出租约的 dispatching，
+        且同 request 不存在未 dispatched 的前序行（NOT EXISTS）。
 
         两个 dispatcher 并发领取同一行：只有最先的 UPDATE 匹配（rowcount=1），
-        第二个因状态已变且非 stale 而不匹配（rowcount=0）→ 互斥。
+        第二个因状态已变且非 stale 而不匹配（rowcount=0）→ 互斥；若前序
+        （seq 更小）仍 pending/dispatching，则本行也不可领取 → 严格保序。
         """
         self._connect()
         self._cursor.execute(
-            "UPDATE outbox SET status='dispatching', claim_token=%s, claimed_at=NOW() "
-            "WHERE event_id=%s AND (status='pending' OR "
-            "  (status='dispatching' AND "
-            "   (claimed_at IS NULL OR "
-            "    claimed_at < DATE_SUB(NOW(), INTERVAL %s SECOND))))",
+            "UPDATE outbox o "
+            "LEFT JOIN outbox pred "
+            "  ON pred.request_id = o.request_id "
+            " AND pred.seq < o.seq "
+            " AND pred.status <> 'dispatched' "
+            "SET o.status='dispatching', o.claim_token=%s, o.claimed_at=NOW() "
+            "WHERE o.event_id=%s "
+            "  AND pred.event_id IS NULL "
+            "  AND (o.status='pending' OR "
+            "    (o.status='dispatching' AND "
+            "     (o.claimed_at IS NULL OR "
+            "      o.claimed_at < DATE_SUB(NOW(), INTERVAL %s SECOND))))",
             (claim_token, event_id, self.lease_seconds))
         return self._cursor.rowcount == 1
 
@@ -113,12 +124,17 @@ class OutboxDispatcher:
         return total
 
     def _dispatch_ordered(self, rows: list[dict]) -> int:
-        """严格按 seq 发布；任一事件失败即停止该 request 后序事件。"""
+        """严格按 seq 发布；任一事件失败、前序未完成或领取失败即停止该 request。
+
+        领取失败（行被其他 dispatcher in-flight 持有，或前序未 dispatched）
+        必须立即停止：继续 seq2 会让 result_committed 早于 answer_ready 发布。
+        """
         dispatched = 0
         for row in rows:
             claim_token = uuid.uuid4().hex
-            if not self._claim(row["event_id"], claim_token):
-                continue  # 已被其他 dispatcher 领取（含未过期 in-flight）
+            if not self._claim(row["event_id"], claim_token,
+                               row["request_id"], row["seq"]):
+                return dispatched  # 前序未 dispatched 或行被并发持有 → 停止
             try:
                 # 使用数据库 row["event_id"]（禁止按 request_id 重新拼接）
                 self._publish(row["request_id"], row["event_type"],
@@ -127,7 +143,7 @@ class OutboxDispatcher:
                 self._release_claim(row["event_id"], claim_token)
                 return dispatched  # 前序失败 → 禁止后序
             if not self._mark_dispatched(row["event_id"], claim_token):
-                continue  # 所有权丢失（被恢复）→ 不计数
+                return dispatched  # 所有权丢失（被恢复）→ 前序未完成 → 停止
             dispatched += 1
         return dispatched
 

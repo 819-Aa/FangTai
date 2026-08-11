@@ -295,6 +295,97 @@ class TestOuterBinding:
                       (sid,))[0][0] == 0
         assert _query("SELECT COUNT(*) FROM sessions WHERE session_id=%s", (sid,))[0][0] == 0
 
+    def test_changed_session_id_conflicts(self) -> None:
+        """同 request 换 session → commit_hash 信封变化 → IDEMPOTENCY_CONFLICT。"""
+        rid = _unique("r")
+        commit_request_result(rid, _unique("s1"), "completed", "plan-A",
+                              _audit(rid, "plan-A"),
+                              participant_refs=["p1"], fencing_token="10")
+        with pytest.raises(AuditCommitFailed) as excinfo:
+            commit_request_result(rid, _unique("s2"), "completed", "plan-A",
+                                  _audit(rid, "plan-A"),
+                                  participant_refs=["p1"], fencing_token="10")
+        assert "IDEMPOTENCY_CONFLICT" in str(excinfo.value)
+
+    def test_changed_menu_ref_conflicts(self) -> None:
+        """同 request 换 menu_ref → 信封变化 → IDEMPOTENCY_CONFLICT。"""
+        rid, sid = _unique("r"), _unique("s")
+        commit_request_result(rid, sid, "completed", "plan-A",
+                              _audit(rid, "plan-A"),
+                              participant_refs=["p1"], fencing_token="10",
+                              menu_ref="menu:1")
+        with pytest.raises(AuditCommitFailed) as excinfo:
+            commit_request_result(rid, sid, "completed", "plan-A",
+                                  _audit(rid, "plan-A"),
+                                  participant_refs=["p1"], fencing_token="10",
+                                  menu_ref="menu:2")
+        assert "IDEMPOTENCY_CONFLICT" in str(excinfo.value)
+
+    @pytest.mark.parametrize("block", ["final_validation", "menu_decision", "answer"])
+    def test_changed_artifact_hash_conflicts(self, block) -> None:
+        """任意 Artifact hash 变化（FinalValidation/MenuDecision/Answer）→ 冲突。"""
+        rid, sid = _unique("r"), _unique("s")
+        commit_request_result(rid, sid, "completed", "plan-A",
+                              _audit(rid, "plan-A"),
+                              participant_refs=["p1"], fencing_token="10")
+        audit2 = _audit(rid, "plan-A")
+        if block == "final_validation":
+            audit2["final_validation"]["content_hash"] = "9" * 64
+        elif block == "menu_decision":
+            audit2["menu_decision"]["content_hash"] = "9" * 64
+        else:
+            audit2["answer"]["content_hash"] = "9" * 64
+        with pytest.raises(AuditCommitFailed) as excinfo:
+            commit_request_result(rid, sid, "completed", "plan-A", audit2,
+                                  participant_refs=["p1"], fencing_token="10")
+        assert "IDEMPOTENCY_CONFLICT" in str(excinfo.value)
+
+    def test_changed_artifact_and_tool_refs_conflicts(self) -> None:
+        """Artifact ref / tool_call_id 变化（审计仍一致）→ 信封变化 → 冲突。"""
+        rid, sid = _unique("r"), _unique("s")
+        commit_request_result(rid, sid, "completed", "plan-A",
+                              _audit(rid, "plan-A"),
+                              participant_refs=["p1"], fencing_token="10")
+        audit2 = _audit(rid, "plan-A")
+        audit2["final_validation"]["ref"] = "fv:changed"
+        audit2["menu_decision"]["ref"] = "md:changed"
+        audit2["review"]["ref"] = "rv:changed"
+        audit2["answer"]["ref"] = "ans:changed"
+        # tool 回执与 hash 引用保持一一对应（校验通过），但 call_id 已变 → 信封不同
+        audit2["tool_receipt_refs"] = ["tc:changed"]
+        audit2["tool_input_output_hashes"] = [
+            {"tool_call_id": "tc:changed", "input_hash": "f" * 64, "output_hash": "1" * 64}]
+        with pytest.raises(AuditCommitFailed) as excinfo:
+            commit_request_result(rid, sid, "completed", "plan-A", audit2,
+                                  participant_refs=["p1"], fencing_token="10")
+        assert "IDEMPOTENCY_CONFLICT" in str(excinfo.value)
+
+    def test_missing_outer_menu_hash_derives_audit(self) -> None:
+        """completed 未传 menu_hash → 派生自审计并持久化（绝不写空串）。"""
+        rid, sid = _unique("r"), _unique("s")
+        commit_request_result(rid, sid, "completed", "plan-A",
+                              _audit(rid, "plan-A", menu_hash="a" * 64),
+                              participant_refs=["p1"], fencing_token="10")
+        rows = _query("SELECT menu_hash FROM menu_versions WHERE session_id=%s", (sid,))
+        assert rows and rows[0][0] == "a" * 64
+        import json as _json
+        ob = _query("SELECT payload FROM outbox WHERE request_id=%s "
+                    "AND event_type='result_committed'", (rid,))
+        payload = _json.loads(ob[0][0])
+        assert payload["menu_summary"]["menu_hash"] == "a" * 64
+
+    def test_missing_outer_participant_refs_derives_audit(self) -> None:
+        """completed 未传 participant_refs → 派生自审计并持久化（绝不写空列表）。"""
+        rid, sid = _unique("r"), _unique("s")
+        commit_request_result(rid, sid, "completed", "plan-A",
+                              _audit(rid, "plan-A"),
+                              fencing_token="10")
+        rows = _query("SELECT participant_refs FROM sessions WHERE session_id=%s", (sid,))
+        assert rows
+        import json as _json
+        stored = _json.loads(rows[0][0])
+        assert stored == ["p1"]
+
 
 class TestArtifactAuditValidation:
     def test_missing_audit_field_fails_before_commit(self) -> None:

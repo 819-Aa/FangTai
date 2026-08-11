@@ -1,8 +1,11 @@
 """Application 提交服务（T19）—— 结果/健康审计/会话事实/transactional outbox 原子提交。
 
 - Artifact 链与强制健康审计在 BEGIN 前确定性验证（缺字段/错 hash/错绑定即失败）；
-- request_id 结果 insert-once、不可变：同 payload 幂等返回原提交，不修改任何事实；
-  不同 payload fail closed（IDEMPOTENCY_CONFLICT）；
+- request_id 结果 insert-once、不可变：commit_hash 覆盖完整不可变提交信封
+  （完整规范化 health_evidence + request_id/session_id/participant_refs/status/
+  error/plan/menu/answer/menu_ref/evidence）；同信封幂等返回原提交，不修改任何
+  事实；任何证据/hash/Artifact ref/tool_call_id/session/menu_ref 变化即
+  IDEMPOTENCY_CONFLICT；
 - fencing token 必须为正整数；session 行在事务内 SELECT ... FOR UPDATE 锁定后原子
   比较/更新；stale token 一律回滚；
 - completed 时按序写入 outbox 行，绝不因重复提交重置已 dispatched 状态；
@@ -52,68 +55,25 @@ def _commit_hash(request_id: str, session_id: str, status: str,
                  error_code: str | None, error_message: str | None) -> str:
     """完整规范化不可变提交信封的确定性 hash（幂等比较）。
 
-    覆盖确定性证据与绑定（participant/status/error/plan/recipe/menu/各 Artifact
-    hash/引用/answer/menu_ref/evidence），任何证据或绑定变化 → 不同 hash → 冲突。
-    排除随机 Artifact 身份引用（同 request 的真正重试复用同一 Artifact 链）。
+    直接覆盖完整、已验证并规范化的 health_evidence（含各 Artifact ref/hash/内容、
+    参与者/覆盖/override 引用、tool_receipt_refs 与 tool_input_output_hashes），以及
+    request_id/session_id/participant_refs/status/error/plan/menu/answer/menu_ref/
+    evidence 全部绑定。任何证据、hash、Artifact ref、tool_call_id、session_id、
+    menu_ref 变化 → 不同 hash → IDEMPOTENCY_CONFLICT。真正重试必须复用同一 Artifact 链。
     """
-    # 注意：idempotency 信封不包含 session_id/menu_ref 等随机身份——锁定 T17 链测试
-    # 复用同一 request_id 于不同 session 且每次生成新 Artifact 身份；真实系统一
-    # request 一 session，session 绑定已由外层校验保证。确定性证据/绑定全部覆盖。
     return canonical_json_hash({
         "request_id": request_id,
+        "session_id": session_id,
         "participant_refs": list(participant_refs or []),
         "status": status,
         "error": [error_code, error_message],
         "final_plan_id": final_plan_id,
-        "health_evidence": _canonical_audit(health_evidence),
-        "answer_text": answer_text,
         "menu_hash": menu_hash,
+        "answer_text": answer_text,
+        "menu_ref": menu_ref,
         "evidence_refs": list(evidence_refs or []),
+        "health_evidence": health_evidence,
     })
-
-
-def _canonical_audit(health_evidence: dict) -> dict:
-    """规范化健康审计信封（确定性证据与 hash；排除随机 Artifact/tool 身份引用）。
-
-    只覆盖确定性业务证据：plan/recipe/menu、各 Artifact 判定与确定性 hash/内容、
-    参与者与覆盖引用、工具 input/output hash 值。随机 tool_call_id、Artifact ref
-    不进入信封——真正重试复用同一 Artifact 链，任何证据/绑定变化 → 不同信封 → 冲突。
-    """
-    return {
-        "request_id": health_evidence.get("request_id"),
-        "plan_id": health_evidence.get("plan_id"),
-        "recipe_ids": health_evidence.get("recipe_ids"),
-        "menu_hash": health_evidence.get("menu_hash"),
-        "final_validation": {
-            "plan_id": (health_evidence.get("final_validation") or {}).get("plan_id"),
-            "menu_hash": (health_evidence.get("final_validation") or {}).get("menu_hash"),
-            "recipe_ids": (health_evidence.get("final_validation") or {}).get("recipe_ids"),
-            "verdict": (health_evidence.get("final_validation") or {}).get("verdict"),
-            "input_fingerprint": (health_evidence.get("final_validation") or {}).get("input_fingerprint"),
-        },
-        "menu_decision": {
-            "plan_id": (health_evidence.get("menu_decision") or {}).get("plan_id"),
-            "menu_hash": (health_evidence.get("menu_decision") or {}).get("menu_hash"),
-        },
-        "review": {
-            "status": (health_evidence.get("review") or {}).get("status"),
-            "content_hash": (health_evidence.get("review") or {}).get("content_hash"),
-        },
-        "answer": {
-            "plan_id": (health_evidence.get("answer") or {}).get("plan_id"),
-            "menu_hash": (health_evidence.get("answer") or {}).get("menu_hash"),
-            "recipe_ids": (health_evidence.get("answer") or {}).get("recipe_ids"),
-            "content": (health_evidence.get("answer") or {}).get("content"),
-        },
-        "participant_constraint_refs": health_evidence.get("participant_constraint_refs"),
-        "ingredient_relation_coverage_refs": health_evidence.get("ingredient_relation_coverage_refs"),
-        "override_refs": health_evidence.get("override_refs"),
-        # 只保留 input/output hash 值（确定性证据），不包含随机 tool_call_id
-        "tool_input_output_hashes": [
-            {"input_hash": h.get("input_hash"), "output_hash": h.get("output_hash")}
-            for h in (health_evidence.get("tool_input_output_hashes") or [])
-        ],
-    }
 
 
 def _validate_commit_payload(health_evidence: dict, status: str,
@@ -295,17 +255,32 @@ def commit_request_result(
             request_id, session_id, participant_refs,
             fencing_token, error_code, error_message,
             menu_ref, evidence_refs or [])
+
+        # 0b. 派生 effective 值（兼容旧调用方缺省外层参数；外层提供须与审计一致）：
+        #     menu_hash / participant_refs 缺省时以审计为准，绝不允许把空串/空列表
+        #     写成与审计不一致的事实；commit_hash/sessions/menu_versions/outbox 全部
+        #     统一使用 effective 值。
+        _audit_evidence = health_evidence or {}
+        effective_participant_refs = (participant_refs
+                                      if participant_refs is not None
+                                      else list(_audit_evidence.get(
+                                          "participant_constraint_refs") or []))
+        effective_menu_hash = (menu_hash
+                               if menu_hash
+                               else (_audit_evidence.get("menu_hash") or ""))
+
         cursor = conn.cursor()
         commit_hash = _commit_hash(
             request_id, session_id, status, final_plan_id, health_evidence,
-            answer_text, menu_hash, menu_ref, evidence_refs or [],
-            participant_refs or [], error_code, error_message)
+            answer_text, effective_menu_hash, menu_ref, evidence_refs or [],
+            effective_participant_refs, error_code, error_message)
 
-        # 1. 会话行存在（INSERT IGNORE 不递增 request_count）
+        # 1. 会话行存在（INSERT IGNORE 不递增 request_count；participant_refs 用 effective 值）
         cursor.execute(
             "INSERT IGNORE INTO sessions "
             "(session_id, participant_refs, request_count) VALUES (%s, %s, 0)",
-            (session_id, json.dumps(participant_refs or [], ensure_ascii=False)),
+            (session_id,
+             json.dumps(effective_participant_refs, ensure_ascii=False)),
         )
         # 2. 锁定 session 行（FOR UPDATE：并发提交序列化）
         cursor.execute(
@@ -346,14 +321,14 @@ def commit_request_result(
             (request_id, session_id, status, final_plan_id,
              json.dumps(health_evidence, ensure_ascii=False), commit_hash),
         )
-        # 7. 已提交菜单版本（含最终 menu_hash）
+        # 7. 已提交菜单版本（含最终 menu_hash；缺省外层时派生自审计，绝不写空串）
         if status == "completed" and final_plan_id:
             recipe_ids = (health_evidence or {}).get("recipe_ids", [])
             cursor.execute(
                 "INSERT INTO menu_versions (session_id, plan_id, recipe_ids, menu_hash) "
                 "VALUES (%s, %s, %s, %s)",
                 (session_id, final_plan_id,
-                 json.dumps(recipe_ids, ensure_ascii=False), menu_hash),
+                 json.dumps(recipe_ids, ensure_ascii=False), effective_menu_hash),
             )
         # 8. 终态会话事件（event_id 主键，幂等）
         cursor.execute(
@@ -364,12 +339,13 @@ def commit_request_result(
             (f"ev_{request_id}", session_id, request_id, "terminal",
              f"terminal:{status}"),
         )
-        # 9. 有序 outbox 行（仅 completed；INSERT IGNORE 不重置既有状态）
+        # 9. 有序 outbox 行（仅 completed；INSERT IGNORE 不重置既有状态；
+        #    menu_hash 用 effective 值保证与 menu_versions/审计一致）
         outbox_rows: list[dict] = []
         if status == "completed":
             outbox_rows = _build_outbox_rows(
                 request_id, final_plan_id, health_evidence,
-                answer_text, menu_hash, menu_ref, evidence_refs or [])
+                answer_text, effective_menu_hash, menu_ref, evidence_refs or [])
             for row in outbox_rows:
                 cursor.execute(
                     "INSERT IGNORE INTO outbox "
