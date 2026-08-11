@@ -306,12 +306,30 @@ def commit_request_result(
         # 4. fencing 单调校验（completed 必须正整数；stale → 抛错 → rollback）
         _validate_fencing_token(stored_token, fencing_token, status)
 
-        # 5. 递增 request_count + 记录最新 fencing token（真实提交）
-        token_value = int(fencing_token) if (status == "completed" and _is_posint(fencing_token)) else None
+        # 5. 会话事实原子更新（单条条件 UPDATE）：
+        #    - request_count 始终 +1；
+        #    - completed：写入 fencing_token 与 current_menu_plan_id；
+        #    - 非 completed：二者保留（绝不把 fencing token 清成 NULL）；
+        #    - 有 effective participant scope：写入 participant_refs（与本次健康审计一致）；
+        #    - 无 participant scope：保留原值（绝不把参与者清成 []）。
+        token_value = int(fencing_token) if (status == "completed"
+                                             and _is_posint(fencing_token)) else None
+        has_participant_scope = 1 if effective_participant_refs else 0
         cursor.execute(
-            "UPDATE sessions SET request_count=request_count+1, "
-            "fencing_token=%s WHERE session_id=%s",
-            (token_value, session_id))
+            "UPDATE sessions SET "
+            "request_count = request_count + 1, "
+            "fencing_token = CASE WHEN %s = 'completed' THEN %s "
+            "                       ELSE fencing_token END, "
+            "current_menu_plan_id = CASE WHEN %s = 'completed' THEN %s "
+            "                             ELSE current_menu_plan_id END, "
+            "participant_refs = CASE WHEN %s THEN %s "
+            "                         ELSE participant_refs END "
+            "WHERE session_id = %s",
+            (status, token_value,
+             status, final_plan_id,
+             has_participant_scope,
+             json.dumps(effective_participant_refs, ensure_ascii=False),
+             session_id))
 
         # 6. 不可变结果 + 强制健康审计（insert-once，不可覆盖）
         cursor.execute(

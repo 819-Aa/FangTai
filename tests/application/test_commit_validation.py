@@ -387,6 +387,108 @@ class TestOuterBinding:
         assert stored == ["p1"]
 
 
+class TestCommittedSessionFacts:
+    """会话事实（committed session facts）：fencing token / participant / current_menu 原子一致性。"""
+
+    def test_failed_request_preserves_fencing_token(self) -> None:
+        """completed token=100 → failed 不得清空 token → stale token=50 必须被拒绝。"""
+        sid = _unique("s")
+        rid1 = _unique("r")
+        commit_request_result(rid1, sid, "completed", "plan-A",
+                              _audit(rid1, "plan-A"),
+                              participant_refs=["p1"], fencing_token="100")
+        commit_request_result(_unique("r"), sid, "failed", "",
+                              {"verdict": "EXCLUDE"}, participant_refs=["p1"])
+        assert _query("SELECT fencing_token FROM sessions WHERE session_id=%s",
+                      (sid,))[0][0] == 100
+        rid3 = _unique("r")
+        with pytest.raises(AuditCommitFailed):
+            commit_request_result(rid3, sid, "completed", "plan-B",
+                                  _audit(rid3, "plan-B"),
+                                  participant_refs=["p1"], fencing_token="50")
+        assert _query("SELECT COUNT(*) FROM recommendation_logs WHERE request_id=%s",
+                      (rid3,))[0][0] == 0
+
+    def test_session_participant_refs_tracks_latest_audit(self) -> None:
+        """同 session 合法提交新参与者 p2 后，sessions 与本次健康审计一致（不再保留旧 p1）。"""
+        sid = _unique("s")
+        rid1 = _unique("r")
+        commit_request_result(rid1, sid, "completed", "plan-A",
+                              _audit(rid1, "plan-A"),
+                              participant_refs=["p1"], fencing_token="10")
+        rid2 = _unique("r")
+        audit2 = _audit(rid2, "plan-B")
+        audit2["participant_constraint_refs"] = ["p2"]
+        commit_request_result(rid2, sid, "completed", "plan-B", audit2,
+                              participant_refs=["p2"], fencing_token="11")
+        import json as _json
+        rows = _query("SELECT participant_refs FROM sessions WHERE session_id=%s", (sid,))
+        assert _json.loads(rows[0][0]) == ["p2"]
+
+    def test_failed_without_participant_refs_preserves_old(self) -> None:
+        """failed 且 participant_refs=None 时不得把旧参与者清成 []。"""
+        sid = _unique("s")
+        rid1 = _unique("r")
+        commit_request_result(rid1, sid, "completed", "plan-A",
+                              _audit(rid1, "plan-A"),
+                              participant_refs=["p1"], fencing_token="10")
+        commit_request_result(_unique("r"), sid, "failed", "",
+                              {"verdict": "EXCLUDE"})
+        import json as _json
+        rows = _query("SELECT participant_refs FROM sessions WHERE session_id=%s", (sid,))
+        assert _json.loads(rows[0][0]) == ["p1"]
+
+    def test_completed_writes_current_menu_plan_id(self) -> None:
+        """completed 提交必须同一事务设置 current_menu_plan_id=final_plan_id。"""
+        rid, sid = _unique("r"), _unique("s")
+        commit_request_result(rid, sid, "completed", "plan-A",
+                              _audit(rid, "plan-A"),
+                              participant_refs=["p1"], fencing_token="10")
+        assert _query("SELECT current_menu_plan_id FROM sessions WHERE session_id=%s",
+                      (sid,))[0][0] == "plan-A"
+
+    def test_failed_preserves_current_menu_plan_id(self) -> None:
+        """completed 后再 failed，current_menu_plan_id 保持此前菜单。"""
+        sid = _unique("s")
+        rid1 = _unique("r")
+        commit_request_result(rid1, sid, "completed", "plan-A",
+                              _audit(rid1, "plan-A"),
+                              participant_refs=["p1"], fencing_token="10")
+        commit_request_result(_unique("r"), sid, "failed", "",
+                              {"verdict": "EXCLUDE"}, participant_refs=["p1"])
+        assert _query("SELECT current_menu_plan_id FROM sessions WHERE session_id=%s",
+                      (sid,))[0][0] == "plan-A"
+
+    def test_mid_transaction_failure_preserves_session_fields(self) -> None:
+        """中途事务故障：fencing_token / participant_refs / current_menu_plan_id 全部回滚。"""
+        import food_agent_v2.application.commit_service as CS
+        sid = _unique("s")
+        rid1 = _unique("r")
+        commit_request_result(rid1, sid, "completed", "plan-A",
+                              _audit(rid1, "plan-A"),
+                              participant_refs=["p1"], fencing_token="100")
+        rid2 = _unique("r")
+        orig_build = CS._build_outbox_rows
+        def boom(*a, **k):
+            raise RuntimeError("injected mid-transaction failure")
+        CS._build_outbox_rows = boom
+        try:
+            with pytest.raises(AuditCommitFailed):
+                commit_request_result(rid2, sid, "completed", "plan-B",
+                                      _audit(rid2, "plan-B"),
+                                      participant_refs=["p2"], fencing_token="101")
+        finally:
+            CS._build_outbox_rows = orig_build
+        import json as _json
+        row = _query("SELECT fencing_token, participant_refs, current_menu_plan_id "
+                     "FROM sessions WHERE session_id=%s", (sid,))[0]
+        assert row[0] == 100
+        assert _json.loads(row[1]) == ["p1"]
+        assert row[2] == "plan-A"
+        assert _query("SELECT COUNT(*) FROM recommendation_logs WHERE request_id=%s",
+                      (rid2,))[0][0] == 0
+
+
 class TestArtifactAuditValidation:
     def test_missing_audit_field_fails_before_commit(self) -> None:
         rid, sid = _unique("r"), _unique("s")
