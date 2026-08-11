@@ -3,18 +3,23 @@
 - success SSE（answer_ready / result_committed）只由事务提交后的 outbox dispatcher 发布；
 - 同一 request 严格按 seq 发布：前序事件失败或仍 pending 时禁止发布任何后序事件；
 - 稳定 outbox event_id 传入 D1 SSE（相同 event_id 重复发布只产生一份事实）；
-- 原子领取（claim）防双 dispatcher 重复发布；发布后标记 dispatched；崩溃可补发；
+- claim 只从 pending 原子转换（claim_token + claimed_at 租约）；只有超出租约的
+  dispatching 才允许恢复；mark/release 校验 claim_token 所有权 → 双 dispatcher 互斥；
 - unknown event_type fail closed（不静默标记 dispatched）。
 """
 
 from __future__ import annotations
 
 import json
+import uuid
 
 from food_agent_v2.core.config import load_config
 
 
 class OutboxDispatcher:
+    #: dispatching 租约秒数：只有 claimed_at 早于当前-租约的行才可被其他 dispatcher 恢复。
+    lease_seconds = 30
+
     def __init__(self, d1_api=None):
         self._d1_api = d1_api
         self._connection = None
@@ -31,7 +36,6 @@ class OutboxDispatcher:
             user=cfg.user, password=cfg.password,
             database=cfg.database, charset="utf8mb4",
             autocommit=True,
-            client_flag=pymysql.constants.CLIENT.FOUND_ROWS,
         )
         self._cursor = self._connection.cursor()
         return self._connection
@@ -42,25 +46,36 @@ class OutboxDispatcher:
             self._d1_api = d1_api
         return self._d1_api
 
-    def _claim(self, event_id: str) -> bool:
-        """原子领取 pending/dispatching 行；只有一个 dispatcher 成功。"""
+    def _claim(self, event_id: str, claim_token: str) -> bool:
+        """原子领取：只从 pending 转换，或恢复超出租约的 dispatching。
+
+        两个 dispatcher 并发领取同一行：只有最先的 UPDATE 匹配（rowcount=1），
+        第二个因状态已变且非 stale 而不匹配（rowcount=0）→ 互斥。
+        """
         self._connect()
         self._cursor.execute(
-            "UPDATE outbox SET status='dispatching' "
-            "WHERE event_id=%s AND status IN ('pending','dispatching')",
-            (event_id,))
+            "UPDATE outbox SET status='dispatching', claim_token=%s, claimed_at=NOW() "
+            "WHERE event_id=%s AND (status='pending' OR "
+            "  (status='dispatching' AND "
+            "   (claimed_at IS NULL OR "
+            "    claimed_at < DATE_SUB(NOW(), INTERVAL %s SECOND))))",
+            (claim_token, event_id, self.lease_seconds))
         return self._cursor.rowcount == 1
 
-    def _mark_dispatched(self, event_id: str) -> None:
+    def _mark_dispatched(self, event_id: str, claim_token: str) -> bool:
+        """标记 dispatched：必须校验 claim_token 所有权。"""
         self._connect()
         self._cursor.execute(
             "UPDATE outbox SET status='dispatched', dispatched_at=NOW() "
-            "WHERE event_id=%s", (event_id,))
+            "WHERE event_id=%s AND claim_token=%s", (event_id, claim_token))
+        return self._cursor.rowcount == 1
 
-    def _release_claim(self, event_id: str) -> None:
+    def _release_claim(self, event_id: str, claim_token: str) -> None:
+        """释放领取（失败重试）：必须校验 claim_token 所有权。"""
         self._connect()
         self._cursor.execute(
-            "UPDATE outbox SET status='pending' WHERE event_id=%s", (event_id,))
+            "UPDATE outbox SET status='pending', claim_token=NULL, claimed_at=NULL "
+            "WHERE event_id=%s AND claim_token=%s", (event_id, claim_token))
 
     def fetch_pending(self, request_id: str | None = None, limit: int = 100) -> list[dict]:
         self._connect()
@@ -88,9 +103,7 @@ class OutboxDispatcher:
         return self._dispatch_ordered(self.fetch_pending(request_id))
 
     def dispatch_pending(self, request_id: str | None = None, limit: int = 100) -> int:
-        """发布所有待投递事件（各 request 独立按 seq 严格有序）。"""
         rows = self.fetch_pending(request_id, limit)
-        # 按 request_id 分组，组内按 seq 有序；组间独立
         by_request: dict[str, list[dict]] = {}
         for r in rows:
             by_request.setdefault(r["request_id"], []).append(r)
@@ -103,18 +116,23 @@ class OutboxDispatcher:
         """严格按 seq 发布；任一事件失败即停止该 request 后序事件。"""
         dispatched = 0
         for row in rows:
-            if not self._claim(row["event_id"]):
-                continue  # 已被其他 dispatcher 领取
+            claim_token = uuid.uuid4().hex
+            if not self._claim(row["event_id"], claim_token):
+                continue  # 已被其他 dispatcher 领取（含未过期 in-flight）
             try:
-                self._publish(row["request_id"], row["event_type"], row["payload"])
+                # 使用数据库 row["event_id"]（禁止按 request_id 重新拼接）
+                self._publish(row["request_id"], row["event_type"],
+                              row["payload"], row["event_id"])
             except Exception:
-                self._release_claim(row["event_id"])  # 恢复 pending 供重试
+                self._release_claim(row["event_id"], claim_token)
                 return dispatched  # 前序失败 → 禁止后序
-            self._mark_dispatched(row["event_id"])
+            if not self._mark_dispatched(row["event_id"], claim_token):
+                continue  # 所有权丢失（被恢复）→ 不计数
             dispatched += 1
         return dispatched
 
-    def _publish(self, request_id: str, event_type: str, payload: dict) -> None:
+    def _publish(self, request_id: str, event_type: str, payload: dict,
+                 event_id: str) -> None:
         """以稳定 outbox event_id 发布到 D1（相同 event_id 重复发布只产生一份事实）。"""
         d1 = self._d1()
         if event_type == "answer_ready":
@@ -122,12 +140,12 @@ class OutboxDispatcher:
                 request_id, payload.get("text", ""),
                 payload.get("menu_ref", ""),
                 payload.get("evidence_refs", []),
-                event_id=f"ev_answer_{request_id}",
+                event_id=event_id,
             )
         elif event_type == "result_committed":
             d1.publish_result_committed(
                 request_id, payload.get("menu_summary", {}),
-                event_id=f"ev_result_{request_id}",
+                event_id=event_id,
             )
         else:
             raise RuntimeError(f"unknown outbox event_type: {event_type}")

@@ -123,11 +123,13 @@ class TestAtomicCommit:
 
     def test_monotonic_token_accepted(self) -> None:
         sid = _unique("s")
-        commit_request_result(_unique("r"), sid, "completed", "plan-A",
-                              _audit(_unique("r"), "plan-A"),
+        rid1 = _unique("r")
+        commit_request_result(rid1, sid, "completed", "plan-A",
+                              _audit(rid1, "plan-A"),
                               participant_refs=["p1"], fencing_token="7")
-        commit_request_result(_unique("r"), sid, "completed", "plan-B",
-                              _audit(_unique("r"), "plan-B"),
+        rid2 = _unique("r")
+        commit_request_result(rid2, sid, "completed", "plan-B",
+                              _audit(rid2, "plan-B"),
                               participant_refs=["p1"], fencing_token="9")
         assert _query("SELECT fencing_token FROM sessions WHERE session_id=%s",
                       (sid,))[0][0] == 9
@@ -202,6 +204,96 @@ class TestAtomicCommit:
         # 冲突不修改原结果
         assert _query("SELECT final_plan_id FROM recommendation_logs WHERE request_id=%s",
                       (rid,))[0][0] == "plan-A"
+
+
+class TestOuterBinding:
+    def test_outer_request_id_mismatch_rejected(self) -> None:
+        rid, sid = _unique("r"), _unique("s")
+        other = _unique("x")
+        with pytest.raises(AuditCommitFailed):
+            commit_request_result(rid, sid, "completed", "plan-A",
+                                  _audit(other, "plan-A"),
+                                  participant_refs=["p1"], fencing_token="10")
+        assert _query("SELECT COUNT(*) FROM recommendation_logs WHERE request_id=%s",
+                      (rid,))[0][0] == 0
+
+    def test_review_fail_rejected(self) -> None:
+        rid, sid = _unique("r"), _unique("s")
+        audit = _audit(rid, "plan-A")
+        audit["review"]["status"] = "REVISION_REQUIRED"
+        with pytest.raises(AuditCommitFailed):
+            commit_request_result(rid, sid, "completed", "plan-A", audit,
+                                  participant_refs=["p1"], fencing_token="10")
+
+    def test_completed_without_token_rejected(self) -> None:
+        rid, sid = _unique("r"), _unique("s")
+        with pytest.raises(AuditCommitFailed):
+            commit_request_result(rid, sid, "completed", "plan-A",
+                                  _audit(rid, "plan-A"),
+                                  participant_refs=["p1"], fencing_token=None)
+
+    def test_changed_audit_hash_conflicts(self) -> None:
+        rid, sid = _unique("r"), _unique("s")
+        commit_request_result(rid, sid, "completed", "plan-A",
+                              _audit(rid, "plan-A"),
+                              participant_refs=["p1"], fencing_token="10")
+        # review content_hash 变化 → 不同信封 → IDEMPOTENCY_CONFLICT
+        audit2 = _audit(rid, "plan-A")
+        audit2["review"]["content_hash"] = "9" * 64
+        with pytest.raises(AuditCommitFailed) as excinfo:
+            commit_request_result(rid, sid, "completed", "plan-A", audit2,
+                                  participant_refs=["p1"], fencing_token="10")
+        assert "IDEMPOTENCY_CONFLICT" in str(excinfo.value)
+
+    def test_changed_participant_refs_conflicts(self) -> None:
+        rid, sid = _unique("r"), _unique("s")
+        commit_request_result(rid, sid, "completed", "plan-A",
+                              _audit(rid, "plan-A"),
+                              participant_refs=["p1"], fencing_token="10")
+        audit2 = _audit(rid, "plan-A")
+        audit2["participant_constraint_refs"] = ["p2"]
+        with pytest.raises(AuditCommitFailed) as excinfo:
+            commit_request_result(rid, sid, "completed", "plan-A", audit2,
+                                  participant_refs=["p2"], fencing_token="10")
+        assert "IDEMPOTENCY_CONFLICT" in str(excinfo.value)
+
+    def test_menu_versions_hash_persisted(self) -> None:
+        rid, sid = _unique("r"), _unique("s")
+        commit_request_result(rid, sid, "completed", "plan-A",
+                              _audit(rid, "plan-A"),
+                              participant_refs=["p1"], fencing_token="10",
+                              menu_hash="a" * 64)
+        rows = _query("SELECT menu_hash, plan_id FROM menu_versions WHERE session_id=%s",
+                      (sid,))
+        assert rows and rows[0][0] == "a" * 64 and rows[0][1] == "plan-A"
+        # outbox payload menu_hash 与审计一致
+        ob = _query("SELECT payload FROM outbox WHERE request_id=%s AND event_type='result_committed'",
+                    (rid,))
+        import json as _json
+        payload = _json.loads(ob[0][0])
+        assert payload["menu_summary"]["menu_hash"] == "a" * 64
+
+    def test_audit_write_failure_rolls_back_all(self) -> None:
+        """事务中间故障（outbox 写入前抛错）→ 结果/会话/菜单/outbox 全部回滚。"""
+        import food_agent_v2.application.commit_service as CS
+        rid, sid = _unique("r"), _unique("s")
+        orig_build = CS._build_outbox_rows
+        def boom(*a, **k):
+            raise RuntimeError("injected mid-transaction failure")
+        CS._build_outbox_rows = boom
+        try:
+            with pytest.raises(AuditCommitFailed):
+                commit_request_result(rid, sid, "completed", "plan-A",
+                                      _audit(rid, "plan-A"),
+                                      participant_refs=["p1"], fencing_token="10")
+        finally:
+            CS._build_outbox_rows = orig_build
+        assert _query("SELECT COUNT(*) FROM recommendation_logs WHERE request_id=%s",
+                      (rid,))[0][0] == 0
+        assert _query("SELECT COUNT(*) FROM outbox WHERE request_id=%s", (rid,))[0][0] == 0
+        assert _query("SELECT COUNT(*) FROM menu_versions WHERE session_id=%s",
+                      (sid,))[0][0] == 0
+        assert _query("SELECT COUNT(*) FROM sessions WHERE session_id=%s", (sid,))[0][0] == 0
 
 
 class TestArtifactAuditValidation:

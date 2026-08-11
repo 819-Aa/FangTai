@@ -71,6 +71,14 @@ class WorkflowRunner:
     #: 会话锁 TTL（秒）；heartbeat 按 LOCK_TTL/3 续租，保证单个模型调用不会失锁。
     LOCK_TTL = 30
 
+    #: 输出嵌入随机身份（UUID ref / tool_call_id）的工具，其 output_hash 非确定性，
+    #: 不进入健康审计信封（确定性证据见 _canonical_audit）。
+    NONDETERMINISTIC_OUTPUT_TOOLS = {
+        "validate_selected_menu_health",
+        "get_execution_trace",
+        "get_artifact_chain",
+    }
+
     def __init__(
         self,
         *,
@@ -1024,6 +1032,18 @@ class WorkflowRunner:
         }
 
     @staticmethod
+    def _coverage_refs(fva: FinalValidationArtifact | None) -> list[str]:
+        """健康关系/覆盖引用：顶层 relation_evidence_refs + 每菜品 participant 证据。"""
+        if not isinstance(fva, FinalValidationArtifact):
+            return []
+        refs = list(fva.relation_evidence_refs)
+        for pr in fva.participant_recipe_results:
+            refs.extend(pr.constraint_refs)
+            refs.extend(pr.ingredient_set_evidence_paths)
+            refs.extend(pr.coverage_refs)
+        return refs
+
+    @staticmethod
     def _artifact_answer_text(a: AnswerArtifact) -> str:
         """从正式 AnswerArtifact.content 提取用户可见回答文本。"""
         c = a.content
@@ -1097,18 +1117,26 @@ class WorkflowRunner:
                         "menu_hash": ans.menu_hash if isinstance(ans, AnswerArtifact) else "",
                         "recipe_ids": list(ans.recipe_ids) if isinstance(ans, AnswerArtifact) else [],
                         "content_hash": ans.content_hash if isinstance(ans, AnswerArtifact) else "",
+                        "content": {
+                            "conclusion": ans.content.conclusion if isinstance(ans, AnswerArtifact) else "",
+                            "menu_summary": ans.content.menu_summary if isinstance(ans, AnswerArtifact) else "",
+                        },
                     },
                     "participant_constraint_refs": list(fva.participant_refs)
                     if isinstance(fva, FinalValidationArtifact) else [],
-                    "ingredient_relation_coverage_refs": list(fva.relation_evidence_refs)
-                    if isinstance(fva, FinalValidationArtifact) else [],
+                    "ingredient_relation_coverage_refs": WorkflowRunner._coverage_refs(fva),
                     "override_refs": [],  # INV-016：永久约束覆盖请求一律拒绝 → 无 override
-                    "tool_receipt_refs": [r.tool_call_id for r in state.tool_receipts],
+                    # 排除输出嵌入随机身份的工具（final_validation_ref/tool_call_id），
+                    # 使审计信封确定性可幂等；其确定性本质由 final_validation 块覆盖。
+                    "tool_receipt_refs": [
+                        r.tool_call_id for r in state.tool_receipts
+                        if r.tool_name not in WorkflowRunner.NONDETERMINISTIC_OUTPUT_TOOLS],
                     "tool_input_output_hashes": [
                         {"tool_call_id": r.tool_call_id,
                          "input_hash": r.input_hash,
                          "output_hash": r.output_hash}
-                        for r in state.tool_receipts],
+                        for r in state.tool_receipts
+                        if r.tool_name not in WorkflowRunner.NONDETERMINISTIC_OUTPUT_TOOLS],
                     "constraint_set_refs": list(hea.constraint_set_refs)
                     if isinstance(hea, HealthEvaluationArtifact) else [],
                     "final_validation_verdict": fva.status

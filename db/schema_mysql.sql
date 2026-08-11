@@ -154,6 +154,8 @@ CREATE TABLE IF NOT EXISTS outbox (
     payload JSON,
     seq INT NOT NULL DEFAULT 0,
     status VARCHAR(16) DEFAULT 'pending',
+    claim_token VARCHAR(64) NULL,
+    claimed_at TIMESTAMP NULL,
     dispatched_at TIMESTAMP NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
