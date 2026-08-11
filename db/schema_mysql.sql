@@ -107,6 +107,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     participant_refs JSON,
     current_menu_plan_id VARCHAR(64),
     request_count INT DEFAULT 0,
+    fencing_token VARCHAR(64) NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     last_request_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
@@ -143,4 +144,15 @@ CREATE TABLE IF NOT EXISTS recommendation_logs (
     health_evidence JSON,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uk_request (request_id)
+);
+
+CREATE TABLE IF NOT EXISTS outbox (
+    event_id VARCHAR(64) PRIMARY KEY,
+    request_id VARCHAR(64) NOT NULL,
+    event_type VARCHAR(32) NOT NULL,
+    payload JSON,
+    seq INT NOT NULL DEFAULT 0,
+    status VARCHAR(16) DEFAULT 'pending',
+    dispatched_at TIMESTAMP NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

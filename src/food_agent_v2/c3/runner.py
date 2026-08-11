@@ -493,21 +493,8 @@ class WorkflowRunner:
 
         state = reduce_workflow_state(state, action="atomic_commit")
 
-        if state.status == RequestStatus.COMPLETED:
-            fva = state.final_validation_artifact
-            menu_hash = fva.menu_hash if isinstance(fva, FinalValidationArtifact) else \
-                (menu_hash_for(plan_id, recipe_ids) if plan_id else "")
-            ans = state.answer_artifact
-            d1_api.publish_answer_event(
-                request_id, answer_text, menu_hash,
-                list(ans.evidence_refs) if isinstance(ans, AnswerArtifact) else [],
-            )
-            d1_api.publish_result_committed(
-                request_id,
-                {"menu": str(state.menu_decision_artifact)[:200],
-                 "plan_id": plan_id,
-                 "menu_hash": menu_hash},
-            )
+        # T19：success SSE 不再由 runner 直接发布；改由事务提交后的 outbox dispatcher 发布。
+        # 提交所需 answer/menu/evidence 在 _finalize 内从 state 提取后传入 commit_request_result。
 
         self._finalize(state, request_id, c4, lock_token)
 
@@ -1085,8 +1072,17 @@ class WorkflowRunner:
                     final_plan_id=fva.plan_id if isinstance(fva, FinalValidationArtifact) else "",
                     health_evidence=health_evidence,
                     participant_refs=state.participant_refs,
-                    fencing_token=lock_token,  # T18 端到端传递，T19 作为强制提交参数
+                    fencing_token=lock_token,
+                    answer_text=WorkflowRunner._artifact_answer_text(ans)
+                    if isinstance(ans, AnswerArtifact) else "",
+                    menu_hash=fva.menu_hash if isinstance(fva, FinalValidationArtifact) else "",
+                    menu_ref="",
+                    evidence_refs=list(ans.evidence_refs)
+                    if isinstance(ans, AnswerArtifact) else [],
                 )
+                # success SSE 仅由事务提交后的 outbox dispatcher 发布
+                from food_agent_v2.application.outbox import dispatch_request
+                dispatch_request(request_id)
             except Exception as e:  # noqa: BLE001
                 effective_status = RequestStatus.FAILED.value
                 error = error or WorkflowError("AUDIT_COMMIT_FAILED", str(e))
