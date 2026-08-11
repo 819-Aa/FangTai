@@ -231,6 +231,38 @@ class TestD1:
 
 # ---- INV-010：MySQL 原子提交（无 MySQL 跳过） ----
 
+def _inv010_audit(rid: str, plan_id: str) -> dict:
+    """T19 完整健康审计（Artifact 链 + 引用）构造。"""
+    return {
+        "request_id": rid,
+        "plan_id": plan_id,
+        "recipe_ids": [1, 2],
+        "menu_hash": "a" * 64,
+        "final_validation": {
+            "ref": "fv:1", "request_id": rid, "plan_id": plan_id,
+            "menu_hash": "a" * 64, "recipe_ids": [1, 2],
+            "verdict": "PASS", "content_hash": "b" * 64,
+        },
+        "menu_decision": {
+            "ref": "md:1", "request_id": rid, "plan_id": plan_id,
+            "menu_hash": "a" * 64, "content_hash": "c" * 64,
+        },
+        "review": {"ref": "rv:1", "request_id": rid, "status": "PASS",
+                   "content_hash": "d" * 64},
+        "answer": {
+            "ref": "ans:1", "request_id": rid, "plan_id": plan_id,
+            "menu_hash": "a" * 64, "recipe_ids": [1, 2], "content_hash": "e" * 64,
+        },
+        "participant_constraint_refs": ["p1"],
+        "ingredient_relation_coverage_refs": ["ev:1"],
+        "override_refs": [],
+        "tool_receipt_refs": ["tc:1"],
+        "tool_input_output_hashes": [
+            {"tool_call_id": "tc:1", "input_hash": "f" * 64, "output_hash": "1" * 64}],
+        "final_validation_verdict": "PASS",
+    }
+
+
 @pytest.mark.skipif(not _mysql_available(), reason="MySQL 不可用")
 class TestInv010:
     def test_commit_and_query(self):
@@ -241,9 +273,9 @@ class TestInv010:
         commit_request_result(
             request_id=rid, session_id="sess_inv010", status="completed",
             final_plan_id="plan_test",
-            health_evidence={"plan_id": "plan_test", "recipe_ids": [1, 2],
-                             "final_validation_verdict": "PASS"},
+            health_evidence=_inv010_audit(rid, "plan_test"),
             participant_refs=["p1"],
+            fencing_token=str(int(time.time() * 1000)),
         )
         import pymysql
 
@@ -268,7 +300,8 @@ class TestInv010:
             commit_request_result(
                 request_id=rid, session_id="sess_idem", status="completed",
                 final_plan_id="plan_x",
-                health_evidence={"recipe_ids": [1], "verdict": "PASS"},
+                health_evidence=_inv010_audit(rid, "plan_x"),
+                fencing_token=str(int(time.time() * 1000)),
             )
         import pymysql
 

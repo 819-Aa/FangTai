@@ -12,8 +12,11 @@ import uuid
 from typing import Any, Optional
 
 from food_agent_v2.d1.schemas import (
-    validate_create_request, scan_forbidden_fields,
-    now_iso, RequestStatus, SSEEventType,
+    RequestStatus,
+    SSEEventType,
+    now_iso,
+    scan_forbidden_fields,
+    validate_create_request,
 )
 
 
@@ -171,16 +174,29 @@ class RecommendationAPI:
             return all_events[start:]
         return all_events
 
-    def _emit_event(self, request_id: str, event_type: SSEEventType, payload: dict) -> None:
-        """发布 SSE 事件。"""
-        eid = self._event_cursors.get(request_id, 1)
+    def _emit_event(self, request_id: str, event_type: SSEEventType, payload: dict,
+                    event_id: str | None = None) -> None:
+        """发布 SSE 事件。
+
+        event_id 为显式稳定 ID（T19 outbox）：相同 event_id 重复发布只保留一份事实；
+        未提供时使用自增游标（历史行为）。
+        """
+        if event_id is not None:
+            existing = [e for e in self._events.get(request_id, [])
+                        if e.get("id") == event_id]
+            if existing:
+                return  # 幂等：同 event_id 已发布 → 不重复
+            eid = event_id
+        else:
+            eid = str(self._event_cursors.get(request_id, 1))
         event = {
-            "id": str(eid),
+            "id": eid,
             "event": event_type.value,
             "data": json.dumps(payload, ensure_ascii=False),
         }
         self._events.setdefault(request_id, []).append(event)
-        self._event_cursors[request_id] = eid + 1
+        if event_id is None:
+            self._event_cursors[request_id] = int(eid) + 1
         if request_id in self._requests:
             self._requests[request_id]["stage_events_cursor"] = eid
         self._persist_request(request_id)
@@ -242,8 +258,9 @@ class RecommendationAPI:
         self._emit_event(request_id, SSEEventType.ANALYSIS_READY, payload)
 
     def publish_answer_event(self, request_id: str, text: str,
-                            menu_ref: str, evidence_refs: list[str]) -> None:
-        """C3 通过此接口发布回答事件。"""
+                            menu_ref: str, evidence_refs: list[str],
+                            event_id: str | None = None) -> None:
+        """C3 通过此接口发布回答事件（event_id 为 outbox 稳定 ID，幂等去重）。"""
         violations = scan_forbidden_fields({
             "text": text, "menu_ref": menu_ref,
             "evidence_refs": evidence_refs,
@@ -252,19 +269,20 @@ class RecommendationAPI:
             self._emit_event(request_id, SSEEventType.ERROR, {
                 "error_code": "SENSITIVE_DATA_EXPOSURE",
                 "message": f"Forbidden fields: {violations}",
-            })
+            }, event_id=event_id)
             return
         self._emit_event(request_id, SSEEventType.ANSWER_READY, {
             "text": text,
             "menu_ref": menu_ref,
             "evidence_refs": evidence_refs,
-        })
+        }, event_id=event_id)
 
-    def publish_result_committed(self, request_id: str, menu_summary: dict) -> None:
+    def publish_result_committed(self, request_id: str, menu_summary: dict,
+                                 event_id: str | None = None) -> None:
         self._emit_event(request_id, SSEEventType.RESULT_COMMITTED, {
             "request_id": request_id,
             "menu_summary": menu_summary,
-        })
+        }, event_id=event_id)
 
     def update_status(self, request_id: str, status: str,
                       result_summary: dict | None = None,

@@ -107,7 +107,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     participant_refs JSON,
     current_menu_plan_id VARCHAR(64),
     request_count INT DEFAULT 0,
-    fencing_token VARCHAR(64) NULL,
+    fencing_token BIGINT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     last_request_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
@@ -142,6 +142,7 @@ CREATE TABLE IF NOT EXISTS recommendation_logs (
     status VARCHAR(32),
     final_plan_id VARCHAR(64),
     health_evidence JSON,
+    commit_hash VARCHAR(64) NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uk_request (request_id)
 );

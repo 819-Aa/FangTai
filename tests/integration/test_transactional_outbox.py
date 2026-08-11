@@ -1,8 +1,10 @@
 """T19 transactional outbox 集成测试（success SSE 仅由 dispatcher 在提交后发布）。
 
-依赖 MySQL/Redis 可用。
+覆盖：严格 seq 顺序、稳定 event_id 幂等、崩溃可补发不重复、双 dispatcher 并发、
+unknown event_type fail closed。依赖 MySQL/Redis 可用。
 """
 
+import threading
 import uuid
 
 import pytest
@@ -42,75 +44,50 @@ def _reset_d1() -> None:
     d1_api._idempotency.clear()
 
 
+def _audit(rid: str, plan_id: str) -> dict:
+    return {
+        "request_id": rid,
+        "plan_id": plan_id,
+        "recipe_ids": [1],
+        "menu_hash": "a" * 64,
+        "final_validation": {
+            "ref": "fv:1", "request_id": rid, "plan_id": plan_id,
+            "menu_hash": "a" * 64, "recipe_ids": [1],
+            "verdict": "PASS", "content_hash": "b" * 64,
+        },
+        "menu_decision": {
+            "ref": "md:1", "request_id": rid, "plan_id": plan_id,
+            "menu_hash": "a" * 64, "content_hash": "c" * 64,
+        },
+        "review": {"ref": "rv:1", "request_id": rid, "status": "PASS",
+                   "content_hash": "d" * 64},
+        "answer": {
+            "ref": "ans:1", "request_id": rid, "plan_id": plan_id,
+            "menu_hash": "a" * 64, "recipe_ids": [1], "content_hash": "e" * 64,
+        },
+        "participant_constraint_refs": ["p1"],
+        "ingredient_relation_coverage_refs": ["ev:1"],
+        "override_refs": [],
+        "tool_receipt_refs": ["tc:1"],
+        "tool_input_output_hashes": [
+            {"tool_call_id": "tc:1", "input_hash": "f" * 64, "output_hash": "1" * 64}],
+        "final_validation_verdict": "PASS",
+    }
+
+
+def _commit(rid: str, sid: str, token: str) -> None:
+    commit_request_result(
+        rid, sid, "completed", "plan-A", _audit(rid, "plan-A"),
+        participant_refs=["p1"], fencing_token=token,
+        answer_text="推荐菜单", menu_hash="a" * 64)
+
+
+def _event_list(request_id: str) -> list[dict]:
+    return d1_api.subscribe_events(request_id)
+
+
 def _event_types(request_id: str) -> list[str]:
-    return [e.get("event") for e in d1_api.subscribe_events(request_id)]
-
-
-class TestTransactionalOutbox:
-    def test_dispatcher_publishes_success_after_commit(self) -> None:
-        _reset_d1()
-        rid, sid = _unique("r"), _unique("s")
-        d1_api._requests[rid] = {"request_id": rid, "status": "running",
-                                 "session_id": sid, "created_at": "t"}
-        commit_request_result(
-            rid, sid, "completed", "plan-A", {"recipe_ids": [1], "verdict": "PASS"},
-            participant_refs=["p1"], fencing_token="3",
-            answer_text="推荐菜单", menu_hash="a" * 64)
-        # 提交后 dispatcher 发布 success SSE
-        dispatched = dispatch_request(rid)
-        assert dispatched == 2
-        types = _event_types(rid)
-        assert "answer_ready" in types
-        assert "result_committed" in types
-        # outbox 已标记 dispatched
-        assert _outbox_status(rid) == {"dispatched": 2}
-
-    def test_repeated_dispatch_no_duplicate_facts(self) -> None:
-        _reset_d1()
-        rid, sid = _unique("r"), _unique("s")
-        d1_api._requests[rid] = {"request_id": rid, "status": "running",
-                                 "session_id": sid, "created_at": "t"}
-        commit_request_result(
-            rid, sid, "completed", "plan-A", {"recipe_ids": [1], "verdict": "PASS"},
-            participant_refs=["p1"], fencing_token="4",
-            answer_text="推荐", menu_hash="a" * 64)
-        assert dispatch_request(rid) == 2
-        # 重复投递不重复事实：第二次 dispatch 0，事件数不翻倍
-        assert dispatch_request(rid) == 0
-        assert _event_types(rid).count("answer_ready") == 1
-        assert _event_types(rid).count("result_committed") == 1
-
-    def test_dispatcher_crash_redispatch(self) -> None:
-        _reset_d1()
-        rid, sid = _unique("r"), _unique("s")
-        d1_api._requests[rid] = {"request_id": rid, "status": "running",
-                                 "session_id": sid, "created_at": "t"}
-        commit_request_result(
-            rid, sid, "completed", "plan-A", {"recipe_ids": [1], "verdict": "PASS"},
-            participant_refs=["p1"], fencing_token="5",
-            answer_text="推荐", menu_hash="a" * 64)
-        # 模拟 dispatcher 对 answer_ready 发布失败 → 该行保持 pending → 后续可补发
-        failing = _FailingDispatcher(fail_on="answer_ready")
-        assert failing.dispatch_request(rid) == 1  # result_committed 已发布
-        assert _outbox_status(rid) == {"pending": 1, "dispatched": 1}
-        # 正常 dispatcher 补发剩余的 answer_ready
-        assert dispatch_request(rid) == 1
-        assert _outbox_status(rid) == {"dispatched": 2}
-        # 补发后不重复事实
-        assert _event_types(rid).count("answer_ready") == 1
-
-
-class _FailingDispatcher(OutboxDispatcher):
-    """发布指定事件类型时抛错，模拟 dispatcher 中途崩溃。"""
-
-    def __init__(self, fail_on: str):
-        super().__init__(d1_api)
-        self._fail_on = fail_on
-
-    def _publish(self, request_id: str, event_type: str, payload: dict) -> None:
-        if event_type == self._fail_on:
-            raise RuntimeError("simulated crash")
-        super()._publish(request_id, event_type, payload)
+    return [e.get("event") for e in _event_list(request_id)]
 
 
 def _outbox_status(request_id: str) -> dict:
@@ -126,3 +103,138 @@ def _outbox_status(request_id: str) -> dict:
     result = {r[0]: r[1] for r in cur.fetchall()}
     conn.close()
     return result
+
+
+class TestTransactionalOutbox:
+    def test_dispatcher_publishes_with_stable_event_ids(self) -> None:
+        _reset_d1()
+        rid, sid = _unique("r"), _unique("s")
+        d1_api._requests[rid] = {"request_id": rid, "status": "running",
+                                 "session_id": sid, "created_at": "t"}
+        _commit(rid, sid, "3")
+        assert dispatch_request(rid) == 2
+        # SSE 事件 id 必须使用 outbox 稳定 event_id（不是自增 1/2）
+        ids = [e.get("id") for e in _event_list(rid)]
+        assert ids == [f"ev_answer_{rid}", f"ev_result_{rid}"]
+        assert _event_types(rid) == ["answer_ready", "result_committed"]
+        assert _outbox_status(rid) == {"dispatched": 2}
+
+    def test_repeated_dispatch_no_duplicate_facts(self) -> None:
+        _reset_d1()
+        rid, sid = _unique("r"), _unique("s")
+        d1_api._requests[rid] = {"request_id": rid, "status": "running",
+                                 "session_id": sid, "created_at": "t"}
+        _commit(rid, sid, "4")
+        assert dispatch_request(rid) == 2
+        assert dispatch_request(rid) == 0
+        assert _event_types(rid).count("answer_ready") == 1
+        assert _event_types(rid).count("result_committed") == 1
+
+    def test_seq_failure_stops_rest_no_dispatch(self) -> None:
+        """seq=1 发布失败 → dispatch_count=0，两个事件均不得 dispatched。"""
+        _reset_d1()
+        rid, sid = _unique("r"), _unique("s")
+        d1_api._requests[rid] = {"request_id": rid, "status": "running",
+                                 "session_id": sid, "created_at": "t"}
+        _commit(rid, sid, "5")
+        failing = _FailingDispatcher(fail_on="answer_ready")
+        assert failing.dispatch_request(rid) == 0
+        # 两个事件都不得 dispatched（seq=2 后序被禁止）
+        assert _outbox_status(rid) == {"pending": 2}
+        assert _event_types(rid) == []
+
+    def test_publish_then_crash_before_mark_no_duplicate(self) -> None:
+        """发布成功后、标记 dispatched 前崩溃：恢复后重复发布不产生重复事件。"""
+        _reset_d1()
+        rid, sid = _unique("r"), _unique("s")
+        d1_api._requests[rid] = {"request_id": rid, "status": "running",
+                                 "session_id": sid, "created_at": "t"}
+        _commit(rid, sid, "6")
+        crashy = _CrashAfterPublishDispatcher()
+        with pytest.raises(RuntimeError):
+            crashy.dispatch_request(rid)  # 发布后崩溃，行保持 dispatching
+        # 恢复：正常 dispatcher 补发，D1 按 event_id 去重 → 不重复事实
+        assert dispatch_request(rid) == 2
+        assert _event_types(rid).count("answer_ready") == 1
+        assert _event_types(rid).count("result_committed") == 1
+        assert _outbox_status(rid) == {"dispatched": 2}
+
+    def test_double_dispatcher_no_duplicate_publish(self) -> None:
+        """双 dispatcher 并发发布：claim 原子领取，禁止重复发布。"""
+        _reset_d1()
+        rid, sid = _unique("r"), _unique("s")
+        d1_api._requests[rid] = {"request_id": rid, "status": "running",
+                                 "session_id": sid, "created_at": "t"}
+        _commit(rid, sid, "7")
+        results = []
+        barrier = threading.Barrier(2)
+
+        def worker():
+            barrier.wait()
+            results.append(OutboxDispatcher(d1_api=d1_api).dispatch_request(rid))
+
+        threads = [threading.Thread(target=worker) for _ in range(2)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=15)
+        assert _event_types(rid).count("answer_ready") == 1
+        assert _event_types(rid).count("result_committed") == 1
+        assert _outbox_status(rid) == {"dispatched": 2}
+
+    def test_unknown_event_type_fails_closed(self) -> None:
+        _reset_d1()
+        rid, sid = _unique("r"), _unique("s")
+        d1_api._requests[rid] = {"request_id": rid, "status": "running",
+                                 "session_id": sid, "created_at": "t"}
+        _commit(rid, sid, "8")
+        # 手工插入一个 unknown event_type 行（seq=3，位于已知两行之后）
+        _insert_outbox(f"ev_bogus_{rid}", rid, "bogus_event", {}, 3)
+        dispatched = dispatch_request(rid)
+        # seq=1/2 正常发布；unknown seq=3 fail-closed：不静默标记 dispatched，保持 pending
+        assert dispatched == 2
+        assert _outbox_status(rid) == {"dispatched": 2, "pending": 1}
+
+
+class _FailingDispatcher(OutboxDispatcher):
+    def __init__(self, fail_on: str):
+        super().__init__(d1_api)
+        self._fail_on = fail_on
+
+    def _publish(self, request_id: str, event_type: str, payload: dict) -> None:
+        if event_type == self._fail_on:
+            raise RuntimeError("simulated crash")
+        super()._publish(request_id, event_type, payload)
+
+
+class _CrashAfterPublishDispatcher(OutboxDispatcher):
+    """发布成功后、标记 dispatched 前崩溃（模拟进程崩溃）。"""
+
+    def __init__(self):
+        super().__init__(d1_api)
+        self._crashed = False
+
+    def _mark_dispatched(self, event_id: str) -> None:
+        if not self._crashed:
+            self._crashed = True
+            raise RuntimeError("simulated crash after publish")
+        super()._mark_dispatched(event_id)
+
+
+def _insert_outbox(event_id: str, request_id: str, event_type: str,
+                   payload: dict, seq: int) -> None:
+    import json
+
+    import pymysql
+
+    cfg = load_config()
+    conn = pymysql.connect(host=cfg.mysql.host, port=cfg.mysql.port,
+                           user=cfg.mysql.user, password=cfg.mysql.password,
+                           database=cfg.mysql.database, charset="utf8mb4")
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT IGNORE INTO outbox (event_id, request_id, event_type, payload, seq, status) "
+        "VALUES (%s, %s, %s, %s, %s, 'pending')",
+        (event_id, request_id, event_type, json.dumps(payload), seq))
+    conn.commit()
+    conn.close()

@@ -103,10 +103,14 @@ class WorkflowRunner:
 
     @staticmethod
     def _acquire_session_lock(c4: ContextService, session_id: str) -> str | None:
-        """获取会话锁；c4 无锁支持（测试 Fake）返回哨兵；Redis 不可用/占用返回 None。"""
+        """获取会话锁；Redis 不可用/占用返回 None（fail-closed）。
+
+        测试替身（c4 无锁支持）回退为时间戳正整数 token——生产永不经过此路径，
+        且不向提交 API 暴露魔法字符串。
+        """
         acquire = getattr(c4, "acquire_session_lock", None)
         if acquire is None:
-            return "no-lock-support"  # 测试 Fake 显式无锁支持
+            return str(int(time.time() * 1000))  # 测试替身：正整数、跨运行单调
         return acquire(session_id, "runner")
 
     @staticmethod
@@ -1053,14 +1057,63 @@ class WorkflowRunner:
             try:
                 from food_agent_v2.application import commit_request_result
                 fva = state.final_validation_artifact
+                mda = state.menu_decision_artifact
+                rva = state.review_artifact
                 ans = state.answer_artifact
+                hea = state.health_evaluation_artifact
+                rid_text = str(fva.request_id) if isinstance(fva, FinalValidationArtifact) else request_id
                 health_evidence = {
+                    "request_id": request_id,
                     "plan_id": fva.plan_id if isinstance(fva, FinalValidationArtifact) else "",
                     "recipe_ids": list(fva.recipe_ids) if isinstance(fva, FinalValidationArtifact) else [],
                     "menu_hash": fva.menu_hash if isinstance(fva, FinalValidationArtifact) else "",
-                    "final_validation_verdict": fva.status if isinstance(fva, FinalValidationArtifact) else "",
-                    "review_verdict": state.review_artifact.status
-                    if isinstance(state.review_artifact, ReviewArtifact) else "",
+                    "final_validation": {
+                        "ref": str(fva.artifact_id) if isinstance(fva, FinalValidationArtifact) else "",
+                        "request_id": rid_text,
+                        "plan_id": fva.plan_id if isinstance(fva, FinalValidationArtifact) else "",
+                        "menu_hash": fva.menu_hash if isinstance(fva, FinalValidationArtifact) else "",
+                        "recipe_ids": list(fva.recipe_ids) if isinstance(fva, FinalValidationArtifact) else [],
+                        "verdict": fva.status if isinstance(fva, FinalValidationArtifact) else "",
+                        "input_fingerprint": fva.input_fingerprint
+                        if isinstance(fva, FinalValidationArtifact) else "",
+                    },
+                    "menu_decision": {
+                        "ref": str(mda.artifact_id) if isinstance(mda, MenuDecisionArtifact) else "",
+                        "request_id": str(mda.request_id) if isinstance(mda, MenuDecisionArtifact) else rid_text,
+                        "plan_id": mda.plan_id if isinstance(mda, MenuDecisionArtifact) else "",
+                        "menu_hash": mda.menu_hash if isinstance(mda, MenuDecisionArtifact) else "",
+                        "content_hash": mda.content_hash if isinstance(mda, MenuDecisionArtifact) else "",
+                    },
+                    "review": {
+                        "ref": str(rva.artifact_id) if isinstance(rva, ReviewArtifact) else "",
+                        "request_id": str(rva.request_id) if isinstance(rva, ReviewArtifact) else rid_text,
+                        "status": rva.status if isinstance(rva, ReviewArtifact) else "",
+                        "content_hash": rva.content_hash if isinstance(rva, ReviewArtifact) else "",
+                    },
+                    "answer": {
+                        "ref": str(ans.artifact_id) if isinstance(ans, AnswerArtifact) else "",
+                        "request_id": str(ans.request_id) if isinstance(ans, AnswerArtifact) else rid_text,
+                        "plan_id": ans.plan_id if isinstance(ans, AnswerArtifact) else "",
+                        "menu_hash": ans.menu_hash if isinstance(ans, AnswerArtifact) else "",
+                        "recipe_ids": list(ans.recipe_ids) if isinstance(ans, AnswerArtifact) else [],
+                        "content_hash": ans.content_hash if isinstance(ans, AnswerArtifact) else "",
+                    },
+                    "participant_constraint_refs": list(fva.participant_refs)
+                    if isinstance(fva, FinalValidationArtifact) else [],
+                    "ingredient_relation_coverage_refs": list(fva.relation_evidence_refs)
+                    if isinstance(fva, FinalValidationArtifact) else [],
+                    "override_refs": [],  # INV-016：永久约束覆盖请求一律拒绝 → 无 override
+                    "tool_receipt_refs": [r.tool_call_id for r in state.tool_receipts],
+                    "tool_input_output_hashes": [
+                        {"tool_call_id": r.tool_call_id,
+                         "input_hash": r.input_hash,
+                         "output_hash": r.output_hash}
+                        for r in state.tool_receipts],
+                    "constraint_set_refs": list(hea.constraint_set_refs)
+                    if isinstance(hea, HealthEvaluationArtifact) else [],
+                    "final_validation_verdict": fva.status
+                    if isinstance(fva, FinalValidationArtifact) else "",
+                    "review_verdict": rva.status if isinstance(rva, ReviewArtifact) else "",
                     "answer_nonempty": bool(ans.content.conclusion.strip())
                     if isinstance(ans, AnswerArtifact) else False,
                     "tool_receipt_count": len(state.tool_receipts),
@@ -1076,7 +1129,7 @@ class WorkflowRunner:
                     answer_text=WorkflowRunner._artifact_answer_text(ans)
                     if isinstance(ans, AnswerArtifact) else "",
                     menu_hash=fva.menu_hash if isinstance(fva, FinalValidationArtifact) else "",
-                    menu_ref="",
+                    menu_ref=ans.menu_ref if isinstance(ans, AnswerArtifact) else "",
                     evidence_refs=list(ans.evidence_refs)
                     if isinstance(ans, AnswerArtifact) else [],
                 )
@@ -1094,10 +1147,9 @@ class WorkflowRunner:
                             if error else None)
         commit_c4 = getattr(c4, "commit_session_state", None)
         if commit_c4 is not None:
-            token_for_c4 = lock_token if lock_token != "no-lock-support" else None
             import inspect as _inspect
 
             if "token" in _inspect.signature(commit_c4).parameters:
-                commit_c4(request_id, effective_status, token=token_for_c4)
+                commit_c4(request_id, effective_status, token=lock_token)
             else:
                 commit_c4(request_id, effective_status)

@@ -40,6 +40,38 @@ def _unique(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:10]}"
 
 
+def _audit(rid: str, plan_id: str) -> dict:
+    """T19 完整健康审计（Artifact 链 + 引用）。"""
+    return {
+        "request_id": rid,
+        "plan_id": plan_id,
+        "recipe_ids": [1, 2],
+        "menu_hash": "a" * 64,
+        "final_validation": {
+            "ref": "fv:1", "request_id": rid, "plan_id": plan_id,
+            "menu_hash": "a" * 64, "recipe_ids": [1, 2],
+            "verdict": "PASS", "content_hash": "b" * 64,
+        },
+        "menu_decision": {
+            "ref": "md:1", "request_id": rid, "plan_id": plan_id,
+            "menu_hash": "a" * 64, "content_hash": "c" * 64,
+        },
+        "review": {"ref": "rv:1", "request_id": rid, "status": "PASS",
+                   "content_hash": "d" * 64},
+        "answer": {
+            "ref": "ans:1", "request_id": rid, "plan_id": plan_id,
+            "menu_hash": "a" * 64, "recipe_ids": [1, 2], "content_hash": "e" * 64,
+        },
+        "participant_constraint_refs": ["p1"],
+        "ingredient_relation_coverage_refs": ["ev:1"],
+        "override_refs": [],
+        "tool_receipt_refs": ["tc:1"],
+        "tool_input_output_hashes": [
+            {"tool_call_id": "tc:1", "input_hash": "f" * 64, "output_hash": "1" * 64}],
+        "final_validation_verdict": "PASS",
+    }
+
+
 @pytest.mark.skipif(not _redis_available(), reason="Redis 不可用")
 class TestSessionLockFencing:
     def test_fencing_token_acquire_release(self) -> None:
@@ -143,8 +175,8 @@ class TestRestoreFromMySQLCommitted:
         commit_request_result(
             request_id=rid, session_id=sid, status="completed",
             final_plan_id="plan-A",
-            health_evidence={"recipe_ids": [1, 2], "menu_hash": "a" * 64},
-            participant_refs=["p1"],
+            health_evidence=_audit(rid, "plan-A"),
+            participant_refs=["p1"], fencing_token="10",
         )
         # 全新 ContextService（Redis 无该会话运行快照）→ 从 MySQL 已提交边界恢复
         svc = ContextService()
