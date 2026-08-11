@@ -306,6 +306,7 @@ class TestApiApplication:
             code1, resp1 = api.create_request(body)
             assert code1 == 202
             fresh = RecommendationAPI()
+            fresh._trigger_workflow = lambda *a, **k: None  # 测试隔离：不启动后台工作流
             code2, resp2 = fresh.create_request(dict(body))
             assert code2 == 200
             assert resp2["request_id"] == resp1["request_id"]
@@ -335,7 +336,9 @@ class TestApiApplication:
 
         def worker():
             barrier.wait()
-            results.append(RecommendationAPI().create_request(dict(body)))
+            inst = RecommendationAPI()
+            inst._trigger_workflow = lambda *a, **k: None  # 禁用后台工作流（测试隔离）
+            results.append(inst.create_request(dict(body)))
 
         try:
             threads = [threading.Thread(target=worker) for _ in range(2)]
@@ -464,6 +467,8 @@ class TestApiApplication:
             return orig(inst, request_id, k, ph, b, sid, now)
 
         a, b = RecommendationAPI(), RecommendationAPI()
+        a._trigger_workflow = lambda *a, **k: None  # 禁用后台工作流（测试隔离）
+        b._trigger_workflow = lambda *a, **k: None
         d1mod.RecommendationAPI._create_new = slow_create_new
         try:
             def run_a():
