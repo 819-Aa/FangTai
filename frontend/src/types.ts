@@ -1,17 +1,7 @@
-export interface UserProfile {
-  id: number;
-  display_name: string;
-  age?: number;
-  gender?: string;
-  allergies: string[];
-  diseases: string[];
-  special_group: string[];
-}
-
-export interface Participant {
+// 匿名参与者槽位：只携带 participant_ref，不读取/提交真实 user_id 或健康详情
+export interface AnonymousParticipant {
   participant_ref: string;
-  user_id: number;
-  display_name: string;
+  label: string;
 }
 
 export interface RequestState {
@@ -37,3 +27,18 @@ export interface ChatMessage {
   createdAt: number;
   status: "sending" | "complete" | "error";
 }
+
+// 终态独立展示（禁止统一成普通失败）
+export const TERMINAL_STATUSES = [
+  "completed",
+  "no_safe_menu",
+  "no_feasible_menu",
+  "strict_time_indeterminate",
+  "failed",
+  "cancelled",
+  "interrupted",
+] as const;
+
+export type TerminalStatus = (typeof TERMINAL_STATUSES)[number];
+
+export const TERMINAL_SET = new Set<string>(TERMINAL_STATUSES);

@@ -9,7 +9,9 @@ import { useRecommendationStore } from "@/stores/recommendation";
 const store = useRecommendationStore();
 
 onMounted(() => {
-  void store.loadProfiles();
+  // 复用持久化 session_id（不创建无关新会话）；默认一个匿名成员
+  void store.ensureSession();
+  if (!store.selectedRefs.length) store.addSlot();
 });
 </script>
 
@@ -21,12 +23,11 @@ onMounted(() => {
         <span>健康菜品推荐系统 V2</span>
       </div>
       <ParticipantContext
-        :profiles="store.profiles"
-        :selected-ids="store.selectedIds"
-        :loading="store.loadingProfiles"
+        :slots="store.slots"
+        :selected-refs="store.selectedRefs"
         :disabled="store.isStreaming"
-        @bind="store.bindProfile"
-        @remove="store.removeProfile"
+        @add="store.addSlot"
+        @remove="store.removeSlot"
       />
     </header>
 
@@ -40,7 +41,7 @@ onMounted(() => {
       :status="store.status"
       :is-streaming="store.isStreaming"
       :can-send="store.canSend"
-      :participants="store.selectedProfiles"
+      :participants="store.selectedSlots"
       @send="store.send"
     />
   </div>
