@@ -98,5 +98,15 @@ def scan_forbidden_fields(obj: Any, path: str = "") -> list[str]:
     return violations
 
 
+def strip_forbidden_fields(obj: Any) -> Any:
+    """递归移除禁止字段（投影），返回副本，其余结构不变。"""
+    if isinstance(obj, dict):
+        return {k: strip_forbidden_fields(v) for k, v in obj.items()
+                if k not in FORBIDDEN_RESPONSE_FIELDS}
+    if isinstance(obj, list):
+        return [strip_forbidden_fields(i) for i in obj]
+    return obj
+
+
 def now_iso() -> str:
     return datetime.now(UTC).isoformat()

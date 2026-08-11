@@ -13,8 +13,17 @@ from food_agent_v2.d1.schemas import (
     SSEEventType,
     now_iso,
     scan_forbidden_fields,
+    strip_forbidden_fields,
     validate_create_request,
 )
+
+
+class SensitiveDataBlocked(Exception):
+    """SSE payload 含禁止字段：阻止该事件发布及后续成功事件（fail-closed）。
+
+    outbox dispatcher 捕获后停止该 request 的后序事件，对应 outbox 记录
+    不会被当作成功投递。
+    """
 
 
 class RecommendationAPI:
@@ -61,6 +70,23 @@ class RecommendationAPI:
         if key and rid:
             self._idempotency[key] = {"payload_hash": phash, "request_id": rid}
 
+    def _save_idempotency(self, key: str, payload_hash: str,
+                          request_id: str) -> None:
+        """幂等索引持久化到 Redis（跨 API 重启有效）。Redis 不可用时降级内存。"""
+        try:
+            from food_agent_v2.c4.redis_store import RedisSessionStore
+            RedisSessionStore().save_idempotency(key, payload_hash, request_id)
+        except Exception:
+            pass
+
+    def _load_idempotency(self, key: str) -> dict | None:
+        """从 Redis 加载幂等索引（跨 API 重启）。Redis 不可用返回 None。"""
+        try:
+            from food_agent_v2.c4.redis_store import RedisSessionStore
+            return RedisSessionStore().load_idempotency(key)
+        except Exception:
+            return None
+
     # ---- POST /v1/recommendation-requests ----
 
     def create_request(self, body: dict) -> tuple[int, dict]:
@@ -73,11 +99,15 @@ class RecommendationAPI:
         key = body["idempotency_key"]
         payload_hash = self._hash_payload(body)
 
-        # 幂等检查
-        if key in self._idempotency:
-            existing = self._idempotency[key]
+        # 幂等检查（内存 + Redis 持久索引，跨 API 重启有效）
+        existing = self._idempotency.get(key)
+        if existing is None:
+            existing = self._load_idempotency(key)
+        if existing:
             if existing["payload_hash"] == payload_hash:
-                # 相同请求 → 返回已有
+                # 相同请求 → 返回已有（必要时从 Redis 恢复原请求状态）
+                if existing["request_id"] not in self._requests:
+                    self._restore_request(existing["request_id"])
                 req = self._requests.get(existing["request_id"])
                 if req:
                     return 200, {
@@ -85,7 +115,8 @@ class RecommendationAPI:
                         "session_id": req["session_id"],
                         "status": req["status"],
                         "created_at": req["created_at"],
-                        "result_summary": req.get("result_summary"),
+                        "result_summary": strip_forbidden_fields(
+                            req.get("result_summary")),
                     }
             else:
                 # 相同键不同载荷 → 冲突
@@ -117,6 +148,7 @@ class RecommendationAPI:
 
         self._requests[request_id] = req_state
         self._idempotency[key] = {"payload_hash": payload_hash, "request_id": request_id}
+        self._save_idempotency(key, payload_hash, request_id)
         self._events[request_id] = []
         self._event_cursors[request_id] = 1
 
@@ -153,8 +185,9 @@ class RecommendationAPI:
             "created_at": req["created_at"],
             "updated_at": req.get("updated_at", req["created_at"]),
             "stage_events_cursor": req.get("stage_events_cursor", 0),
-            "result_summary": req.get("result_summary"),
-            "error": req.get("error"),
+            # 统一禁止字段投影：result_summary/error 不得泄漏 user_id/disease_name 等
+            "result_summary": strip_forbidden_fields(req.get("result_summary")),
+            "error": strip_forbidden_fields(req.get("error")),
         }
 
     # ---- GET /v1/recommendation-requests/{request_id}/events ----
@@ -179,27 +212,32 @@ class RecommendationAPI:
                     event_id: str | None = None) -> None:
         """发布 SSE 事件。
 
-        event_id 为显式稳定 ID（T19 outbox）：相同 event_id 重复发布只保留一份事实；
-        未提供时使用自增整数游标（历史行为）。stage_events_cursor 始终为整数，
-        只随自增事件推进；稳定字符串 event_id 不进入该整数字段（integer 契约）。
+        event_id 为显式稳定 ID（T19 outbox）：相同 event_id 重复发布只保留一份事实，
+        且不得再次递增游标。stage_events_cursor 始终为整数，等于已发布事件总数，
+        每个首次发布的事件（含稳定字符串 outbox event_id）都递增；重复 event_id
+        提前返回不递增。
         """
         if event_id is not None:
             existing = [e for e in self._events.get(request_id, [])
                         if e.get("id") == event_id]
             if existing:
-                return  # 幂等：同 event_id 已发布 → 不重复
+                return  # 幂等：同 event_id 已发布 → 不重复、不递增游标
             eid = event_id
         else:
             eid = str(self._event_cursors.get(request_id, 1))
-            self._event_cursors[request_id] = int(eid) + 1
-            if request_id in self._requests:
-                self._requests[request_id]["stage_events_cursor"] = int(eid)
+            while any(e.get("id") == eid for e in self._events.get(request_id, [])):
+                self._event_cursors[request_id] = int(eid) + 1
+                eid = str(self._event_cursors[request_id])
         event = {
             "id": eid,
             "event": event_type.value,
             "data": json.dumps(payload, ensure_ascii=False),
         }
         self._events.setdefault(request_id, []).append(event)
+        published = len(self._events[request_id])
+        self._event_cursors[request_id] = published + 1
+        if request_id in self._requests:
+            self._requests[request_id]["stage_events_cursor"] = published
         self._persist_request(request_id)
 
     # ---- POST /v1/recommendation-requests/{request_id}/cancel ----
@@ -211,7 +249,8 @@ class RecommendationAPI:
         if not req:
             return 404, {"error": "NOT_FOUND"}
 
-        terminal = {"completed", "failed", "no_safe_menu", "no_feasible_menu", "cancelled"}
+        # 已完成/失败等终态不可取消（409）；已取消请求重复取消为幂等成功（200）。
+        terminal = {"completed", "failed", "no_safe_menu", "no_feasible_menu"}
         if req["status"] in terminal:
             return 409, {"error": "REQUEST_ALREADY_TERMINAL", "current_status": req["status"]}
 
@@ -240,50 +279,73 @@ class RecommendationAPI:
     def publish_clarification_event(self, request_id: str,
                                     query_plan: dict | None = None) -> None:
         """查询理解需要澄清时发布 clarificaton_needed 事件（文档 09 §8.2）。"""
-        self._emit_event(request_id, SSEEventType.CLARIFICATION_NEEDED, {
+        payload = {
             "request_id": request_id,
             "clarification": (query_plan or {}).get(
                 "clarification_question", "请补充必要信息后再推荐"),
-        })
+        }
+        if scan_forbidden_fields(payload):
+            self._emit_event(request_id, SSEEventType.ERROR, {
+                "error_code": "SENSITIVE_DATA_EXPOSURE",
+                "message": f"Forbidden fields: {scan_forbidden_fields(payload)}",
+            })
+            return
+        self._emit_event(request_id, SSEEventType.CLARIFICATION_NEEDED, payload)
 
     def publish_analysis_event(self, request_id: str, stage: str,
                                summary: str, evidence_refs: list[str]) -> None:
-        """C3 通过此接口发布阶段分析事件。"""
-        payload = scan_forbidden_fields({
+        """C3 通过此接口发布阶段分析事件（payload 为原始 stage/summary/evidence_refs）。"""
+        payload = {
             "stage": stage,
             "summary": summary,
             "evidence_refs": evidence_refs,
-        })
+        }
         if scan_forbidden_fields(payload):
-            return  # 禁止字段拦截
+            return  # 禁止字段拦截：不发布
         self._emit_event(request_id, SSEEventType.ANALYSIS_READY, payload)
 
     def publish_answer_event(self, request_id: str, text: str,
                             menu_ref: str, evidence_refs: list[str],
                             event_id: str | None = None) -> None:
-        """C3 通过此接口发布回答事件（event_id 为 outbox 稳定 ID，幂等去重）。"""
-        violations = scan_forbidden_fields({
-            "text": text, "menu_ref": menu_ref,
+        """C3 通过此接口发布回答事件（event_id 为 outbox 稳定 ID，幂等去重）。
+
+        禁止字段拦截时：发 error 事件并抛 SensitiveDataBlocked → outbox dispatcher
+        停止该 request 后序事件，result_committed 不再发布，对应 outbox 记录
+        不被当作成功投递。
+        """
+        payload = {
+            "text": text,
+            "menu_ref": menu_ref,
             "evidence_refs": evidence_refs,
-        })
+        }
+        violations = scan_forbidden_fields(payload)
         if violations:
             self._emit_event(request_id, SSEEventType.ERROR, {
                 "error_code": "SENSITIVE_DATA_EXPOSURE",
                 "message": f"Forbidden fields: {violations}",
             }, event_id=event_id)
-            return
-        self._emit_event(request_id, SSEEventType.ANSWER_READY, {
-            "text": text,
-            "menu_ref": menu_ref,
-            "evidence_refs": evidence_refs,
-        }, event_id=event_id)
+            raise SensitiveDataBlocked(
+                f"SENSITIVE_DATA_EXPOSURE: {violations}")
+        self._emit_event(request_id, SSEEventType.ANSWER_READY, payload,
+                         event_id=event_id)
 
     def publish_result_committed(self, request_id: str, menu_summary: dict,
                                  event_id: str | None = None) -> None:
-        self._emit_event(request_id, SSEEventType.RESULT_COMMITTED, {
+        """发布 result_committed（禁止字段扫描；被拦截时抛错阻止投递）。"""
+        payload = {
             "request_id": request_id,
             "menu_summary": menu_summary,
-        }, event_id=event_id)
+        }
+        violations = scan_forbidden_fields(payload)
+        if violations:
+            self._emit_event(request_id, SSEEventType.ERROR, {
+                "error_code": "SENSITIVE_DATA_EXPOSURE",
+                "message": f"Forbidden fields: {violations}",
+            }, event_id=event_id)
+            raise SensitiveDataBlocked(
+                f"SENSITIVE_DATA_EXPOSURE: {violations}")
+        self._emit_event(request_id, SSEEventType.RESULT_COMMITTED, payload,
+                         event_id=event_id)
 
     def update_status(self, request_id: str, status: str,
                       result_summary: dict | None = None,

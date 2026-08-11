@@ -137,6 +137,26 @@ class RedisSessionStore:
                 return json.loads(raw)
         return None
 
+    # ---- 幂等索引（跨 API 重启持久有效；T20）----
+
+    def save_idempotency(self, key: str, payload_hash: str,
+                         request_id: str) -> None:
+        self._connect()
+        k = self._key("idem", key)
+        if self._client:
+            self._client.setex(k, self.TTL_SECONDS, json.dumps(
+                {"payload_hash": payload_hash, "request_id": request_id},
+                ensure_ascii=False))
+
+    def load_idempotency(self, key: str) -> dict | None:
+        self._connect()
+        k = self._key("idem", key)
+        if self._client:
+            raw = self._client.get(k)
+            if raw:
+                return json.loads(raw)
+        return None
+
     # ---- 会话锁（fencing token）----
 
     def acquire_session_lock(self, session_id: str, worker_id: str) -> str | None:

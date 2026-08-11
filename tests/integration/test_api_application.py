@@ -1,20 +1,39 @@
-"""T20 API 应用集成测试：SSE 稳定 ID 续传、/users 匿名隔离、取消/失败不发成功事件。
+"""T20 API 应用集成测试：SSE 稳定 ID 续传、/users 匿名隔离、取消/失败不发成功事件、
+错误 Schema、游标递增、禁止字段投影、幂等持久、真实 session 查询。
 
-依赖 MySQL/Redis 可用（请求/取消真实存储）。TestClient 不进入 lifespan 以跳过模型预热。
+依赖 MySQL/Redis 可用（请求/取消/session/outbox 真实存储）。
+TestClient 不进入 lifespan 以跳过模型预热。
 """
 
+import json
 import uuid
 
 import pytest
 from fastapi.testclient import TestClient
 
 from food_agent_v2.api_app import app
-from food_agent_v2.d1 import api
+from food_agent_v2.d1 import SensitiveDataBlocked, api
 from food_agent_v2.d1.schemas import SSEEventType
 
 
 def _unique(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:8]}"
+
+
+def _mysql_available() -> bool:
+    try:
+        import pymysql
+
+        from food_agent_v2.core.config import load_config
+        cfg = load_config()
+        conn = pymysql.connect(host=cfg.mysql.host, port=cfg.mysql.port,
+                               user=cfg.mysql.user, password=cfg.mysql.password,
+                               database=cfg.mysql.database, charset="utf8mb4",
+                               connect_timeout=5)
+        conn.close()
+        return True
+    except Exception:
+        return False
 
 
 @pytest.fixture(scope="module")
@@ -23,6 +42,13 @@ def client():
     c = TestClient(app)
     yield c
     c.close()
+
+
+@pytest.fixture(autouse=True)
+def _suppress_workflow(monkeypatch):
+    """避免 create_request 触发真实工作流线程。"""
+    monkeypatch.setattr(api, "_trigger_workflow", lambda *a, **k: None)
+    yield
 
 
 class TestApiApplication:
@@ -96,3 +122,183 @@ class TestApiApplication:
         code, resp = api.get_request_status(rid)
         assert code == 200
         assert isinstance(resp["stage_events_cursor"], int)
+
+    # ---- 契约缺口回归（Codex 黑盒验证）----
+
+    def test_invalid_json_returns_422_top_level(self, client) -> None:
+        """非法 JSON → 顶层 422 VALIDATION_FAILED（不 500、不包 detail）。"""
+        resp = client.post("/v1/recommendation-requests", content="{not-json")
+        assert resp.status_code == 422
+        body = resp.json()
+        assert body["error"] == "VALIDATION_FAILED"
+        assert "detail" not in body
+        assert any(e["field"] == "body" for e in body["details"])
+
+    def test_error_schema_is_top_level(self, client) -> None:
+        """422/404 错误结构在顶层，不包在 detail 中。"""
+        resp = client.post("/v1/recommendation-requests",
+                           json={"message": "x",
+                                 "participants": [{"participant_ref": "p1"}]})
+        assert resp.status_code == 422
+        body = resp.json()
+        assert body["error"] == "VALIDATION_FAILED"
+        assert "details" in body and "detail" not in body
+
+        resp = client.get(f"/v1/recommendation-requests/{_unique('missing')}")
+        assert resp.status_code == 404
+        body = resp.json()
+        assert body["error"] == "NOT_FOUND"
+        assert "detail" not in body
+
+    def test_analysis_event_payload_is_real_data(self) -> None:
+        """analysis_ready 的 data 为原始 stage/summary/evidence_refs（非 violations 列表）。"""
+        rid = _unique("r")
+        api._requests[rid] = {"request_id": rid, "status": "running"}
+        api.publish_analysis_event(rid, "health", "分析了 10 道菜", ["ev:1"])
+        ev = next(e for e in api.subscribe_events(rid) if e["event"] == "analysis_ready")
+        data = json.loads(ev["data"])
+        assert data["stage"] == "health"
+        assert data["summary"] == "分析了 10 道菜"
+        assert data["evidence_refs"] == ["ev:1"]
+        assert isinstance(data, dict)
+
+    def test_stage_cursor_increments_on_every_new_event(self) -> None:
+        """每个首次发布事件（含稳定字符串 id）递增游标；重复 event_id 不递增。"""
+        rid = _unique("r")
+        api._requests[rid] = {"request_id": rid, "status": "running",
+                              "session_id": "s", "created_at": "t",
+                              "stage_events_cursor": 0}
+        api._emit_event(rid, SSEEventType.REQUEST_ACCEPTED, {"request_id": rid})
+        assert api._requests[rid]["stage_events_cursor"] == 1
+        api.publish_answer_event(rid, "菜单", "m", ["e"], event_id=f"ev_answer_{rid}")
+        assert api._requests[rid]["stage_events_cursor"] == 2
+        api.publish_result_committed(rid, {"plan_id": "p"}, event_id=f"ev_result_{rid}")
+        assert api._requests[rid]["stage_events_cursor"] == 3
+        # 重复 event_id → 不递增
+        api.publish_answer_event(rid, "菜单", "m", ["e"], event_id=f"ev_answer_{rid}")
+        assert api._requests[rid]["stage_events_cursor"] == 3
+        # GET 状态返回精确整数值
+        code, resp = api.get_request_status(rid)
+        assert code == 200 and resp["stage_events_cursor"] == 3
+
+    def test_get_status_projects_forbidden_fields(self) -> None:
+        """GET 状态 result_summary 统一禁止字段投影，不泄漏 user_id/disease_name。"""
+        rid = _unique("r")
+        api._requests[rid] = {
+            "request_id": rid, "status": "completed", "session_id": "s",
+            "created_at": "t", "stage_events_cursor": 1,
+            "result_summary": {"plan_id": "p", "user_id": 7,
+                               "disease_name": "糖尿病"},
+            "error": {"code": "X", "user_id": 7},
+        }
+        code, resp = api.get_request_status(rid)
+        assert code == 200
+        assert "user_id" not in resp["result_summary"]
+        assert "disease_name" not in resp["result_summary"]
+        assert resp["result_summary"]["plan_id"] == "p"
+        assert "user_id" not in resp["error"]
+
+    def test_blocked_answer_halts_success_chain(self) -> None:
+        """answer_ready 含禁止键 → publish 抛 SensitiveDataBlocked（阻止成功链）。"""
+        rid = _unique("r")
+        api._requests[rid] = {"request_id": rid, "status": "running"}
+        with pytest.raises(SensitiveDataBlocked):
+            api.publish_answer_event(rid, "菜单", {"user_id": 7}, ["e"],
+                                     event_id=f"ev_answer_{rid}")
+        types = [e["event"] for e in api.subscribe_events(rid)]
+        assert "answer_ready" not in types
+        assert "error" in types  # 发出 error 事件
+        assert "result_committed" not in types
+
+    @pytest.mark.skipif(not _mysql_available(), reason="MySQL 不可用")
+    def test_blocked_answer_halts_outbox_dispatch(self) -> None:
+        """answer_ready 被拦截 → outbox dispatcher 停止：result_committed 不发布、outbox 不标记 dispatched。"""
+        import pymysql
+
+        from food_agent_v2.application.outbox import OutboxDispatcher
+        from food_agent_v2.core.config import load_config
+        rid = _unique("r")
+        api._requests[rid] = {"request_id": rid, "status": "running", "session_id": "s"}
+        cfg = load_config().mysql
+        conn = pymysql.connect(host=cfg.host, port=cfg.port, user=cfg.user,
+                               password=cfg.password, database=cfg.database,
+                               charset="utf8mb4")
+        cur = conn.cursor()
+        cur.execute("DELETE FROM outbox WHERE request_id=%s", (rid,))
+        cur.execute(
+            "INSERT INTO outbox (event_id, request_id, event_type, payload, seq, status) "
+            "VALUES (%s,%s,%s,%s,%s,'pending')",
+            (f"ev_answer_{rid}", rid, "answer_ready",
+             json.dumps({"text": "菜单", "menu_ref": {"user_id": 7},
+                         "evidence_refs": []}), 1))
+        cur.execute(
+            "INSERT INTO outbox (event_id, request_id, event_type, payload, seq, status) "
+            "VALUES (%s,%s,%s,%s,%s,'pending')",
+            (f"ev_result_{rid}", rid, "result_committed",
+             json.dumps({"menu_summary": {"plan_id": "p"}}), 2))
+        conn.commit()
+        conn.close()
+        try:
+            OutboxDispatcher(d1_api=api).dispatch_request(rid)
+            types = [e["event"] for e in api.subscribe_events(rid)]
+            assert "answer_ready" not in types
+            assert "result_committed" not in types
+            conn = pymysql.connect(host=cfg.host, port=cfg.port, user=cfg.user,
+                                   password=cfg.password, database=cfg.database,
+                                   charset="utf8mb4")
+            cur = conn.cursor()
+            cur.execute("SELECT status, COUNT(*) FROM outbox WHERE request_id=%s "
+                        "GROUP BY status", (rid,))
+            statuses = {r[0]: r[1] for r in cur.fetchall()}
+            conn.close()
+            assert statuses.get("dispatched", 0) == 0  # 未当作成功投递
+        finally:
+            conn = pymysql.connect(host=cfg.host, port=cfg.port, user=cfg.user,
+                                   password=cfg.password, database=cfg.database,
+                                   charset="utf8mb4")
+            cur = conn.cursor()
+            cur.execute("DELETE FROM outbox WHERE request_id=%s", (rid,))
+            conn.commit()
+            conn.close()
+
+    def test_idempotency_survives_instance_restart(self) -> None:
+        """新 RecommendationAPI 实例（模拟进程重启）仍识别幂等键：同载荷 200、不同载荷 409。"""
+        from food_agent_v2.d1 import RecommendationAPI
+        body = {
+            "idempotency_key": _unique("ik"),
+            "participants": [{"participant_ref": "p1", "user_id": 1}],
+            "message": "推荐菜单",
+            "config": {},
+        }
+        code1, resp1 = api.create_request(body)
+        assert code1 == 202
+        fresh = RecommendationAPI()
+        code2, resp2 = fresh.create_request(dict(body))
+        assert code2 == 200
+        assert resp2["request_id"] == resp1["request_id"]
+        diff = dict(body)
+        diff["message"] = "不同消息"
+        code3, resp3 = fresh.create_request(diff)
+        assert code3 == 409
+        assert resp3["error"] == "IDEMPOTENCY_KEY_REUSED"
+        assert resp3["existing_request_id"] == resp1["request_id"]
+
+    @pytest.mark.skipif(not _mysql_available(), reason="MySQL 不可用")
+    def test_session_get_returns_real_data_and_404(self, client) -> None:
+        """session：不存在 404；创建后返回真实 participant_refs/request_count/current_menu。"""
+        resp = client.get(f"/v1/sessions/{_unique('missing')}")
+        assert resp.status_code == 404
+        body = resp.json()
+        assert body["error"] == "NOT_FOUND"
+
+        resp = client.post("/v1/sessions",
+                           json={"participants": [{"participant_ref": "p1"}]})
+        assert resp.status_code == 200
+        sid = resp.json()["session_id"]
+        resp = client.get(f"/v1/sessions/{sid}")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["session_id"] == sid
+        assert body["participant_refs"] == ["p1"]
+        assert body["request_count"] == 0
+        assert "current_menu" in body
