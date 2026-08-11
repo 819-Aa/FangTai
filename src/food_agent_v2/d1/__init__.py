@@ -63,19 +63,24 @@ class RecommendationAPI:
         self._requests[request_id] = blob.get("state", {})
         self._events[request_id] = blob.get("events", [])
         self._event_cursors[request_id] = blob.get("cursor", 1)
-        # 幂等键恢复（含 payload_hash，保证幂等判定完整）
+        # 幂等键恢复（含完整公开元数据，保证幂等判定与 200 响应完整）
         key = blob.get("state", {}).get("idempotency_key")
         rid = blob.get("state", {}).get("request_id")
         phash = blob.get("state", {}).get("payload_hash")
         if key and rid:
-            self._idempotency[key] = {"payload_hash": phash, "request_id": rid}
+            self._idempotency[key] = {
+                "payload_hash": phash,
+                "request_id": rid,
+                "session_id": blob.get("state", {}).get("session_id"),
+                "created_at": blob.get("state", {}).get("created_at"),
+                "status": blob.get("state", {}).get("status"),
+            }
 
-    def _save_idempotency(self, key: str, payload_hash: str,
-                          request_id: str) -> None:
-        """幂等索引持久化到 Redis（跨 API 重启有效）。Redis 不可用时降级内存。"""
+    def _save_idempotency(self, key: str, record: dict) -> None:
+        """幂等记录持久化到 Redis（含公开响应元数据；跨 API 重启有效）。"""
         try:
             from food_agent_v2.c4.redis_store import RedisSessionStore
-            RedisSessionStore().save_idempotency(key, payload_hash, request_id)
+            RedisSessionStore().save_idempotency(key, record)
         except Exception:
             pass
 
@@ -92,8 +97,10 @@ class RecommendationAPI:
     def create_request(self, body: dict) -> tuple[int, dict]:
         """创建推荐请求。返回 (status_code, response_body)。
 
-        幂等声明为原子操作（Redis SET NX）：并发同键同载荷只有一个赢家创建/启动
-        工作流（一次 202），其余调用返回 200 且同一 request_id；同键不同载荷 409。
+        幂等声明为原子操作（Redis SET NX 写入完整公开元数据）：并发同键同载荷只有
+        一个赢家创建/启动工作流（一次 202）；输家即使赢家尚未写完 request state，
+        也直接按原子记录返回 200 且同一 request_id；同键不同载荷 409；
+        Redis 不可用 → 顶层 503，不写请求、不启动工作流。
         """
         # 校验
         error = validate_create_request(body)
@@ -103,66 +110,77 @@ class RecommendationAPI:
         key = body["idempotency_key"]
         payload_hash = self._hash_payload(body)
 
-        # 已有幂等（内存 + Redis 持久索引，跨 API 重启有效）
+        # 同实例内存幂等快路径
         existing = self._idempotency.get(key)
-        if existing is None:
-            existing = self._load_idempotency(key)
         if existing:
-            return self._resolve_existing(key, existing, payload_hash)
+            return self._resolve_existing(existing, payload_hash)
 
-        # 原子声明幂等键（SET NX）：只有一个赢家
+        # 原子声明（SET NX 写入完整公开元数据）
         request_id = str(uuid.uuid4())
-        if self._claim_idempotency(key, payload_hash, request_id):
-            return self._create_new(request_id, key, payload_hash, body)
+        session_id = body.get("session_id") or f"sess_{uuid.uuid4().hex[:8]}"
+        now = now_iso()
+        state, record = self._claim_idempotency(
+            key, payload_hash, request_id, session_id, now, "accepted")
+        if state == "winner":
+            return self._create_new(request_id, key, payload_hash, body,
+                                    session_id, now)
+        if state == "existing" and record:
+            # 即使赢家尚未写完 request state，也直接按 record 返回（不误返 409，
+            # 不启动第二个工作流）
+            self._idempotency[key] = record
+            return self._resolve_existing(record, payload_hash)
+        # Redis 不可用 → 顶层 503，不写请求、不启动工作流
+        return 503, {"error": "IDEMPOTENCY_STORE_UNAVAILABLE",
+                     "message": "idempotency store unavailable"}
 
-        # 其他实例赢得声明 → 读取其幂等记录按语义返回
-        existing = self._load_idempotency(key)
-        if existing:
-            return self._resolve_existing(key, existing, payload_hash)
-        # 极端竞争：声明失败但读不到 → 重试一次声明
-        if self._claim_idempotency(key, payload_hash, request_id):
-            return self._create_new(request_id, key, payload_hash, body)
-        return 409, {"error": "IDEMPOTENCY_KEY_REUSED",
-                     "existing_request_id": key}
-
-    def _resolve_existing(self, key: str, existing: dict,
+    def _resolve_existing(self, existing: dict,
                           payload_hash: str) -> tuple[int, dict]:
-        """按幂等语义解析既有记录：同载荷 200 原 request_id，不同载荷 409。"""
-        if existing.get("payload_hash") == payload_hash:
-            rid = existing.get("request_id")
-            if rid and rid not in self._requests:
-                self._restore_request(rid)
-            req = self._requests.get(rid) if rid else None
-            if req:
-                return 200, {
-                    "request_id": req["request_id"],
-                    "session_id": req["session_id"],
-                    "status": req["status"],
-                    "created_at": req["created_at"],
-                    "result_summary": strip_forbidden_fields(
-                        req.get("result_summary")),
-                }
-        return 409, {
-            "error": "IDEMPOTENCY_KEY_REUSED",
-            "existing_request_id": existing.get("request_id"),
+        """按幂等语义解析既有记录：同载荷 200 原 request_id，不同载荷 409。
+
+        优先返回完整 request state（若赢家已写完）；否则直接用原子记录中的公开
+        元数据构造 200 响应。
+        """
+        if existing.get("payload_hash") != payload_hash:
+            return 409, {
+                "error": "IDEMPOTENCY_KEY_REUSED",
+                "existing_request_id": existing.get("request_id"),
+            }
+        rid = existing.get("request_id")
+        if rid and rid not in self._requests:
+            self._restore_request(rid)
+        req = self._requests.get(rid) if rid else None
+        if req:
+            return 200, {
+                "request_id": req["request_id"],
+                "session_id": req["session_id"],
+                "status": req["status"],
+                "created_at": req["created_at"],
+                "result_summary": strip_forbidden_fields(
+                    req.get("result_summary")),
+            }
+        # 赢家尚未写完 request state → 原子记录公开元数据
+        return 200, {
+            "request_id": existing.get("request_id"),
+            "session_id": existing.get("session_id", ""),
+            "status": existing.get("status", "accepted"),
+            "created_at": existing.get("created_at", ""),
+            "result_summary": None,
         }
 
     def _claim_idempotency(self, key: str, payload_hash: str,
-                           request_id: str) -> bool:
-        """SET NX 原子声明幂等键（Redis 不可用时降级 True，单实例内存仍唯一）。"""
+                           request_id: str, session_id: str,
+                           created_at: str, status: str) -> tuple[str, dict | None]:
+        """SET NX 原子声明，三态 (winner/existing/unavailable, record)。"""
         try:
             from food_agent_v2.c4.redis_store import RedisSessionStore
             return RedisSessionStore().claim_idempotency(
-                key, payload_hash, request_id)
+                key, payload_hash, request_id, session_id, created_at, status)
         except Exception:
-            return True
+            return ("unavailable", None)
 
     def _create_new(self, request_id: str, key: str, payload_hash: str,
-                    body: dict) -> tuple[int, dict]:
+                    body: dict, session_id: str, now: str) -> tuple[int, dict]:
         """创建请求并启动工作流（仅幂等赢家调用）。"""
-        session_id = body.get("session_id") or f"sess_{uuid.uuid4().hex[:8]}"
-        now = now_iso()
-
         req_state = {
             "request_id": request_id,
             "session_id": session_id,
@@ -180,8 +198,15 @@ class RecommendationAPI:
         }
 
         self._requests[request_id] = req_state
-        self._idempotency[key] = {"payload_hash": payload_hash, "request_id": request_id}
-        self._save_idempotency(key, payload_hash, request_id)
+        record = {
+            "payload_hash": payload_hash,
+            "request_id": request_id,
+            "session_id": session_id,
+            "created_at": now,
+            "status": "accepted",
+        }
+        self._idempotency[key] = record
+        self._save_idempotency(key, record)
         self._events[request_id] = []
         self._event_cursors[request_id] = 1
 
@@ -395,6 +420,13 @@ class RecommendationAPI:
                 # 成功/业务终态：清除之前残留的错误（避免"completed + 旧错误码"不一致）
                 self._requests[request_id]["error"] = None
             self._persist_request(request_id)
+            # 幂等记录状态同步（跨重启重试返回最新 status）
+            key = self._requests[request_id].get("idempotency_key")
+            if key and key in self._idempotency:
+                rec = dict(self._idempotency[key])
+                rec["status"] = status
+                self._idempotency[key] = rec
+                self._save_idempotency(key, rec)
 
     def _trigger_workflow(self, request_id: str, session_id: str, body: dict) -> None:
         """在后台线程中触发 C3 工作流。"""

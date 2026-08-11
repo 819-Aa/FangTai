@@ -139,14 +139,12 @@ class RedisSessionStore:
 
     # ---- 幂等索引（跨 API 重启持久有效；T20）----
 
-    def save_idempotency(self, key: str, payload_hash: str,
-                         request_id: str) -> None:
+    def save_idempotency(self, key: str, record: dict) -> None:
         self._connect()
         k = self._key("idem", key)
         if self._client:
-            self._client.setex(k, self.TTL_SECONDS, json.dumps(
-                {"payload_hash": payload_hash, "request_id": request_id},
-                ensure_ascii=False))
+            self._client.setex(k, self.TTL_SECONDS,
+                               json.dumps(record, ensure_ascii=False))
 
     def load_idempotency(self, key: str) -> dict | None:
         self._connect()
@@ -158,20 +156,37 @@ class RedisSessionStore:
         return None
 
     def claim_idempotency(self, key: str, payload_hash: str,
-                          request_id: str) -> bool:
-        """SET NX 原子声明幂等键：并发下只有一个调用方赢得声明。
+                          request_id: str, session_id: str,
+                          created_at: str, status: str) -> tuple[str, dict | None]:
+        """SET NX 原子声明幂等键，并在声明时写入足够公开响应元数据。
 
-        返回 True 表示本调用赢得并已写入；False 表示已被其他实例声明。
-        Redis 不可用时返回 True（降级内存幂等兜底，单实例内仍唯一）。
+        三态返回 (state, record)：
+        - ("winner", record)：本调用赢得声明（并发下唯一），调用方创建并启动工作流；
+        - ("existing", record)：键已存在，返回既有记录（即使赢家尚未写完 request state，
+          也可直接按 record 构造 200 响应）；
+        - ("unavailable", None)：Redis 不可用或记录不可读，调用方必须返回 503，绝不放行。
         """
         self._connect()
         k = self._key("idem", key)
-        if self._client:
-            value = json.dumps({"payload_hash": payload_hash,
-                                "request_id": request_id},
-                               ensure_ascii=False)
-            return bool(self._client.set(k, value, nx=True, ex=self.TTL_SECONDS))
-        return True
+        if self._client is None:
+            return ("unavailable", None)
+        record = {
+            "payload_hash": payload_hash,
+            "request_id": request_id,
+            "session_id": session_id,
+            "created_at": created_at,
+            "status": status,
+        }
+        value = json.dumps(record, ensure_ascii=False)
+        try:
+            if self._client.set(k, value, nx=True, ex=self.TTL_SECONDS):
+                return ("winner", record)
+            raw = self._client.get(k)
+            if raw:
+                return ("existing", json.loads(raw))
+        except Exception:
+            return ("unavailable", None)
+        return ("unavailable", None)
 
     # ---- 会话锁（fencing token）----
 

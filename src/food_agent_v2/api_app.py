@@ -165,7 +165,14 @@ async def create_session(request: Request):
     participant_refs = [p.get("participant_ref") for p in body.get("participants", [])
                         if isinstance(p, dict) and p.get("participant_ref")]
     from food_agent_v2.c4 import ContextService
-    sid = ContextService().create_session_record(participant_refs)
+    try:
+        sid = ContextService().create_session_record(participant_refs)
+    except Exception:
+        # 存储基础设施异常 → 顶层 503 固定公开文案，不透传数据库异常
+        return JSONResponse(status_code=503, content={
+            "error": "SESSION_STORE_UNAVAILABLE",
+            "message": "session store unavailable",
+        })
     return JSONResponse(status_code=201, content={
         "session_id": sid,
         "created_at": time.time(),

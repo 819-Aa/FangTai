@@ -348,9 +348,14 @@ class TestApiApplication:
             rid_set = {r[1]["request_id"] for r in results}
             assert len(rid_set) == 1  # 同一 request_id
         finally:
-            rid = next(iter(rid_set)) if "rid_set" in dir() else None
-            for k in (f"v2:idem:{key}", *(f"v2:request:{rid}" if rid else ())):
-                _delete_redis_keys(k)
+            rid = None
+            for _, r in results:
+                rid = r.get("request_id")
+                break
+            keys = [f"v2:idem:{key}"]
+            if rid:
+                keys.append(f"v2:request:{rid}")
+            _delete_redis_keys(*keys)
 
     @pytest.mark.skipif(not _mysql_available(), reason="MySQL 不可用")
     def test_session_get_returns_real_data_and_404(self, client) -> None:
@@ -432,3 +437,117 @@ class TestApiApplication:
             resp = client.post("/v1/sessions", content=content)
             assert resp.status_code == 422, content
             assert resp.json()["error"] == "VALIDATION_FAILED"
+
+    # ---- 最终原子性（Codex 独立复现）----
+
+    def test_winner_delay_request_state_still_200_202(self) -> None:
+        """赢家 claim 后延迟写 request state 0.5s → 输家仍返回 200 且同一 request_id。"""
+        import threading
+        import time
+
+        import food_agent_v2.d1 as d1mod
+        from food_agent_v2.d1 import RecommendationAPI
+        body = {
+            "idempotency_key": _unique("ikd"),
+            "participants": [{"participant_ref": "p1", "user_id": 1}],
+            "message": "延迟赢家",
+            "config": {},
+        }
+        key = body["idempotency_key"]
+        claimed = threading.Event()
+        results: list[tuple[int, dict]] = []
+        orig = d1mod.RecommendationAPI._create_new
+
+        def slow_create_new(inst, request_id, k, ph, b, sid, now):
+            claimed.set()
+            time.sleep(0.5)  # 延迟 request state 写入
+            return orig(inst, request_id, k, ph, b, sid, now)
+
+        a, b = RecommendationAPI(), RecommendationAPI()
+        d1mod.RecommendationAPI._create_new = slow_create_new
+        try:
+            def run_a():
+                results.append(a.create_request(dict(body)))
+
+            def run_b():
+                claimed.wait(timeout=5)
+                results.append(b.create_request(dict(body)))
+
+            ta = threading.Thread(target=run_a)
+            tb = threading.Thread(target=run_b)
+            ta.start()
+            tb.start()
+            ta.join(timeout=15)
+            tb.join(timeout=15)
+            codes = sorted(r[0] for r in results)
+            assert codes == [200, 202]  # 不误返 409
+            assert len({r[1]["request_id"] for r in results}) == 1
+        finally:
+            d1mod.RecommendationAPI._create_new = orig
+            rid = next((r[1]["request_id"] for r in results), None)
+            keys = [f"v2:idem:{key}"]
+            if rid:
+                keys.append(f"v2:request:{rid}")
+            _delete_redis_keys(*keys)
+
+    def test_redis_unavailable_returns_503(self, monkeypatch) -> None:
+        """Redis 不可用 → 顶层 503、零请求状态、零工作流启动（不放行）。"""
+        import food_agent_v2.c4.redis_store as rsmod
+        from food_agent_v2.d1 import RecommendationAPI
+
+        def unavailable(self, *a, **k):
+            return ("unavailable", None)
+
+        monkeypatch.setattr(rsmod.RedisSessionStore, "claim_idempotency", unavailable)
+        inst = RecommendationAPI()
+        workflow_calls = []
+        monkeypatch.setattr(inst, "_trigger_workflow",
+                            lambda *a, **k: workflow_calls.append(1))
+        body = {
+            "idempotency_key": _unique("iku"),
+            "participants": [{"participant_ref": "p1", "user_id": 1}],
+            "message": "redis down",
+            "config": {},
+        }
+        code, resp = inst.create_request(body)
+        assert code == 503
+        assert resp["error"] == "IDEMPOTENCY_STORE_UNAVAILABLE"
+        assert len(inst._requests) == 0  # 零请求状态
+        assert len(inst._events) == 0  # 无 request 事件
+        assert workflow_calls == []  # 零工作流启动
+
+    def test_session_create_storage_exception_returns_503(self, client,
+                                                          monkeypatch) -> None:
+        """session create 存储异常 → 顶层 503，且不返回原始异常文本。"""
+        import food_agent_v2.c4 as c4mod
+
+        def boom(self, participant_refs):
+            raise RuntimeError("mysql connection refused: secret_db_host")
+
+        monkeypatch.setattr(c4mod.ContextService, "create_session_record", boom)
+        resp = client.post("/v1/sessions",
+                           json={"participants": [{"participant_ref": "p1"}]})
+        assert resp.status_code == 503
+        body = resp.json()
+        assert body["error"] == "SESSION_STORE_UNAVAILABLE"
+        assert "secret_db_host" not in resp.text
+        assert "mysql connection refused" not in resp.text
+
+    def test_cleanup_removes_all_redis_keys(self) -> None:
+        """清理后相关 Redis idem key 与 request key 全部不存在。"""
+        from food_agent_v2.c4.redis_store import RedisSessionStore
+        body = {
+            "idempotency_key": _unique("ikcl"),
+            "participants": [{"participant_ref": "p1", "user_id": 1}],
+            "message": "清理",
+            "config": {},
+        }
+        key = body["idempotency_key"]
+        code, resp = api.create_request(body)
+        assert code == 202
+        rid = resp["request_id"]
+        _delete_redis_keys(f"v2:idem:{key}", f"v2:request:{rid}")
+        store = RedisSessionStore()
+        store._connect()
+        assert store._client.get(f"v2:idem:{key}") is None
+        assert store._client.get(f"v2:request:{rid}") is None
