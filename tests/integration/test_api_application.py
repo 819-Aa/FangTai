@@ -20,6 +20,37 @@ def _unique(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:8]}"
 
 
+def _delete_redis_keys(*redis_keys: str) -> None:
+    """清理测试产生的 Redis 幂等键/request key（T20 F）。"""
+    try:
+        from food_agent_v2.c4.redis_store import RedisSessionStore
+        store = RedisSessionStore()
+        store._connect()
+        if store._client:
+            for k in redis_keys:
+                store._client.delete(k)
+    except Exception:
+        pass
+
+
+def _delete_mysql_session(session_id: str) -> None:
+    """清理测试产生的 MySQL session 行（T20 F）。"""
+    try:
+        import pymysql
+
+        from food_agent_v2.core.config import load_config
+        cfg = load_config().mysql
+        conn = pymysql.connect(host=cfg.host, port=cfg.port, user=cfg.user,
+                               password=cfg.password, database=cfg.database,
+                               charset="utf8mb4")
+        cur = conn.cursor()
+        cur.execute("DELETE FROM sessions WHERE session_id=%s", (session_id,))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+
 def _mysql_available() -> bool:
     try:
         import pymysql
@@ -270,22 +301,60 @@ class TestApiApplication:
             "message": "推荐菜单",
             "config": {},
         }
-        code1, resp1 = api.create_request(body)
-        assert code1 == 202
-        fresh = RecommendationAPI()
-        code2, resp2 = fresh.create_request(dict(body))
-        assert code2 == 200
-        assert resp2["request_id"] == resp1["request_id"]
-        diff = dict(body)
-        diff["message"] = "不同消息"
-        code3, resp3 = fresh.create_request(diff)
-        assert code3 == 409
-        assert resp3["error"] == "IDEMPOTENCY_KEY_REUSED"
-        assert resp3["existing_request_id"] == resp1["request_id"]
+        key = body["idempotency_key"]
+        try:
+            code1, resp1 = api.create_request(body)
+            assert code1 == 202
+            fresh = RecommendationAPI()
+            code2, resp2 = fresh.create_request(dict(body))
+            assert code2 == 200
+            assert resp2["request_id"] == resp1["request_id"]
+            diff = dict(body)
+            diff["message"] = "不同消息"
+            code3, resp3 = fresh.create_request(diff)
+            assert code3 == 409
+            assert resp3["error"] == "IDEMPOTENCY_KEY_REUSED"
+            assert resp3["existing_request_id"] == resp1["request_id"]
+        finally:
+            _delete_redis_keys(f"v2:idem:{key}", f"v2:request:{resp1['request_id']}")
+
+    def test_concurrent_idempotency_single_request_id(self) -> None:
+        """并发两个实例同键同载荷 → 只有一个 202，其余 200 且同一 request_id。"""
+        import threading
+
+        from food_agent_v2.d1 import RecommendationAPI
+        body = {
+            "idempotency_key": _unique("ikc"),
+            "participants": [{"participant_ref": "p1", "user_id": 1}],
+            "message": "并发菜单",
+            "config": {},
+        }
+        key = body["idempotency_key"]
+        results: list[tuple[int, dict]] = []
+        barrier = threading.Barrier(2)
+
+        def worker():
+            barrier.wait()
+            results.append(RecommendationAPI().create_request(dict(body)))
+
+        try:
+            threads = [threading.Thread(target=worker) for _ in range(2)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(timeout=15)
+            codes = sorted(r[0] for r in results)
+            assert codes == [200, 202]
+            rid_set = {r[1]["request_id"] for r in results}
+            assert len(rid_set) == 1  # 同一 request_id
+        finally:
+            rid = next(iter(rid_set)) if "rid_set" in dir() else None
+            for k in (f"v2:idem:{key}", *(f"v2:request:{rid}" if rid else ())):
+                _delete_redis_keys(k)
 
     @pytest.mark.skipif(not _mysql_available(), reason="MySQL 不可用")
     def test_session_get_returns_real_data_and_404(self, client) -> None:
-        """session：不存在 404；创建后返回真实 participant_refs/request_count/current_menu。"""
+        """session：不存在 404；创建（201）后返回真实 participant_refs/request_count/current_menu。"""
         resp = client.get(f"/v1/sessions/{_unique('missing')}")
         assert resp.status_code == 404
         body = resp.json()
@@ -293,12 +362,73 @@ class TestApiApplication:
 
         resp = client.post("/v1/sessions",
                            json={"participants": [{"participant_ref": "p1"}]})
-        assert resp.status_code == 200
+        assert resp.status_code == 201
         sid = resp.json()["session_id"]
-        resp = client.get(f"/v1/sessions/{sid}")
-        assert resp.status_code == 200
+        try:
+            resp = client.get(f"/v1/sessions/{sid}")
+            assert resp.status_code == 200
+            body = resp.json()
+            assert body["session_id"] == sid
+            assert body["participant_refs"] == ["p1"]
+            assert body["request_count"] == 0
+            assert "current_menu" in body
+            assert "last_request_at" in body
+        finally:
+            _delete_mysql_session(sid)
+
+    def test_session_201_includes_last_request_at(self, client) -> None:
+        """POST /v1/sessions 返回 201 且含约定的 last_request_at。"""
+        resp = client.post("/v1/sessions",
+                           json={"participants": [{"participant_ref": "p1"}]})
+        assert resp.status_code == 201
         body = resp.json()
-        assert body["session_id"] == sid
-        assert body["participant_refs"] == ["p1"]
-        assert body["request_count"] == 0
-        assert "current_menu" in body
+        assert "session_id" in body
+        assert "last_request_at" in body
+        _delete_mysql_session(body["session_id"])
+
+    def test_session_infra_failure_is_503_not_404(self, client, monkeypatch) -> None:
+        """session 存储基础设施异常 → 503，不得伪装成 404。"""
+        import food_agent_v2.c4 as c4mod
+
+        def boom(self, session_id):
+            raise RuntimeError("mysql down")
+
+        monkeypatch.setattr(c4mod.ContextService, "get_session_state", boom)
+        resp = client.get(f"/v1/sessions/{_unique('x')}")
+        assert resp.status_code == 503
+        body = resp.json()
+        assert body["error"] == "SESSION_STORE_UNAVAILABLE"
+        assert body["error"] != "NOT_FOUND"
+
+    def test_session_route_no_direct_mysql_dependency(self) -> None:
+        """api_app 不得直接依赖 pymysql/MySQLSessionMemorySource（只经 C4 公开接口）。"""
+        import inspect
+
+        import food_agent_v2.api_app as api_app_mod
+        src = inspect.getsource(api_app_mod)
+        assert "MySQLSessionMemorySource" not in src
+        assert "import pymysql" not in src
+        assert "ContextService" in src  # 经 C4 公开接口
+
+    def test_duplicate_cancel_returns_409(self) -> None:
+        """终态 cancelled 重复取消 → 409（cancelled 在终态集合）。"""
+        rid = _unique("r")
+        api._requests[rid] = {"request_id": rid, "status": "accepted", "session_id": "s"}
+        code, _ = api.cancel_request(rid)
+        assert code == 200
+        code2, resp2 = api.cancel_request(rid)
+        assert code2 == 409
+        assert resp2["error"] == "REQUEST_ALREADY_TERMINAL"
+        assert resp2["current_status"] == "cancelled"
+
+    def test_non_object_body_returns_422(self, client) -> None:
+        """两个 POST 接口对 null/数组/字符串等非对象请求体统一返回顶层 422。"""
+        for content in ("null", "[]", "[1,2]", '"string"'):
+            resp = client.post("/v1/recommendation-requests", content=content)
+            assert resp.status_code == 422, content
+            assert resp.json()["error"] == "VALIDATION_FAILED"
+            assert "detail" not in resp.json()
+        for content in ("null", "[]", '"string"'):
+            resp = client.post("/v1/sessions", content=content)
+            assert resp.status_code == 422, content
+            assert resp.json()["error"] == "VALIDATION_FAILED"

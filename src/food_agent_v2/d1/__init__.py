@@ -90,7 +90,11 @@ class RecommendationAPI:
     # ---- POST /v1/recommendation-requests ----
 
     def create_request(self, body: dict) -> tuple[int, dict]:
-        """创建推荐请求。返回 (status_code, response_body)。"""
+        """创建推荐请求。返回 (status_code, response_body)。
+
+        幂等声明为原子操作（Redis SET NX）：并发同键同载荷只有一个赢家创建/启动
+        工作流（一次 202），其余调用返回 200 且同一 request_id；同键不同载荷 409。
+        """
         # 校验
         error = validate_create_request(body)
         if error:
@@ -99,34 +103,63 @@ class RecommendationAPI:
         key = body["idempotency_key"]
         payload_hash = self._hash_payload(body)
 
-        # 幂等检查（内存 + Redis 持久索引，跨 API 重启有效）
+        # 已有幂等（内存 + Redis 持久索引，跨 API 重启有效）
         existing = self._idempotency.get(key)
         if existing is None:
             existing = self._load_idempotency(key)
         if existing:
-            if existing["payload_hash"] == payload_hash:
-                # 相同请求 → 返回已有（必要时从 Redis 恢复原请求状态）
-                if existing["request_id"] not in self._requests:
-                    self._restore_request(existing["request_id"])
-                req = self._requests.get(existing["request_id"])
-                if req:
-                    return 200, {
-                        "request_id": req["request_id"],
-                        "session_id": req["session_id"],
-                        "status": req["status"],
-                        "created_at": req["created_at"],
-                        "result_summary": strip_forbidden_fields(
-                            req.get("result_summary")),
-                    }
-            else:
-                # 相同键不同载荷 → 冲突
-                return 409, {
-                    "error": "IDEMPOTENCY_KEY_REUSED",
-                    "existing_request_id": existing["request_id"],
-                }
+            return self._resolve_existing(key, existing, payload_hash)
 
-        # 创建请求（request_id 必须为完整 UUID：C3 工具回执按 UUID 绑定身份）
+        # 原子声明幂等键（SET NX）：只有一个赢家
         request_id = str(uuid.uuid4())
+        if self._claim_idempotency(key, payload_hash, request_id):
+            return self._create_new(request_id, key, payload_hash, body)
+
+        # 其他实例赢得声明 → 读取其幂等记录按语义返回
+        existing = self._load_idempotency(key)
+        if existing:
+            return self._resolve_existing(key, existing, payload_hash)
+        # 极端竞争：声明失败但读不到 → 重试一次声明
+        if self._claim_idempotency(key, payload_hash, request_id):
+            return self._create_new(request_id, key, payload_hash, body)
+        return 409, {"error": "IDEMPOTENCY_KEY_REUSED",
+                     "existing_request_id": key}
+
+    def _resolve_existing(self, key: str, existing: dict,
+                          payload_hash: str) -> tuple[int, dict]:
+        """按幂等语义解析既有记录：同载荷 200 原 request_id，不同载荷 409。"""
+        if existing.get("payload_hash") == payload_hash:
+            rid = existing.get("request_id")
+            if rid and rid not in self._requests:
+                self._restore_request(rid)
+            req = self._requests.get(rid) if rid else None
+            if req:
+                return 200, {
+                    "request_id": req["request_id"],
+                    "session_id": req["session_id"],
+                    "status": req["status"],
+                    "created_at": req["created_at"],
+                    "result_summary": strip_forbidden_fields(
+                        req.get("result_summary")),
+                }
+        return 409, {
+            "error": "IDEMPOTENCY_KEY_REUSED",
+            "existing_request_id": existing.get("request_id"),
+        }
+
+    def _claim_idempotency(self, key: str, payload_hash: str,
+                           request_id: str) -> bool:
+        """SET NX 原子声明幂等键（Redis 不可用时降级 True，单实例内存仍唯一）。"""
+        try:
+            from food_agent_v2.c4.redis_store import RedisSessionStore
+            return RedisSessionStore().claim_idempotency(
+                key, payload_hash, request_id)
+        except Exception:
+            return True
+
+    def _create_new(self, request_id: str, key: str, payload_hash: str,
+                    body: dict) -> tuple[int, dict]:
+        """创建请求并启动工作流（仅幂等赢家调用）。"""
         session_id = body.get("session_id") or f"sess_{uuid.uuid4().hex[:8]}"
         now = now_iso()
 
@@ -249,8 +282,8 @@ class RecommendationAPI:
         if not req:
             return 404, {"error": "NOT_FOUND"}
 
-        # 已完成/失败等终态不可取消（409）；已取消请求重复取消为幂等成功（200）。
-        terminal = {"completed", "failed", "no_safe_menu", "no_feasible_menu"}
+        # 终态（含 cancelled）不可取消 → 重复取消返回 409
+        terminal = {"completed", "failed", "no_safe_menu", "no_feasible_menu", "cancelled"}
         if req["status"] in terminal:
             return 409, {"error": "REQUEST_ALREADY_TERMINAL", "current_status": req["status"]}
 

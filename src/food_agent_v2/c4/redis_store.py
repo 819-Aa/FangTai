@@ -157,6 +157,22 @@ class RedisSessionStore:
                 return json.loads(raw)
         return None
 
+    def claim_idempotency(self, key: str, payload_hash: str,
+                          request_id: str) -> bool:
+        """SET NX 原子声明幂等键：并发下只有一个调用方赢得声明。
+
+        返回 True 表示本调用赢得并已写入；False 表示已被其他实例声明。
+        Redis 不可用时返回 True（降级内存幂等兜底，单实例内仍唯一）。
+        """
+        self._connect()
+        k = self._key("idem", key)
+        if self._client:
+            value = json.dumps({"payload_hash": payload_hash,
+                                "request_id": request_id},
+                               ensure_ascii=False)
+            return bool(self._client.set(k, value, nx=True, ex=self.TTL_SECONDS))
+        return True
+
     # ---- 会话锁（fencing token）----
 
     def acquire_session_lock(self, session_id: str, worker_id: str) -> str | None:

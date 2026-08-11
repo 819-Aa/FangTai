@@ -64,6 +64,14 @@ app.add_middleware(
 
 # ---- 推荐请求 ----
 
+def _require_object_body(body) -> dict | None:
+    """请求体必须是 JSON 对象；否则返回顶层 422 错误结构。"""
+    if not isinstance(body, dict):
+        return {"error": "VALIDATION_FAILED",
+                "details": [{"field": "body", "issue": "must be a JSON object"}]}
+    return None
+
+
 @app.post("/v1/recommendation-requests")
 async def create_recommendation(request: Request):
     try:
@@ -74,6 +82,10 @@ async def create_recommendation(request: Request):
             "error": "VALIDATION_FAILED",
             "details": [{"field": "body", "issue": "invalid JSON"}],
         })
+    err = _require_object_body(body)
+    if err is not None:
+        # null/数组/字符串等非对象请求体 → 统一顶层 422
+        return JSONResponse(status_code=422, content=err)
     code, resp = api.create_request(body)
     if code >= 400:
         return JSONResponse(status_code=code, content=resp)
@@ -139,62 +151,43 @@ async def list_users():
     return {"items": [], "total": 0}
 
 
-# ---- 会话（连接 C4 创建/恢复边界；非假实现） ----
-
-def _persist_session_row(session_id: str, participant_refs: list[str]) -> None:
-    """将会话边界写入 MySQL（INSERT IGNORE），使 GET /sessions/{id} 返回真实数据。"""
-    import json as _json
-
-    import pymysql
-
-    from food_agent_v2.core.config import load_config
-    cfg = load_config().mysql
-    conn = pymysql.connect(host=cfg.host, port=cfg.port,
-                           user=cfg.user, password=cfg.password,
-                           database=cfg.database, charset="utf8mb4")
-    try:
-        cur = conn.cursor()
-        cur.execute(
-            "INSERT IGNORE INTO sessions "
-            "(session_id, participant_refs, request_count) VALUES (%s, %s, 0)",
-            (session_id, _json.dumps(participant_refs, ensure_ascii=False)))
-        conn.commit()
-    finally:
-        conn.close()
-
+# ---- 会话（只经 C4 公开接口；api_app 不直接依赖 pymysql/MySQL repository） ----
 
 @app.post("/v1/sessions")
 async def create_session(request: Request):
     try:
         body = await request.json()
     except Exception:
-        body = {}
+        body = None
+    err = _require_object_body(body)
+    if err is not None:
+        return JSONResponse(status_code=422, content=err)
     participant_refs = [p.get("participant_ref") for p in body.get("participants", [])
                         if isinstance(p, dict) and p.get("participant_ref")]
     from food_agent_v2.c4 import ContextService
-    sid = ContextService().create_session(participant_refs, {})
-    _persist_session_row(sid, participant_refs)
-    return {"session_id": sid, "created_at": time.time()}
+    sid = ContextService().create_session_record(participant_refs)
+    return JSONResponse(status_code=201, content={
+        "session_id": sid,
+        "created_at": time.time(),
+        "last_request_at": None,
+    })
 
 
 @app.get("/v1/sessions/{session_id}")
 async def get_session(session_id: str):
-    from food_agent_v2.c4.mysql_repository import MySQLSessionMemorySource
-    src = MySQLSessionMemorySource()
+    from food_agent_v2.c4 import ContextService
     try:
-        meta = src.load_session(session_id)
-        menus = src.load_menu_versions(session_id)
-    except Exception:
-        meta, menus = None, []
-    if not meta:
+        state = ContextService().get_session_state(session_id)
+    except Exception as exc:
+        # 基础设施异常不得伪装成 404
+        return JSONResponse(status_code=503, content={
+            "error": "SESSION_STORE_UNAVAILABLE",
+            "message": str(exc)[:200],
+        })
+    if state is None:
         return JSONResponse(status_code=404, content={
             "error": "NOT_FOUND", "message": "session not found"})
-    return {
-        "session_id": session_id,
-        "participant_refs": meta.get("participant_refs", []),
-        "request_count": meta.get("request_count", 0),
-        "current_menu": menus[-1] if menus else None,
-    }
+    return state
 
 
 # ---- 健康检查 ----

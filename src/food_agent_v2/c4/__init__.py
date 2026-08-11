@@ -9,14 +9,14 @@ from __future__ import annotations
 import time
 import uuid
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from food_agent_v2.contracts.build import canonical_json_hash
 
 # ---- 会话事件 ----
 
-class EventType(str, Enum):
+class EventType(StrEnum):
     USER_MESSAGE = "user_message"
     SYSTEM_RESPONSE = "system_response"
     MENU_COMMITTED = "menu_committed"
@@ -42,7 +42,7 @@ class ConversationEvent:
 
 # ---- 约束管理 ----
 
-class ConstraintScope(str, Enum):
+class ConstraintScope(StrEnum):
     PERMANENT = "permanent"
     SESSION = "session"
     TURN = "turn"
@@ -69,7 +69,7 @@ def constraint_merge_key(c: EffectiveConstraint) -> tuple[str, str]:
     return (c.participant_ref, c.constraint_code or c.taboo_ingredient_name or c.constraint_id)
 
 
-def manifest_core(ctx: "SharedWorkflowContext") -> dict:
+def manifest_core(ctx: SharedWorkflowContext) -> dict:
     """不可压缩核心块完整结构（T18：逐字段覆盖，_core_block 与 compute_manifest_hash 共用）。"""
     return {
         # 完整 dict（含 raw_text + timestamp 等），不是仅 raw_text
@@ -375,6 +375,27 @@ class ContextService:
         session_id = str(uuid.uuid4())[:12]
         return session_id
 
+    def create_session_record(self, participant_refs: list[str]) -> str:
+        """创建会话边界并持久化（公开接口；API /sessions 使用，不暴露存储细节）。"""
+        session_id = str(uuid.uuid4())[:12]
+        self._get_memory_source().save_session(session_id, participant_refs)
+        return session_id
+
+    def get_session_state(self, session_id: str) -> dict | None:
+        """查询会话投影（公开接口；不存在返回 None，存储异常向上抛、绝不伪装 404）。"""
+        src = self._get_memory_source()
+        meta = src.load_session(session_id)
+        if not meta:
+            return None
+        menus = src.load_menu_versions(session_id)
+        return {
+            "session_id": session_id,
+            "participant_refs": meta.get("participant_refs", []),
+            "request_count": meta.get("request_count", 0),
+            "last_request_at": meta.get("last_request_at"),
+            "current_menu": menus[-1] if menus else None,
+        }
+
     def build_shared_context(
         self, session_id: str, participant_refs: list[str],
         current_message: dict, user_id_mapping: dict[str, int],
@@ -612,7 +633,6 @@ class ContextService:
             raise ValueError(f"Unknown shared_context_ref: {shared_context_ref}")
 
         rules = ROLE_PROJECTION_RULES.get(role, ROLE_PROJECTION_RULES["query_understanding"])
-        conceal = rules.get("conceal", [])
 
         # 约束投影
         constraint_visible = []

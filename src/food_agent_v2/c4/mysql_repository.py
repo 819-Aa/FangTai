@@ -19,6 +19,7 @@ class SessionMemorySource(Protocol):
     def load_session(self, session_id: str) -> dict | None: ...
     def load_committed_events(self, session_id: str) -> list[dict]: ...
     def load_menu_versions(self, session_id: str) -> list[dict]: ...
+    def save_session(self, session_id: str, participant_refs: list[str]) -> None: ...
 
 
 class MySQLSessionMemorySource:
@@ -50,7 +51,8 @@ class MySQLSessionMemorySource:
 
     def load_session(self, session_id: str) -> dict | None:
         self.cursor.execute(
-            "SELECT session_id, participant_refs, current_menu_plan_id, request_count "
+            "SELECT session_id, participant_refs, current_menu_plan_id, request_count, "
+            "last_request_at "
             "FROM sessions WHERE session_id=%s", (session_id,))
         row = self.cursor.fetchone()
         if not row:
@@ -60,7 +62,15 @@ class MySQLSessionMemorySource:
             "participant_refs": json.loads(row[1] or "[]"),
             "current_menu_plan_id": row[2],
             "request_count": int(row[3] or 0),
+            "last_request_at": str(row[4]) if row[4] else None,
         }
+
+    def save_session(self, session_id: str, participant_refs: list[str]) -> None:
+        """持久化会话边界（INSERT IGNORE；供 C4 公开 create 接口）。"""
+        self.cursor.execute(
+            "INSERT IGNORE INTO sessions "
+            "(session_id, participant_refs, request_count) VALUES (%s, %s, 0)",
+            (session_id, json.dumps(participant_refs, ensure_ascii=False)))
 
     def load_committed_events(self, session_id: str) -> list[dict]:
         self.cursor.execute(
@@ -106,13 +116,23 @@ class InMemorySessionMemorySource:
         self.menus: dict[str, list[dict]] = {}
 
     def load_session(self, session_id: str) -> dict | None:
-        return self.sessions.get(session_id)
+        meta = self.sessions.get(session_id)
+        if meta is None:
+            return None
+        return dict(meta) | {"last_request_at": meta.get("last_request_at")}
 
     def load_committed_events(self, session_id: str) -> list[dict]:
         return list(self.events.get(session_id, []))
 
     def load_menu_versions(self, session_id: str) -> list[dict]:
         return list(self.menus.get(session_id, []))
+
+    def save_session(self, session_id: str, participant_refs: list[str]) -> None:
+        self.sessions[session_id] = {"session_id": session_id,
+                                     "participant_refs": list(participant_refs),
+                                     "current_menu_plan_id": None,
+                                     "request_count": 0,
+                                     "last_request_at": None}
 
 
 def default_mysql_session_memory_source() -> MySQLSessionMemorySource:
