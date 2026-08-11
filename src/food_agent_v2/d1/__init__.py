@@ -12,6 +12,7 @@ import uuid
 from food_agent_v2.d1.schemas import (
     SSEEventType,
     now_iso,
+    resolve_participants,
     scan_forbidden_fields,
     strip_forbidden_fields,
     validate_create_request,
@@ -107,6 +108,13 @@ class RecommendationAPI:
         if error:
             return 422, error
 
+        # 匿名 participant_ref → 内部 user_id 映射（非法/越界/重复/携带 user_id
+        # 均在启动工作流前返回 422；映射结果只用于内部传给 C3，不进入公共响应）
+        enhanced, map_errors = resolve_participants(
+            body.get("participants", []))
+        if map_errors:
+            return 422, {"error": "VALIDATION_FAILED", "details": map_errors}
+
         key = body["idempotency_key"]
         payload_hash = self._hash_payload(body)
 
@@ -123,7 +131,7 @@ class RecommendationAPI:
             key, payload_hash, request_id, session_id, now, "accepted")
         if state == "winner":
             return self._create_new(request_id, key, payload_hash, body,
-                                    session_id, now)
+                                    enhanced, session_id, now)
         if state == "existing" and record:
             # 即使赢家尚未写完 request state，也直接按 record 返回（不误返 409，
             # 不启动第二个工作流）
@@ -179,8 +187,13 @@ class RecommendationAPI:
             return ("unavailable", None)
 
     def _create_new(self, request_id: str, key: str, payload_hash: str,
-                    body: dict, session_id: str, now: str) -> tuple[int, dict]:
-        """创建请求并启动工作流（仅幂等赢家调用）。"""
+                    body: dict, enhanced: list[dict],
+                    session_id: str, now: str) -> tuple[int, dict]:
+        """创建请求并启动工作流（仅幂等赢家调用）。
+
+        enhanced 为服务端内部映射后的参与者（含 user_id，只传给 C3）；
+        公共响应/SSE 绝不包含 user_id。
+        """
         req_state = {
             "request_id": request_id,
             "session_id": session_id,
@@ -189,7 +202,7 @@ class RecommendationAPI:
             "status": "accepted",
             "created_at": now,
             "updated_at": now,
-            "participants": body.get("participants", []),
+            "participants": enhanced,
             "message": body.get("message", ""),
             "config": body.get("config", {}),
             "stage_events_cursor": 0,
@@ -435,12 +448,16 @@ class RecommendationAPI:
         def _run():
             try:
                 from food_agent_v2.c3.runner import WorkflowRunner
+                req = self._requests.get(request_id)
+                if not req:
+                    return
                 runner = WorkflowRunner()
                 runner.run(
                     request_id=request_id,
                     session_id=session_id,
                     message=body.get("message", ""),
-                    participants=body.get("participants", []),
+                    # 内部增强参与者（服务端映射后的 user_id；公共响应不含）
+                    participants=req.get("participants", []),
                     config=body.get("config"),
                 )
             except Exception as e:

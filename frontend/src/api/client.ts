@@ -19,10 +19,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await r.json()) as T;
 }
 
-export function createSession(): Promise<{ session_id: string }> {
+export function createSession(participantRefs: string[]): Promise<{ session_id: string }> {
   return request<{ session_id: string }>("/v1/sessions", {
     method: "POST",
-    body: JSON.stringify({ participants: [] }),
+    body: JSON.stringify({
+      participants: participantRefs.map((r) => ({ participant_ref: r })),
+    }),
   });
 }
 
@@ -42,7 +44,7 @@ export function getStatus(requestId: string): Promise<RequestState> {
   return request<RequestState>(`/v1/recommendation-requests/${requestId}`);
 }
 
-// SSE 连续失败阈值：达到后降级为轮询
+// SSE 连续失败阈值：达到后由调用方关闭并降级轮询
 export const SSE_MAX_RETRIES = 3;
 
 export interface SSEConnection {
@@ -53,7 +55,7 @@ export interface SSEConnection {
 export function subscribeEvents(
   requestId: string,
   onEvent: (e: PhaseEvent) => void,
-  onFailure: () => void,
+  onError: (failureCount: number) => void,
 ): SSEConnection {
   const types = [
     "request_accepted", "analysis_ready", "answer_ready", "result_committed",
@@ -66,12 +68,13 @@ export function subscribeEvents(
 
   function connect(): void {
     if (closed) return;
+    // 浏览器 EventSource 原生携带 Last-Event-ID 重连续传
     es = new EventSource(`${API}/v1/recommendation-requests/${requestId}/events`);
     for (const t of types) {
       es.addEventListener(t, (e) => {
         const me = e as MessageEvent;
         if (me.lastEventId) lastEventId = me.lastEventId;
-        failures = 0; // 收到事件 → 连接恢复
+        failures = 0; // 收到新事件 → 重置连续失败计数
         try {
           onEvent({ id: lastEventId, event: t, data: JSON.parse(me.data) });
         } catch {
@@ -81,11 +84,10 @@ export function subscribeEvents(
     }
     es.onerror = () => {
       failures += 1;
+      onError(failures);
       if (failures >= SSE_MAX_RETRIES) {
-        // 连续失败 → 关闭并降级为轮询（浏览器重连已携带 Last-Event-ID，
-        // 但持久失败不再无限重试）
+        // 连续第 3 次失败 → 关闭（调用方降级轮询）；前两次依赖原生重连
         close();
-        onFailure();
       }
     };
   }

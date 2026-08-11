@@ -202,8 +202,7 @@ class TestD1:
         from food_agent_v2.c4.redis_store import RedisSessionStore
         from food_agent_v2.d1 import api
         _, resp = api.create_request({"idempotency_key": "t-cancel",
-                                      "participants": [{"participant_ref": "p1",
-                                                        "user_id": "1"}],
+                                      "participants": [{"participant_ref": "p1"}],
                                       "message": "测试", "config": {}})
         rid = resp["request_id"]
         code, _ = api.cancel_request(rid)
@@ -215,8 +214,7 @@ class TestD1:
     def test_state_persist_restore(self):
         from food_agent_v2.d1 import api
         _, resp = api.create_request({"idempotency_key": "t-persist",
-                                      "participants": [{"participant_ref": "p1",
-                                                        "user_id": "1"}],
+                                      "participants": [{"participant_ref": "p1"}],
                                       "message": "测试", "config": {}})
         rid = resp["request_id"]
         api.update_status(rid, "running")

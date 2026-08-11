@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { onMounted } from "vue";
 import { Sparkles } from "@lucide/vue";
 
 import ChatPanel from "@/features/chat/ChatPanel.vue";
@@ -8,11 +7,8 @@ import { useRecommendationStore } from "@/stores/recommendation";
 
 const store = useRecommendationStore();
 
-onMounted(() => {
-  // 复用持久化 session_id（不创建无关新会话）；默认一个匿名成员
-  void store.ensureSession();
-  if (!store.selectedRefs.length) store.addSlot();
-});
+// 挂载时不再创建空参与者 session；首次发送时按当前选中参与者创建。
+// 默认提供一个匿名成员（从持久化 session 关联组合恢复）。
 </script>
 
 <template>
@@ -38,6 +34,7 @@ onMounted(() => {
       :messages="store.messages"
       :phases="store.phases"
       :answer="store.answer"
+      :clarification="store.clarification"
       :status="store.status"
       :is-streaming="store.isStreaming"
       :can-send="store.canSend"

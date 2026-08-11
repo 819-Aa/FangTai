@@ -297,7 +297,7 @@ class TestApiApplication:
         from food_agent_v2.d1 import RecommendationAPI
         body = {
             "idempotency_key": _unique("ik"),
-            "participants": [{"participant_ref": "p1", "user_id": 1}],
+            "participants": [{"participant_ref": "p1", "label": "参与者 1"}],
             "message": "推荐菜单",
             "config": {},
         }
@@ -326,7 +326,7 @@ class TestApiApplication:
         from food_agent_v2.d1 import RecommendationAPI
         body = {
             "idempotency_key": _unique("ikc"),
-            "participants": [{"participant_ref": "p1", "user_id": 1}],
+            "participants": [{"participant_ref": "p1", "label": "参与者 1"}],
             "message": "并发菜单",
             "config": {},
         }
@@ -452,7 +452,7 @@ class TestApiApplication:
         from food_agent_v2.d1 import RecommendationAPI
         body = {
             "idempotency_key": _unique("ikd"),
-            "participants": [{"participant_ref": "p1", "user_id": 1}],
+            "participants": [{"participant_ref": "p1", "label": "参与者 1"}],
             "message": "延迟赢家",
             "config": {},
         }
@@ -461,10 +461,10 @@ class TestApiApplication:
         results: list[tuple[int, dict]] = []
         orig = d1mod.RecommendationAPI._create_new
 
-        def slow_create_new(inst, request_id, k, ph, b, sid, now):
+        def slow_create_new(inst, request_id, k, ph, b, enhanced, sid, now):
             claimed.set()
             time.sleep(0.5)  # 延迟 request state 写入
-            return orig(inst, request_id, k, ph, b, sid, now)
+            return orig(inst, request_id, k, ph, b, enhanced, sid, now)
 
         a, b = RecommendationAPI(), RecommendationAPI()
         a._trigger_workflow = lambda *a, **k: None  # 禁用后台工作流（测试隔离）
@@ -510,7 +510,7 @@ class TestApiApplication:
                             lambda *a, **k: workflow_calls.append(1))
         body = {
             "idempotency_key": _unique("iku"),
-            "participants": [{"participant_ref": "p1", "user_id": 1}],
+            "participants": [{"participant_ref": "p1", "label": "参与者 1"}],
             "message": "redis down",
             "config": {},
         }
@@ -543,7 +543,7 @@ class TestApiApplication:
         from food_agent_v2.c4.redis_store import RedisSessionStore
         body = {
             "idempotency_key": _unique("ikcl"),
-            "participants": [{"participant_ref": "p1", "user_id": 1}],
+            "participants": [{"participant_ref": "p1", "label": "参与者 1"}],
             "message": "清理",
             "config": {},
         }

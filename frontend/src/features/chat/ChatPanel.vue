@@ -16,6 +16,7 @@ const props = defineProps<{
   messages: ChatMessage[];
   phases: PhaseEvent[];
   answer: string;
+  clarification: string;
   status: string;
   isStreaming: boolean;
   canSend: boolean;
@@ -38,6 +39,9 @@ const answered = computed(() =>
 );
 const committed = computed(() =>
   props.phases.some((p) => p.event === "result_committed"),
+);
+const needsClarification = computed(() =>
+  props.status === "needs_clarification" || props.clarification !== "",
 );
 
 function send(value = draft.value) {
@@ -130,6 +134,11 @@ function phaseBadge(e: PhaseEvent): string {
           <span v-if="phaseBadge(p)" class="phase-badge">{{ phaseBadge(p) }}</span>
         </li>
       </ol>
+    </div>
+
+    <div v-if="needsClarification" class="clarification-bar" role="status">
+      <span class="clarification-label">待确认</span>
+      <span class="clarification-text">{{ props.clarification }}</span>
     </div>
 
     <div v-if="status && !isStreaming" class="terminal-bar" :class="`term-${status}`" role="status">

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
@@ -45,6 +46,49 @@ FORBIDDEN_RESPONSE_FIELDS = {
 }
 
 
+PARTICIPANT_REF_RE = re.compile(r"^p([1-9]|[1-4][0-9]|50)$")
+MAX_ANONYMOUS_PARTICIPANTS = 50
+
+
+def resolve_participants(participants: list[dict]) -> tuple[list[dict], list[dict]]:
+    """匿名 participant_ref → 内部固定 user_id 的确定性映射（D1 服务端边界）。
+
+    合法引用 p1..p50 确定映射到固定 user_id 1..50（data/cleaned/user_profiles.jsonl
+    共 50 条）。非法格式、越界、重复、携带 user_id 一律返回错误（启动工作流前 422）。
+
+    返回 (enhanced_participants, errors)。enhanced 只用于服务端内部传给 C3
+    （含 user_id），绝不进入公共响应/SSE/日志/前端。
+    """
+    errors: list[dict] = []
+    enhanced: list[dict] = []
+    seen: set[str] = set()
+    for i, p in enumerate(participants):
+        if not isinstance(p, dict):
+            errors.append({"field": f"participants[{i}]", "issue": "must be an object"})
+            continue
+        if "user_id" in p:
+            errors.append({"field": f"participants[{i}].user_id",
+                           "issue": "公共接口只允许匿名 participant_ref，禁止提交 user_id"})
+            continue
+        ref = p.get("participant_ref")
+        if not isinstance(ref, str) or not PARTICIPANT_REF_RE.match(ref):
+            errors.append({"field": f"participants[{i}].participant_ref",
+                           "issue": f"非法或越界引用: {ref!r}（仅 p1..p50）"})
+            continue
+        if ref in seen:
+            errors.append({"field": f"participants[{i}].participant_ref",
+                           "issue": f"重复引用: {ref}"})
+            continue
+        seen.add(ref)
+        num = int(ref[1:])
+        enhanced.append({
+            "participant_ref": ref,
+            "label": str(p.get("label") or ref),
+            "user_id": num,  # 内部固定映射 pN → user_id N
+        })
+    return enhanced, errors
+
+
 def validate_create_request(data: dict) -> dict | None:
     """校验 POST /v1/recommendation-requests 的请求体。返回错误或 None。
 
@@ -69,6 +113,9 @@ def validate_create_request(data: dict) -> dict | None:
             if not isinstance(p, dict):
                 errors.append({"field": f"participants[{i}]", "issue": "must be an object"})
                 continue
+            if "user_id" in p:
+                errors.append({"field": f"participants[{i}].user_id",
+                               "issue": "公共接口只允许匿名 participant_ref，禁止提交 user_id"})
             ref = p.get("participant_ref")
             if not ref or not isinstance(ref, str) or not ref.strip():
                 errors.append({"field": f"participants[{i}].participant_ref", "issue": "required"})

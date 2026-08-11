@@ -74,7 +74,7 @@ def _run_case(label: str, message: str, participants: list[dict]) -> bool:
 
 
 # 对话用例数据
-with open("data/raw/对话用例.json", "r", encoding="utf-8") as f:
+with open("data/raw/对话用例.json", encoding="utf-8") as f:
     cases = json.load(f)
 
 # 测试参与者映射 —— 选匹配用例场景的用户档案
@@ -84,13 +84,15 @@ with open("data/raw/对话用例.json", "r", encoding="utf-8") as f:
 #   User9: 60岁 高血压+高血脂 (老人)
 #   User34: 26岁 健脾胃 (消化问题)
 #   User2: 32岁 孕妇 (特殊人群)
-SINGLE = [{"participant_ref": "p1", "user_id": "1"}]             # 海鲜过敏
-SINGLE_DIGEST = [{"participant_ref": "p1", "user_id": "4"}]      # 健脾胃
-COUPLE_DIGEST = [{"participant_ref": "p1", "user_id": "4"},      # 健脾胃
-                 {"participant_ref": "p2", "user_id": "34"}]     # 健脾胃
-FAMILY_ELDERLY = [{"participant_ref": "p1", "user_id": "9"},     # 60岁 高血压
-                  {"participant_ref": "p2", "user_id": "2"},     # 32岁 孕妇
-                  {"participant_ref": "p3", "user_id": "1"}]     # 28岁 海鲜过敏
+# 公共接口只提交匿名 participant_ref；服务端按 pN → user_id N 确定性映射。
+# 需引用某固定档案时使用对应 ref（p4 → user 4 健脾胃 等）。
+SINGLE = [{"participant_ref": "p1"}]                               # user1 海鲜过敏
+SINGLE_DIGEST = [{"participant_ref": "p4"}]                        # user4 健脾胃
+COUPLE_DIGEST = [{"participant_ref": "p4"},                        # user4 健脾胃
+                 {"participant_ref": "p34"}]                       # user34 健脾胃
+FAMILY_ELDERLY = [{"participant_ref": "p9"},                       # user9 60岁 高血压
+                  {"participant_ref": "p2"},                       # user2 32岁 孕妇
+                  {"participant_ref": "p1"}]                       # user1 28岁 海鲜过敏
 
 # 选择代表性用例
 test_configs = [

@@ -44,6 +44,8 @@ export function terminalLabel(status: string): string {
       return "已取消";
     case "interrupted":
       return "已中断";
+    case "needs_clarification":
+      return "待澄清";
     case "reconnect":
       return "连接中断，已恢复";
     default:
@@ -67,41 +69,64 @@ export function reducePhases(
   return out;
 }
 
-// ---- session_id 持续复用（刷新/多轮不创建无关新会话） ----
+export function refFingerprint(refs: string[]): string {
+  return [...refs].sort().join("|");
+}
+
+export function slotFromRef(ref: string): AnonymousParticipant {
+  const n = /^p(\d+)$/.exec(ref)?.[1] ?? "";
+  return { participant_ref: ref, label: `参与者 ${n || ref}` };
+}
+
+// ---- session 与参与者组合持久化 ----
 
 const SESSION_KEY = "v2.session_id";
+const SESSION_REFS_KEY = "v2.session_refs";
 
-function loadSessionId(): string {
+function loadSession(): { sessionId: string; refs: string[] } {
   try {
-    return localStorage.getItem(SESSION_KEY) || "";
+    const sid = localStorage.getItem(SESSION_KEY) || "";
+    const refsRaw = localStorage.getItem(SESSION_REFS_KEY);
+    const refs = refsRaw ? JSON.parse(refsRaw) : [];
+    return { sessionId: sid, refs: Array.isArray(refs) ? refs : [] };
   } catch {
-    return "";
+    return { sessionId: "", refs: [] };
   }
 }
 
-function saveSessionId(sid: string): void {
+function saveSession(sessionId: string, refs: string[]): void {
   try {
-    localStorage.setItem(SESSION_KEY, sid);
+    localStorage.setItem(SESSION_KEY, sessionId);
+    localStorage.setItem(SESSION_REFS_KEY, JSON.stringify(refs));
   } catch {
     /* 隐私模式等忽略 */
   }
 }
 
+const POLL_INTERVAL_MS = 5000;
+
 export const useRecommendationStore = defineStore("recommendation", {
-  state: () => ({
-    slots: [] as AnonymousParticipant[],
-    selectedRefs: [] as string[],
-    sessionId: loadSessionId() as string,
-    messages: [] as ChatMessage[],
-    requestId: "" as string,
-    status: "" as string,
-    phases: [] as PhaseEvent[],
-    answer: "" as string,
-    isStreaming: false,
-    error: "" as string,
-    connection: null as SSEConnection | null,
-    pollTimer: null as number | null,
-  }),
+  state: () => {
+    const { sessionId, refs } = loadSession();
+    return {
+      slots: refs.map((r) => slotFromRef(r)) as AnonymousParticipant[],
+      selectedRefs: [...refs] as string[],
+      sessionId: sessionId as string,
+      sessionRefs: [...refs] as string[],
+      _sessionPromise: null as Promise<string> | null,
+      messages: [] as ChatMessage[],
+      requestId: "" as string,
+      status: "" as string,
+      phases: [] as PhaseEvent[],
+      answer: "" as string,
+      clarification: "" as string,
+      isStreaming: false,
+      error: "" as string,
+      connection: null as SSEConnection | null,
+      pollTimer: null as number | null,
+      sseFailures: 0,
+    };
+  },
   getters: {
     selectedSlots(state): AnonymousParticipant[] {
       return state.slots.filter((s) => state.selectedRefs.includes(s.participant_ref));
@@ -111,26 +136,50 @@ export const useRecommendationStore = defineStore("recommendation", {
     },
   },
   actions: {
-    async ensureSession() {
-      if (this.sessionId) return this.sessionId;
-      const { session_id } = await createSession();
-      this.sessionId = session_id;
-      saveSessionId(session_id);
-      return session_id;
+    async ensureSession(refs: string[]): Promise<string> {
+      const fp = refFingerprint(refs);
+      // 同参与者组合 → 持续复用；组合变化 → 明确新建会话
+      if (this.sessionId && refFingerprint(this.sessionRefs) === fp) {
+        return this.sessionId;
+      }
+      if (this._sessionPromise) {
+        return this._sessionPromise; // 并发合并：最多创建一个 session
+      }
+      this._sessionPromise = (async () => {
+        const { session_id } = await createSession(refs);
+        this.sessionId = session_id;
+        this.sessionRefs = [...refs];
+        saveSession(session_id, refs);
+        return session_id;
+      })().finally(() => {
+        this._sessionPromise = null;
+      });
+      return this._sessionPromise;
+    },
+    slotLabel(ref: string): string {
+      return this.slots.find((s) => s.participant_ref === ref)?.label
+        || slotFromRef(ref).label;
     },
     addSlot() {
-      const idx = this.slots.length + 1;
-      const ref = `p${idx}`;
-      this.slots.push({ participant_ref: ref, label: `参与者 ${idx}` });
-      if (!this.selectedRefs.includes(ref)) this.selectedRefs.push(ref);
+      for (let n = 1; n <= 50; n++) {
+        const ref = `p${n}`;
+        if (!this.slots.some((s) => s.participant_ref === ref)) {
+          this.slots.push(slotFromRef(ref));
+          if (!this.selectedRefs.includes(ref)) this.selectedRefs.push(ref);
+          return;
+        }
+      }
+      this.error = "匿名成员已达上限（p1..p50）";
     },
     removeSlot(ref: string) {
-      this.selectedRefs = this.selectedRefs.filter((x) => x !== ref);
+      // 同时删除 slots 与 selectedRefs
+      this.slots = this.slots.filter((s) => s.participant_ref !== ref);
+      this.selectedRefs = this.selectedRefs.filter((r) => r !== ref);
     },
     participants(): AnonymousParticipant[] {
-      return this.selectedSlots.map((s) => ({
-        participant_ref: s.participant_ref,
-        label: s.label,
+      return this.selectedRefs.map((r) => ({
+        participant_ref: r,
+        label: this.slotLabel(r),
       }));
     },
     reset() {
@@ -140,6 +189,7 @@ export const useRecommendationStore = defineStore("recommendation", {
       this.status = "";
       this.phases = [];
       this.answer = "";
+      this.clarification = "";
       this.error = "";
     },
     closeConnection() {
@@ -159,6 +209,8 @@ export const useRecommendationStore = defineStore("recommendation", {
       this.isStreaming = true;
       this.phases = [];
       this.answer = "";
+      this.clarification = "";
+      this.status = "";
       this.messages.push({
         id: messageId(), role: "user", content,
         createdAt: Date.now(), status: "complete",
@@ -170,8 +222,12 @@ export const useRecommendationStore = defineStore("recommendation", {
       });
 
       try {
-        const sessionId = await this.ensureSession();
-        const participants = this.participants();
+        const refs = this.selectedRefs.slice();
+        const sessionId = await this.ensureSession(refs);
+        const participants = refs.map((r) => ({
+          participant_ref: r,
+          label: this.slotLabel(r),
+        }));
         const resp = await createRequest({
           idempotency_key: `web-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           participants,
@@ -180,17 +236,8 @@ export const useRecommendationStore = defineStore("recommendation", {
         });
         this.requestId = resp.request_id;
         this.status = resp.status;
-
-        // SSE 分阶段：重连携带 Last-Event-ID；连续失败降级轮询
-        this.closeConnection();
-        this.connection = subscribeEvents(
-          resp.request_id,
-          (e: PhaseEvent) => this.onSseEvent(e, assistantId),
-          () => this.startPolling(resp.request_id, assistantId),
-        );
-
-        // 轮询终态兜底（SSE 活跃时也探测终态）
-        this.startPolling(resp.request_id, assistantId);
+        // 打开 SSE；SSE 存活期间不主动轮询
+        this.openSse(resp.request_id, assistantId);
       } catch (e) {
         this.error = errMsg(e);
         const pending = this.messages.find((m) => m.id === assistantId);
@@ -201,28 +248,66 @@ export const useRecommendationStore = defineStore("recommendation", {
         this.isStreaming = false;
       }
     },
-    onSseEvent(e: PhaseEvent, assistantId: string) {
-      this.phases = reducePhases(this.phases, [e]);
-      if (e.event === "answer_ready") {
-        const text = String((e.data as { text?: string }).text || "");
-        this.answer = text; // 待最终确认（仅 result_committed 才 completed）
-        const pending = this.messages.find((m) => m.id === assistantId);
-        if (pending) {
-          pending.content = text;
-          pending.status = "complete";
-        }
-      }
-      if (e.event === "result_committed") {
-        const pending = this.messages.find((m) => m.id === assistantId);
-        if (pending && !pending.content) {
-          pending.content = "菜单已生成。";
-        }
-      }
-      if (e.event === "error") {
-        this.error = String((e.data as { message?: string }).message || "流程失败");
+    openSse(requestId: string, assistantId: string) {
+      this.closeConnection();
+      this.sseFailures = 0;
+      this.connection = subscribeEvents(
+        requestId,
+        (e: PhaseEvent) => this.onSseEvent(e, assistantId),
+        (failures: number) => this.onSseFailure(requestId, assistantId, failures),
+      );
+    },
+    onSseFailure(requestId: string, assistantId: string, failures: number) {
+      this.sseFailures = failures;
+      this.status = "reconnect";
+      if (failures >= 3) {
+        // 连续第 3 次失败 → 关闭 SSE 并降级轮询（5 秒间隔）
+        this.closeConnection();
+        this.startPolling(requestId, assistantId, POLL_INTERVAL_MS);
       }
     },
-    async startPolling(requestId: string, assistantId: string) {
+    onSseEvent(e: PhaseEvent, assistantId: string) {
+      const before = this.phases.length;
+      this.phases = reducePhases(this.phases, [e]);
+      if (this.phases.length === before) return; // 重复 event_id 不重复改变 UI
+      switch (e.event) {
+        case "answer_ready":
+          this.answer = String((e.data as { text?: string }).text || "");
+          // 保持"待最终确认"，不 completed
+          break;
+        case "result_committed":
+          this.status = "completed";
+          this.finishStreaming(assistantId, "complete");
+          break;
+        case "error":
+          this.error = String((e.data as { message?: string }).message || "流程失败");
+          this.status = "failed";
+          this.finishStreaming(assistantId, "error");
+          break;
+        case "request_cancelled":
+          this.status = "cancelled";
+          this.finishStreaming(assistantId, "error");
+          break;
+        case "clarification_needed":
+          this.status = "needs_clarification";
+          this.clarification = String(
+            (e.data as { clarification?: string }).clarification || "请补充必要信息");
+          this.finishStreaming(assistantId, "complete");
+          break;
+        default:
+          break;
+      }
+    },
+    finishStreaming(assistantId: string, msgStatus: "complete" | "error") {
+      this.isStreaming = false;
+      this.closeConnection();
+      const pending = this.messages.find((m) => m.id === assistantId);
+      if (pending) {
+        pending.status = msgStatus;
+        if (!pending.content) pending.content = terminalLabel(this.status);
+      }
+    },
+    async startPolling(requestId: string, assistantId: string, interval: number) {
       if (this.pollTimer !== null) {
         window.clearTimeout(this.pollTimer);
         this.pollTimer = null;
@@ -232,24 +317,19 @@ export const useRecommendationStore = defineStore("recommendation", {
           const st = await getStatus(requestId);
           this.status = st.status;
           if (isTerminal(st.status)) {
-            this.closeConnection();
-            this.isStreaming = false;
             if (st.error) {
               this.error = `${st.error.code || "error"}: ${st.error.message || ""}`;
             }
-            const pending = this.messages.find((m) => m.id === assistantId);
-            if (pending && pending.status === "sending") {
-              pending.content = pending.content || st.error?.message || "流程结束";
-              pending.status = st.status === "completed" ? "complete" : "error";
-            }
+            // 轮询只读取后端状态；缺少 answer_ready 时不伪造菜单文本
+            this.finishStreaming(assistantId, st.status === "completed" ? "complete" : "error");
             return;
           }
         } catch {
-          // 轮询失败：继续重试
+          /* 轮询失败继续重试 */
         }
-        this.pollTimer = window.setTimeout(tick, 2000);
+        this.pollTimer = window.setTimeout(tick, interval);
       };
-      this.pollTimer = window.setTimeout(tick, 500);
+      this.pollTimer = window.setTimeout(tick, interval);
     },
   },
 });
