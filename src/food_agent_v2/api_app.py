@@ -12,7 +12,6 @@ GET  /v1/sessions/{session_id}
 from __future__ import annotations
 
 import asyncio
-import json
 import time
 from contextlib import asynccontextmanager
 
@@ -20,10 +19,8 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
-from food_agent_v2.core.config import load_config, AppConfig
+from food_agent_v2.core.config import AppConfig, load_config
 from food_agent_v2.d1 import api
-from food_agent_v2.d1.schemas import validate_create_request
-
 
 _config: AppConfig | None = None
 
@@ -86,23 +83,23 @@ async def get_recommendation_status(request_id: str):
 
 @app.get("/v1/recommendation-requests/{request_id}/events")
 async def stream_events(request_id: str, request: Request):
-    last_event_id = request.headers.get("Last-Event-ID")
+    initial_last_event_id = request.headers.get("Last-Event-ID")
 
     async def event_generator():
-        sent = 0
+        # 局部绑定，修复 UnboundLocalError；稳定字符串 event_id 精确续传（不 int() 比较）
+        last_event_id = initial_last_event_id
         while True:
             events = api.subscribe_events(request_id, last_event_id)
+            yielded_any = False
             for event in events:
                 eid = event.get("id", "")
-                if last_event_id and int(eid) <= int(last_event_id):
-                    continue
                 yield f"id: {eid}\nevent: {event['event']}\ndata: {event['data']}\n\n"
-                sent += 1
+                yielded_any = True
                 last_event_id = eid
 
-            if sent == 0:
-                # 发送心跳
-                yield f": heartbeat\n\n"
+            if not yielded_any:
+                # 无新事件时发送心跳
+                yield ": heartbeat\n\n"
             await asyncio.sleep(15)
 
     return StreamingResponse(
@@ -124,27 +121,15 @@ async def cancel_recommendation(request_id: str):
     return resp
 
 
-# ---- 用户档案（供前端选择参与者） ----
+# ---- 参与者（公开接口不暴露真实用户档案；前端只生成匿名槽位/participant_ref） ----
 
 @app.get("/v1/users")
 async def list_users():
-    import json as _json
-    from food_agent_v2.core.paths import CLEANED_USERS
-    users = []
-    with CLEANED_USERS.open("r", encoding="utf-8") as f:
-        for line in f:
-            if line.strip():
-                u = _json.loads(line)
-                users.append({
-                    "id": u["user_id"],
-                    "display_name": f"用户{u['user_id']}",
-                    "age": u.get("age"),
-                    "gender": u.get("gender"),
-                    "allergies": u.get("allergies", []),
-                    "diseases": u.get("diseases", []),
-                    "special_group": u.get("special_group", []),
-                })
-    return {"items": users, "total": len(users)}
+    """公开参与者列表：只返回匿名占位（不读取真实用户档案/健康详情）。
+
+    真实用户依赖仅供内部离线使用，绝不进入公开接口（T20 身份隔离）。
+    """
+    return {"items": [], "total": 0}
 
 
 # ---- 会话 ----

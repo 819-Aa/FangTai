@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from enum import Enum
+from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Any
 
 # Simplified Pydantic-like schemas (FastAPI integration adds full Pydantic at runtime)
 
-class RequestStatus(str, Enum):
+class RequestStatus(StrEnum):
     ACCEPTED = "accepted"
     RUNNING = "running"
     REVISING = "revising"
@@ -21,7 +21,7 @@ class RequestStatus(str, Enum):
     INTERRUPTED = "interrupted"
 
 
-class SSEEventType(str, Enum):
+class SSEEventType(StrEnum):
     HEARTBEAT = "heartbeat"
     REQUEST_ACCEPTED = "request_accepted"
     ANALYSIS_READY = "analysis_ready"
@@ -46,23 +46,39 @@ FORBIDDEN_RESPONSE_FIELDS = {
 
 
 def validate_create_request(data: dict) -> dict | None:
-    """校验 POST /v1/recommendation-requests 的请求体。返回错误或 None。"""
+    """校验 POST /v1/recommendation-requests 的请求体。返回错误或 None。
+
+    无效请求绝不启动任务：缺 idempotency_key、participant_ref、message，或
+    participant_ref 重复/非字符串、message 非字符串、participants 非对象列表
+    一律拒绝。
+    """
     errors = []
 
-    if not data.get("idempotency_key"):
+    idem = data.get("idempotency_key")
+    if not idem:
         errors.append({"field": "idempotency_key", "issue": "required"})
-    elif len(data.get("idempotency_key", "")) > 128:
-        errors.append({"field": "idempotency_key", "issue": "too long"})
+    elif not isinstance(idem, str) or len(idem) > 128:
+        errors.append({"field": "idempotency_key", "issue": "too long or invalid"})
 
     participants = data.get("participants", [])
-    if not participants:
+    if not isinstance(participants, list) or not participants:
         errors.append({"field": "participants", "issue": "at least one required"})
     else:
-        refs = [p.get("participant_ref") for p in participants if p.get("participant_ref")]
+        refs: list[str] = []
+        for i, p in enumerate(participants):
+            if not isinstance(p, dict):
+                errors.append({"field": f"participants[{i}]", "issue": "must be an object"})
+                continue
+            ref = p.get("participant_ref")
+            if not ref or not isinstance(ref, str) or not ref.strip():
+                errors.append({"field": f"participants[{i}].participant_ref", "issue": "required"})
+            else:
+                refs.append(ref.strip())
         if len(refs) != len(set(refs)):
             errors.append({"field": "participants", "issue": "duplicate participant_ref"})
 
-    if not data.get("message"):
+    message = data.get("message")
+    if not message or not isinstance(message, str):
         errors.append({"field": "message", "issue": "required"})
 
     return {"error": "VALIDATION_FAILED", "details": errors} if errors else None
@@ -83,4 +99,4 @@ def scan_forbidden_fields(obj: Any, path: str = "") -> list[str]:
 
 
 def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()

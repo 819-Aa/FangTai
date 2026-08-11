@@ -7,12 +7,9 @@
 from __future__ import annotations
 
 import json
-import time
 import uuid
-from typing import Any, Optional
 
 from food_agent_v2.d1.schemas import (
-    RequestStatus,
     SSEEventType,
     now_iso,
     scan_forbidden_fields,
@@ -97,8 +94,8 @@ class RecommendationAPI:
                     "existing_request_id": existing["request_id"],
                 }
 
-        # 创建请求
-        request_id = str(uuid.uuid4())[:8]
+        # 创建请求（request_id 必须为完整 UUID：C3 工具回执按 UUID 绑定身份）
+        request_id = str(uuid.uuid4())
         session_id = body.get("session_id") or f"sess_{uuid.uuid4().hex[:8]}"
         now = now_iso()
 
@@ -163,15 +160,19 @@ class RecommendationAPI:
     # ---- GET /v1/recommendation-requests/{request_id}/events ----
 
     def subscribe_events(self, request_id: str, last_event_id: str | None = None) -> list[dict]:
-        """获取 SSE 事件（自 last_event_id 之后）。"""
+        """获取 SSE 事件（自 last_event_id 精确 id 之后）。
+
+        稳定 SSE event_id 为字符串（如 ev_answer_xxx）；续传按持久化事件列表中的
+        精确 event_id 定位并返回其后的事件，绝不强制转换为整数。未知 last_event_id
+        返回全部事件（客户端按 event_id 去重）。
+        """
         self._restore_request(request_id)
         all_events = self._events.get(request_id, [])
-        if last_event_id:
-            try:
-                start = int(last_event_id)
-            except (ValueError, TypeError):
-                start = 0
-            return all_events[start:]
+        if not last_event_id:
+            return all_events
+        for idx, event in enumerate(all_events):
+            if event.get("id") == last_event_id:
+                return all_events[idx + 1:]
         return all_events
 
     def _emit_event(self, request_id: str, event_type: SSEEventType, payload: dict,
@@ -179,7 +180,8 @@ class RecommendationAPI:
         """发布 SSE 事件。
 
         event_id 为显式稳定 ID（T19 outbox）：相同 event_id 重复发布只保留一份事实；
-        未提供时使用自增游标（历史行为）。
+        未提供时使用自增整数游标（历史行为）。stage_events_cursor 始终为整数，
+        只随自增事件推进；稳定字符串 event_id 不进入该整数字段（integer 契约）。
         """
         if event_id is not None:
             existing = [e for e in self._events.get(request_id, [])
@@ -189,16 +191,15 @@ class RecommendationAPI:
             eid = event_id
         else:
             eid = str(self._event_cursors.get(request_id, 1))
+            self._event_cursors[request_id] = int(eid) + 1
+            if request_id in self._requests:
+                self._requests[request_id]["stage_events_cursor"] = int(eid)
         event = {
             "id": eid,
             "event": event_type.value,
             "data": json.dumps(payload, ensure_ascii=False),
         }
         self._events.setdefault(request_id, []).append(event)
-        if event_id is None:
-            self._event_cursors[request_id] = int(eid) + 1
-        if request_id in self._requests:
-            self._requests[request_id]["stage_events_cursor"] = eid
         self._persist_request(request_id)
 
     # ---- POST /v1/recommendation-requests/{request_id}/cancel ----
