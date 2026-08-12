@@ -13,5 +13,7 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     globals: true,
+    // T23 浏览器 E2E（Playwright）不属于 Vitest 单测，明确排除
+    exclude: ["e2e/**", "node_modules/**", "dist/**"],
   },
 });

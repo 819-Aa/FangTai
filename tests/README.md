@@ -8,7 +8,9 @@ V2测试分为单元测试、契约测试、集成测试、跨模块场景测试
 
 - `uv run pytest -m "not live" -q`：普通回归（597 项），排除真实模型 live 测试。
 - `uv run pytest tests/test_prompts_live.py -q`：真实模型 live 验收（7 项，需 DeepSeek API key）。
-- `uv run pytest tests/e2e -q`：T23 真实全链路验收（需 H04 空 V2 环境已 data-initialize、API 服务器运行于 localhost:8001）。
+- `uv run pytest tests/e2e -q`：T23 真实全链路验收（需所有者授权的 T23 隔离环境已
+  data-initialize、隔离 API 运行于 localhost:38001）。
+- `frontend/e2e/**`：Playwright 浏览器跨端验收（同 T23 隔离环境），不走 Vitest。
 
 ## T23 真实全链路验收
 
@@ -24,12 +26,15 @@ INV-005 拒绝、模型漏必需工具），全部 fail-closed；业务终态 `a
 **本地已验证（确定性、无需 API 服务器/模型）**：健康矩阵缺键、Redis 不可用 503、答案改菜、
 模型漏必需工具、未知事件、dispatcher 崩溃恢复、审计回滚——7 项真实 PASS。
 
-**需要 H04 空 V2 环境 + API 服务器 + 真实 LLM**（按 `scripts/run_full_acceptance.ps1` 执行）：
-真实成功路径、业务终态精确断言、live 0 skip 报告。环境不满足时脚本返回
-`BLOCKED_T23_EMPTY_ENV`。
+**真实浏览器跨端**：`frontend/e2e/browser.spec.ts`（Playwright）——成功路径只接受
+completed/result_committed、刷新继续同 session（localStorage 比较 + 请求载荷证明）、
+SSE 首次连接中断后原生 Last-Event-ID 重连无丢失重复、菜单跨库一致。Vite 经
+`VITE_API_BASE_URL=http://localhost:38001` 访问 T23 隔离 API（绝不访问 8001）。
 
-**真实浏览器前端全链路（页面渲染/SSE 断线重连 UI）不在本仓库测试实现范围内**——需要扩大
-T23 allowed_paths 时返回 `BLOCKED_T23_SCOPE`，不以 README 或单元测试冒充。
+验收执行（需所有者授权，创建全新隔离环境与三个新卷）：
+`powershell -ExecutionPolicy Bypass -File scripts/run_full_acceptance.ps1 -ConfirmAuthorizedEmptyT23`
 
-验收执行：`powershell -ExecutionPolicy Bypass -File scripts/run_full_acceptance.ps1`
+脚本严格锁定 H04 BuildManifest 批准值（SHA-256 / build_id / builder commit），
+不 data-rebuild；任何未授权资源复用/缺失均返回 `BLOCKED_T23_EMPTY_ENV` /
+`BLOCKED_T23_DATA_POLICY`；live 0 skip 机器可解析报告。
 

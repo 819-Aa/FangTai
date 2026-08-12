@@ -40,6 +40,14 @@ $LIVE_REPORT = ".staging/t23_live_report.xml"
 $API_LOG = ".staging/t23_api.log"
 $API_ERR = ".staging/t23_api.err"
 
+# ---- H04 已批准 BuildManifest 批准值（严格锁定，禁止 builder_version==HEAD） ----
+$APPROVED_MANIFEST_SHA256 = "2283ea029aaa120f0f076437b4d622bb8583f872edf70cd8fdd1ffdc0084d296"
+$APPROVED_BUILD_ID = "8f98393e-4ae2-4c00-bd0b-1cb07cd91a6f"
+$APPROVED_BUILDER = "4eae6acda5b950d5f98ed9841b3653a80b9b241b"
+
+# 脚本管理的进程（finally 中停止；绝不删除卷）
+$Script:ApiProc = $null
+
 # ---- 显式授权参数 ----
 if (-not $ConfirmAuthorizedEmptyT23) {
     Write-Host "[BLOCKED_T23_EMPTY_ENV] 必须显式传入 -ConfirmAuthorizedEmptyT23 才允许创建全新隔离环境" -ForegroundColor Red
@@ -101,21 +109,29 @@ try {
         }
     }
 
-    # ---- 锁定 H04 BuildManifest：SHA-256 + build_id + builder commit ----
-    Assert-Step "锁定并校验 H04 BuildManifest" {
+    # ---- 锁定 H04 BuildManifest：严格比较批准值 + git cat-file 校验 builder commit ----
+    Assert-Step "锁定并校验 H04 BuildManifest（批准值）" {
         if (-not (Test-Path $APPROVED_MANIFEST)) {
             Fail-Blocked "BLOCKED_T23_DATA_POLICY" "缺少 H04 已批准 BuildManifest：$APPROVED_MANIFEST"
         }
         $sha = (Get-FileHash -Algorithm SHA256 $APPROVED_MANIFEST).Hash.ToLowerInvariant()
         $m = Get-Content $APPROVED_MANIFEST -Raw | ConvertFrom-Json
-        $gitHead = (git rev-parse HEAD).Trim()
         $builder = [string]$m.builder_version
-        Write-Host "MANIFEST_SHA256: $sha"
-        Write-Host "MANIFEST_BUILD_ID: $($m.build_id)"
-        Write-Host "MANIFEST_BUILDER: $builder"
-        Write-Host "GIT_HEAD: $gitHead"
-        if ($builder -ne $gitHead) {
-            Fail-Blocked "BLOCKED_T23_DATA_POLICY" "BuildManifest.builder_version($builder) 与当前 git HEAD($gitHead) 不一致"
+        Write-Host "MANIFEST_SHA256: $sha (期望 $APPROVED_MANIFEST_SHA256)"
+        Write-Host "MANIFEST_BUILD_ID: $($m.build_id) (期望 $APPROVED_BUILD_ID)"
+        Write-Host "MANIFEST_BUILDER: $builder (期望 $APPROVED_BUILDER)"
+        if ($sha -ne $APPROVED_MANIFEST_SHA256) {
+            Fail-Blocked "BLOCKED_T23_DATA_POLICY" "BuildManifest SHA-256 与批准值不一致"
+        }
+        if ([string]$m.build_id -ne $APPROVED_BUILD_ID) {
+            Fail-Blocked "BLOCKED_T23_DATA_POLICY" "BuildManifest.build_id 与批准值不一致"
+        }
+        if ($builder -ne $APPROVED_BUILDER) {
+            Fail-Blocked "BLOCKED_T23_DATA_POLICY" "BuildManifest.builder_version 与批准值不一致"
+        }
+        git cat-file -e "$builder^{commit}"
+        if ($LASTEXITCODE -ne 0) {
+            Fail-Blocked "BLOCKED_T23_DATA_POLICY" "批准 builder commit 不存在：$builder"
         }
         # 校验后以锁定值初始化（不 data-rebuild）
         uv run food-agent-v2 data-verify --manifest $APPROVED_MANIFEST
@@ -168,7 +184,7 @@ try {
         $env:QDRANT_REST_PORT = "$QDRANT_REST_PORT"
         $env:REDIS_PORT = "$REDIS_PORT"
         $env:RAG_WARMUP_ON_STARTUP = "false"
-        $proc = Start-Process -FilePath "uv" -ArgumentList "run", "uvicorn", "food_agent_v2.api_app:app", "--host", "127.0.0.1", "--port", "$API_PORT" -PassThru -NoNewWindow -RedirectStandardOutput "$PWD/$API_LOG" -RedirectStandardError "$PWD/$API_ERR"
+        $Script:ApiProc = Start-Process -FilePath "uv" -ArgumentList "run", "uvicorn", "food_agent_v2.api_app:app", "--host", "127.0.0.1", "--port", "$API_PORT" -PassThru -NoNewWindow -RedirectStandardOutput "$PWD/$API_LOG" -RedirectStandardError "$PWD/$API_ERR"
         $deadline = (Get-Date).AddSeconds(90)
         $up = $false
         while ((Get-Date) -lt $deadline) {
@@ -179,7 +195,7 @@ try {
         if (-not $up) {
             Fail-Blocked "BLOCKED_T23_EMPTY_ENV" "T23 API 未就绪（日志见 $API_ERR）"
         }
-        Write-Host "API_PID: $($proc.Id) API: $API"
+        Write-Host "API_PID: $($Script:ApiProc.Id) API: $API"
     }
 
     # ---- live 0 skip：先收集，再要求精确匹配 ----
@@ -229,6 +245,7 @@ try {
     }
     Assert-Step "playwright 浏览器跨端验收" {
         Push-Location frontend
+        $env:T23_API_BASE = "$API"
         npx playwright test --config playwright.config.ts
         $code = $LASTEXITCODE
         Pop-Location
@@ -238,6 +255,14 @@ try {
     Write-Host "`n[ACCEPTANCE] 全链路验收通过（Gate S5/S6）" -ForegroundColor Green
 }
 finally {
+    # 停止脚本启动的 API 与前端服务（绝不删除任何卷）
+    if ($Script:ApiProc -and -not $Script:ApiProc.HasExited) {
+        Stop-Process -Id $Script:ApiProc.Id -Force -ErrorAction SilentlyContinue
+        Write-Host "API stopped (PID $($Script:ApiProc.Id))" -ForegroundColor Yellow
+    }
+    Get-CimInstance Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -match "5174|playwright" } |
+        ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
     Write-Host "`n资源状态（执行后，绝不删除任何卷）：" -ForegroundColor Cyan
     docker ps -a --filter "name=$T23_PREFIX" --format "{{.Names}} {{.ID}} {{.Status}}"
     docker volume ls --filter "name=$T23_PROJECT" --format "{{.Name}}"
