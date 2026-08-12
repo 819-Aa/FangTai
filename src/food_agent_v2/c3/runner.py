@@ -1173,6 +1173,20 @@ class WorkflowRunner:
                             error={"code": error.error_code,
                                    "message": error.message}
                             if error else None)
+        # 业务终态 SSE 通知：completed 仍由 answer_ready + result_committed
+        # outbox 完成；cancelled 由 cancel_request 的 request_cancelled 保持；
+        # 其余业务终态分别发布（绝不伪装成普通 failed）。
+        _terminal_notice = {
+            "no_safe_menu", "no_feasible_menu", "strict_time_indeterminate",
+            "failed", "interrupted",
+        }
+        if effective_status in _terminal_notice:
+            d1_api.publish_terminal(
+                request_id, effective_status,
+                message=error.message if error else None,
+            )
+        elif effective_status == "needs_clarification":
+            d1_api.publish_clarification_event(request_id)
         commit_c4 = getattr(c4, "commit_session_state", None)
         if commit_c4 is not None:
             import inspect as _inspect

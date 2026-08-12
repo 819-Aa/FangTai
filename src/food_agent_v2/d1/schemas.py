@@ -31,6 +31,7 @@ class SSEEventType(StrEnum):
     RESULT_COMMITTED = "result_committed"
     ERROR = "error"
     REQUEST_CANCELLED = "request_cancelled"
+    REQUEST_TERMINAL = "request_terminal"
 
 
 # 禁止字段列表（D1 §7.1）

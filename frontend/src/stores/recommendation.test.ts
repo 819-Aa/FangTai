@@ -50,7 +50,7 @@ describe("terminalLabel（终态独立展示）", () => {
     expect(terminalLabel("cancelled")).toBe("已取消");
     expect(terminalLabel("interrupted")).toBe("已中断");
     expect(terminalLabel("needs_clarification")).toBe("待澄清");
-    expect(terminalLabel("reconnect")).toBe("连接中断，已恢复");
+    expect(terminalLabel("reconnect")).toBe("连接中断，正在重连");
     expect(terminalLabel("running")).toBe("running");
   });
 });
@@ -89,7 +89,7 @@ describe("终态 Reducer（onSseEvent 分支）", () => {
     });
     return "m1";
   }
-  it("answer_ready 不完成（待最终确认）", () => {
+  it("answer_ready 不完成（待最终确认），正文写入 message.content", () => {
     const store = useRecommendationStore();
     const mid = assistant(store);
     store.isStreaming = true; // send() 中置位
@@ -98,8 +98,26 @@ describe("终态 Reducer（onSseEvent 分支）", () => {
       mid,
     );
     expect(store.answer).toBe("推荐菜单");
+    const msg = store.messages.find((m) => m.id === mid);
+    expect(msg?.content).toBe("推荐菜单"); // 正文已写入 message
+    expect(msg?.status).toBe("sending"); // 保持待最终确认
     expect(store.status).not.toBe("completed");
     expect(store.isStreaming).toBe(true); // 仍等待 result_committed
+  });
+  it("result_committed 只标 complete，不覆盖正文", () => {
+    const store = useRecommendationStore();
+    const mid = assistant(store);
+    store.onSseEvent(
+      { id: "ev_answer", event: "answer_ready", data: { text: "推荐菜单" } },
+      mid,
+    );
+    store.onSseEvent(
+      { id: "ev_result", event: "result_committed", data: {} },
+      mid,
+    );
+    const msg = store.messages.find((m) => m.id === mid);
+    expect(msg?.content).toBe("推荐菜单"); // 正文未被覆盖
+    expect(msg?.status).toBe("complete");
   });
   it("result_committed 唯一正常完成入口并关闭连接", () => {
     const store = useRecommendationStore();
@@ -133,6 +151,30 @@ describe("终态 Reducer（onSseEvent 分支）", () => {
     store.onSseEvent({ id: "ev_c", event: "request_cancelled", data: {} }, mid);
     expect(store.status).toBe("cancelled");
     expect(store.isStreaming).toBe(false);
+  });
+  it("request_terminal 各业务终态分别展示并立即关闭连接", () => {
+    for (const status of ["no_safe_menu", "no_feasible_menu",
+                           "strict_time_indeterminate", "failed", "interrupted"]) {
+      setActivePinia(createPinia());
+      localStorage.clear();
+      const store = useRecommendationStore();
+      const mid = assistant(store);
+      store.onSseEvent(
+        { id: `ev_term_${status}`, event: "request_terminal", data: { status } },
+        mid,
+      );
+      expect(store.status).toBe(status);
+      expect(store.isStreaming).toBe(false);
+    }
+  });
+  it("收到新事件后从 reconnect 恢复 running", () => {
+    const store = useRecommendationStore();
+    store.status = "reconnect";
+    store.onSseEvent(
+      { id: "ev_an", event: "analysis_ready", data: { stage: "x", summary: "y" } },
+      "m1",
+    );
+    expect(store.status).toBe("running"); // 未停留在 reconnect/已恢复
   });
   it("clarification_needed 进入独立待确认状态并展示问题", () => {
     const store = useRecommendationStore();

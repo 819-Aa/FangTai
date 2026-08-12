@@ -123,6 +123,28 @@ class TestApiApplication:
         assert "event: result_committed" in first
         assert "event: answer_ready" not in first
 
+    def test_publish_terminal_emits_request_terminal(self) -> None:
+        """业务终态经 request_terminal 统一发布，status 保持各自语义。"""
+        rid = _unique("r")
+        api._requests[rid] = {"request_id": rid, "status": "running", "session_id": "s"}
+        api.publish_terminal(rid, "no_safe_menu", message="无安全菜品")
+        ev = next(e for e in api.subscribe_events(rid)
+                  if e["event"] == "request_terminal")
+        data = json.loads(ev["data"])
+        assert data["status"] == "no_safe_menu"
+        assert data["message"] == "无安全菜品"
+
+    def test_publish_terminal_projects_forbidden_fields(self) -> None:
+        """request_terminal payload 只含 status/message，不泄漏 user_id/健康详情键。"""
+        rid = _unique("r")
+        api._requests[rid] = {"request_id": rid, "status": "running", "session_id": "s"}
+        api.publish_terminal(rid, "failed", message="异常")
+        ev = next(e for e in api.subscribe_events(rid)
+                  if e["event"] == "request_terminal")
+        data = json.loads(ev["data"])
+        assert set(data.keys()) <= {"request_id", "status", "message"}
+        assert "user_id" not in data
+
     def test_cancel_emits_cancel_not_success(self) -> None:
         """取消 → 只发 request_cancelled，绝无 answer_ready/result_committed。"""
         rid = _unique("r")

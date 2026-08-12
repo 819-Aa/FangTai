@@ -257,3 +257,64 @@ class TestHealthNodeDualArtifact:
         runner.run(rid, "sess_health", "推荐家常菜", [{"participant_ref": "p1", "user_id": "1"}])
         status = d1_api.get_request_status(rid)[1]["status"]
         assert status == "completed"
+
+
+class TestTerminalPublish:
+    """业务终态在状态持久化后必须发布 SSE 通知（T21 P1-2）。"""
+
+    def _state(self, rid: str, status):
+        from food_agent_v2.c3.state import RequestStatus, WorkflowState
+        return WorkflowState(request_id=rid, status=RequestStatus(status))
+
+    def _finalize(self, rid: str, state) -> None:
+        import json as _json
+
+        class _C4:
+            def commit_session_state(self, request_id, status, **kw):
+                pass
+
+        runner = WorkflowRunner(build_id=BID, llm=_ScriptedLLM(), c4=_C4())
+        d1_api._requests[rid] = {"request_id": rid, "status": "running",
+                                 "session_id": "sess_term"}
+        runner._finalize(state, rid, _C4(), lock_token="1")
+        return _json
+
+    def test_no_safe_menu_publishes_request_terminal(self) -> None:
+        rid = _fresh_rid()
+        state = self._state(rid, "no_safe_menu")
+        self._finalize(rid, state)
+        events = d1_api.subscribe_events(rid)
+        types = [e["event"] for e in events]
+        assert "request_terminal" in types
+        ev = next(e for e in events if e["event"] == "request_terminal")
+        data = json.loads(ev["data"])
+        assert data["status"] == "no_safe_menu"  # 不伪装成 failed
+
+    def test_no_feasible_menu_and_strict_time_distinct(self) -> None:
+        for status in ("no_feasible_menu", "strict_time_indeterminate"):
+            rid = _fresh_rid()
+            state = self._state(rid, status)
+            self._finalize(rid, state)
+            ev = next(e for e in d1_api.subscribe_events(rid)
+                      if e["event"] == "request_terminal")
+            assert json.loads(ev["data"])["status"] == status
+
+    def test_failed_publishes_request_terminal_with_message(self) -> None:
+        from food_agent_v2.c3.state import WorkflowError
+        rid = _fresh_rid()
+        state = self._state(rid, "failed")
+        state.error = WorkflowError("WORKFLOW_ERROR", "模型节点失败")
+        self._finalize(rid, state)
+        ev = next(e for e in d1_api.subscribe_events(rid)
+                  if e["event"] == "request_terminal")
+        data = json.loads(ev["data"])
+        assert data["status"] == "failed"
+        assert data["message"] == "模型节点失败"
+
+    def test_needs_clarification_publishes_clarification_event(self) -> None:
+        rid = _fresh_rid()
+        state = self._state(rid, "needs_clarification")
+        self._finalize(rid, state)
+        types = [e["event"] for e in d1_api.subscribe_events(rid)]
+        assert "clarification_needed" in types
+        assert "request_terminal" not in types

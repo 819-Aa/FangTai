@@ -400,6 +400,21 @@ class RecommendationAPI:
         self._emit_event(request_id, SSEEventType.ANSWER_READY, payload,
                          event_id=event_id)
 
+    def publish_terminal(self, request_id: str, status: str,
+                         message: str | None = None) -> None:
+        """发布业务终态通知（request_terminal）。
+
+        no_safe_menu / no_feasible_menu / strict_time_indeterminate / failed /
+        interrupted 等终态经此统一发布，status 保持各自语义（绝不伪装成普通
+        failed）；payload 经禁止字段投影，绝不泄漏 user_id/健康详情。
+        """
+        payload = strip_forbidden_fields({
+            "request_id": request_id,
+            "status": status,
+            "message": message or "",
+        })
+        self._emit_event(request_id, SSEEventType.REQUEST_TERMINAL, payload)
+
     def publish_result_committed(self, request_id: str, menu_summary: dict,
                                  event_id: str | None = None) -> None:
         """发布 result_committed（禁止字段扫描；被拦截时抛错阻止投递）。"""

@@ -59,7 +59,7 @@ export function subscribeEvents(
 ): SSEConnection {
   const types = [
     "request_accepted", "analysis_ready", "answer_ready", "result_committed",
-    "error", "request_cancelled", "clarification_needed",
+    "error", "request_cancelled", "clarification_needed", "request_terminal",
   ];
   let closed = false;
   let lastEventId = "";

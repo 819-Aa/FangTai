@@ -47,7 +47,7 @@ export function terminalLabel(status: string): string {
     case "needs_clarification":
       return "待澄清";
     case "reconnect":
-      return "连接中断，已恢复";
+      return "连接中断，正在重连";
     default:
       return status || "";
   }
@@ -270,10 +270,16 @@ export const useRecommendationStore = defineStore("recommendation", {
       const before = this.phases.length;
       this.phases = reducePhases(this.phases, [e]);
       if (this.phases.length === before) return; // 重复 event_id 不重复改变 UI
+      // 收到新事件 → 连接已恢复（不能停留在"reconnect"）
+      if (this.status === "reconnect") this.status = "running";
       switch (e.event) {
         case "answer_ready":
           this.answer = String((e.data as { text?: string }).text || "");
-          // 保持"待最终确认"，不 completed
+          // 正文写入 assistant message.content；保持 sending/待最终确认，不 completed
+          {
+            const pending = this.messages.find((m) => m.id === assistantId);
+            if (pending) pending.content = this.answer;
+          }
           break;
         case "result_committed":
           this.status = "completed";
@@ -288,6 +294,16 @@ export const useRecommendationStore = defineStore("recommendation", {
           this.status = "cancelled";
           this.finishStreaming(assistantId, "error");
           break;
+        case "request_terminal": {
+          // 业务终态：no_safe_menu/no_feasible_menu/strict_time_indeterminate/
+          // failed/interrupted 分别保持语义，立即关闭连接
+          const status = String((e.data as { status?: string }).status || "failed");
+          this.status = status;
+          const msg = String((e.data as { message?: string }).message || "");
+          if (msg) this.error = msg;
+          this.finishStreaming(assistantId, "error");
+          break;
+        }
         case "clarification_needed":
           this.status = "needs_clarification";
           this.clarification = String(
