@@ -1088,6 +1088,30 @@ class WorkflowRunner:
         return "\n".join(str(p) for p in parts if p and str(p).strip()).strip()
 
     @staticmethod
+    def _committed_result_summary(
+        fva: FinalValidationArtifact,
+        ans: AnswerArtifact,
+    ) -> dict:
+        """构造已提交结果的公开只读投影（API 轮询/刷新恢复使用）。
+
+        值只来自已通过最终校验并进入 Application 提交的 Artifact；不得从模型文本
+        解析菜品身份，也不得从 SSE/Redis 反推提交事实。
+        """
+        return {
+            "status": RequestStatus.COMPLETED.value,
+            "answer": {
+                "text": WorkflowRunner._artifact_answer_text(ans),
+                "menu_ref": ans.menu_ref,
+                "evidence_refs": list(ans.evidence_refs),
+            },
+            "menu_summary": {
+                "plan_id": fva.plan_id,
+                "menu_hash": fva.menu_hash,
+                "recipe_ids": list(fva.recipe_ids),
+            },
+        }
+
+    @staticmethod
     def _is_cancelled(request_id: str) -> bool:
         """检查 D1 cancel 是否设置了 Redis 取消标记（文档 §15：节点边界检查）。"""
         try:
@@ -1108,6 +1132,7 @@ class WorkflowRunner:
         """
         effective_status = state.status.value
         error = state.error
+        result_summary: dict = {"status": effective_status}
 
         if effective_status == "completed":
             try:
@@ -1197,15 +1222,27 @@ class WorkflowRunner:
                     evidence_refs=list(ans.evidence_refs)
                     if isinstance(ans, AnswerArtifact) else [],
                 )
-                # success SSE 仅由事务提交后的 outbox dispatcher 发布
-                from food_agent_v2.application.outbox import dispatch_request
-                dispatch_request(request_id)
+                # 到这里 Application 的原子事务已经提交，业务结果正式 completed。
+                # D1 只保存同一提交事实的公开投影，供 SSE 中断后的轮询/刷新恢复。
+                if (isinstance(fva, FinalValidationArtifact)
+                        and isinstance(ans, AnswerArtifact)):
+                    result_summary = self._committed_result_summary(fva, ans)
             except Exception as e:  # noqa: BLE001
                 effective_status = RequestStatus.FAILED.value
                 error = error or WorkflowError("AUDIT_COMMIT_FAILED", str(e))
+                result_summary = {"status": effective_status}
+
+            if effective_status == RequestStatus.COMPLETED.value:
+                # outbox 是提交后的传输层。即时投递异常不得否定已经提交的 MySQL
+                # 业务事实；pending/dispatching 记录由后续 dispatcher 重试。
+                try:
+                    from food_agent_v2.application.outbox import dispatch_request
+                    dispatch_request(request_id)
+                except Exception:
+                    pass
 
         d1_api.update_status(request_id, effective_status,
-                            result_summary={"status": effective_status},
+                            result_summary=result_summary,
                             error={"code": error.error_code,
                                    "message": error.message}
                             if error else None)
