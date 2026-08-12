@@ -706,7 +706,11 @@ class ContextService:
             conversation_visible=conversation_visible,
             constraint_visible=constraint_visible,
             menu_visible={
-                "current_menu": ctx.current_menu,
+                "current_menu": {
+                    "plan_id": ctx.current_menu.plan_id,
+                    "recipe_ids": list(ctx.current_menu.recipe_ids),
+                    "menu_artifact_ref": ctx.current_menu.menu_artifact_ref,
+                },
                 "menu_history": ctx.menu_history[:5],
             } if ctx.current_menu.plan_id else None,
             token_budget={

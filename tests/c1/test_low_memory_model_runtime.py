@@ -16,7 +16,7 @@ class _FakeEmbeddingModel:
     def encode(self, text, *, normalize_embeddings):
         assert text == "红烧肉"
         assert normalize_embeddings is True
-        return np.asarray([0.1, 0.2], dtype=np.float16)
+        return np.asarray([0.1, 0.2], dtype=np.float32)
 
 
 class _FakeQdrantClient:

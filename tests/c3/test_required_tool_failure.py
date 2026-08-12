@@ -48,12 +48,16 @@ class _FakeLLM:
         self._responses = responses
         self._raise_on_invoke = raise_on_invoke
         self.calls: list[str] = []  # 每次调用的 user_message
+        self.tool_defs: list[list[str]] = []
 
     def invoke(self, role, system_prompt, user_message, tools=None, response_format=None):
         if self._raise_on_invoke:
             raise RuntimeError("api down")
         idx = min(len(self.calls), len(self._responses) - 1)
         self.calls.append(user_message)
+        self.tool_defs.append([
+            item["function"]["name"] for item in (tools or [])
+        ])
         return self._responses[idx]
 
 
@@ -177,3 +181,67 @@ class TestRealCallModelFailClosed:
         err = WorkflowRunner._validate_tool_budget(dup)
         assert err is not None
         assert err.error_code == "WORKFLOW_RETRY_LIMIT_EXCEEDED"
+
+    def test_preexecuted_retrieval_satisfies_query_node(self, monkeypatch) -> None:
+        """Runner 可在模型前确定性检索，模型只负责语义 Artifact。"""
+        from food_agent_v2.c3 import tool_handler
+
+        semantic = {
+            "flavor_preferences": ["家常"],
+            "cuisine_preferences": [],
+            "dish_types": [],
+            "cooking_methods": [],
+            "preferred_ingredients": [],
+            "meal_type": None,
+            "scenario": None,
+            "diversity_requirements": [],
+            "dish_count_requested": 4,
+            "health_exclusions": [],
+            "preference_exclusions": [],
+            "time_constraint_seconds": 2700,
+            "time_constraint_policy": "hard",
+            "evidence_refs": [],
+        }
+        runner, llm = make_runner([
+            {"content": __import__("json").dumps(semantic), "tool_calls": []}
+        ])
+        ctx = make_ctx()
+        ctx.participant_user_mapping = {"p1": 1}
+        monkeypatch.setitem(
+            tool_handler._TOOL_MAP,
+            "retrieve_recipes",
+            lambda args, _ctx: {"total": 1, "candidates": [{"recipe_id": 7}]},
+        )
+
+        new_state, _raw, artifact = runner._run_model_node(
+            make_state(),
+            _FakeC4(),
+            ctx,
+            "query_understanding",
+            "推荐三菜一汤",
+            deterministic_tools=[("retrieve_recipes", {"query": "推荐三菜一汤"})],
+        )
+
+        assert new_state.status == RequestStatus.ACCEPTED
+        assert artifact is not None
+        assert [r.tool_name for r in new_state.tool_receipts] == ["retrieve_recipes"]
+        assert "retrieve_recipes" not in llm.tool_defs[0]
+        assert "已执行确定性工具" in llm.calls[0]
+
+    def test_used_tool_is_not_offered_again_next_round(self) -> None:
+        """单节点已执行工具从下一轮 tools 中移除，避免模型重复调用。"""
+        runner, llm = make_runner([
+            {"content": "", "tool_calls": [{"name": "get_current_menu", "arguments": {}}]},
+            {"content": '{"intent": "new"}', "tool_calls": []},
+        ])
+
+        runner._call_model(
+            "query_understanding",
+            ROLE_POLICIES["query_understanding"],
+            _FakeC4().project_model_context("query_understanding", None, "x"),
+            "hi",
+            make_ctx(),
+        )
+
+        assert "get_current_menu" in llm.tool_defs[0]
+        assert "get_current_menu" not in llm.tool_defs[1]

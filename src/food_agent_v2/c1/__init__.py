@@ -130,15 +130,13 @@ class BM25Index:
 def _get_production_reranker() -> RerankerPort:
     from sentence_transformers import CrossEncoder
 
-    from food_agent_v2.c1.qdrant_client import _model_runtime, _model_source
+    from food_agent_v2.c1.qdrant_client import _model_device, _model_source
 
     cfg = load_config().models
-    device, model_kwargs = _model_runtime()
     return CrossEncoder(
         _model_source(cfg.reranker_model_path, "BAAI/bge-reranker-v2-m3"),
         cache_folder=".model-cache",
-        device=device,
-        model_kwargs=model_kwargs,
+        device=_model_device(),
     )
 
 

@@ -308,7 +308,16 @@ class WorkflowRunner:
 
             if node == NodeType.QUERY_UNDERSTANDING:
                 state, q_raw, q_artifact = self._run_model_node(
-                    state, c4, tool_ctx, "query_understanding", user_message=message)
+                    state,
+                    c4,
+                    tool_ctx,
+                    "query_understanding",
+                    user_message=message,
+                    # Retrieval is a deterministic prerequisite, not a decision the
+                    # language model may omit.  The model receives the authoritative
+                    # result and remains responsible only for QueryPlan semantics.
+                    deterministic_tools=[("retrieve_recipes", {"query": message})],
+                )
                 if state.is_terminal():
                     break
                 # 查询理解输出必须为合法 QueryPlanArtifact（无澄清绕过；不满足即 fail-closed）
@@ -648,7 +657,9 @@ class WorkflowRunner:
 
     def _run_model_node(self, state: WorkflowState, c4: ContextService,
                         tool_ctx: ToolContext, role: str, user_message: str,
-                        handoff: dict | None = None) -> tuple[WorkflowState, dict, BaseModel | None]:
+                        handoff: dict | None = None,
+                        deterministic_tools: list[tuple[str, dict]] | None = None,
+                        ) -> tuple[WorkflowState, dict, BaseModel | None]:
         """执行一个模型节点，返回 (新状态, 原始输出, 校验后的类型化 Artifact)。
 
         必需工具漏调/失败、模型异常、回执预算/身份失败、Artifact Schema 违约
@@ -666,8 +677,19 @@ class WorkflowRunner:
         model_ctx = c4.project_model_context(role, handoff, state.shared_context_ref or "")
         pre_count = len(tool_ctx.tool_receipts)
 
+        deterministic_results: list[dict] = []
+        if deterministic_tools:
+            handler = ToolHandler(tool_ctx)
+            for tool_name, arguments in deterministic_tools:
+                deterministic_results.append({
+                    "tool": tool_name,
+                    "result": handler.execute(tool_name, arguments),
+                })
+
         result = self._call_model(role, policy, model_ctx, user_message, tool_ctx,
-                                  response_format=self._artifact_response_format(policy, role))
+                                  response_format=self._artifact_response_format(policy, role),
+                                  already_executed={item["tool"] for item in deterministic_results},
+                                  deterministic_results=deterministic_results)
 
         if result.get("status") == "failed":
             err = WorkflowError("MODEL_CALL_FAILED",
@@ -876,8 +898,10 @@ class WorkflowRunner:
         return None
 
     def _call_model(self, role: str, policy: Any, model_ctx,
-                    user_input: str, tool_ctx: ToolContext,
-                    response_format: dict | None = None) -> dict:
+                     user_input: str, tool_ctx: ToolContext,
+                     response_format: dict | None = None,
+                     already_executed: set[str] | None = None,
+                     deterministic_results: list[dict] | None = None) -> dict:
         """调用 LLM——函数调用模式 + 严格 json_schema（可选）。
 
         只允许真实工具调用后的正常结果续接；不做必需工具提示补齐、不代调、
@@ -895,12 +919,24 @@ class WorkflowRunner:
         }
         ctx_json = json.dumps(ctx_data, ensure_ascii=False, default=str)
         full_user = f"## 上下文\n{ctx_json}\n\n## 任务\n{user_input}"
+        used_tools = set(already_executed or ())
+        if deterministic_results:
+            rendered = "\n".join(
+                f"[{item['tool']}] "
+                f"{json.dumps(item['result'], ensure_ascii=False, default=str)[:1000]}"
+                for item in deterministic_results
+            )
+            full_user += f"\n\n## 已执行确定性工具\n{rendered}"
 
         for _round in range(5):
+            remaining_defs = [
+                item for item in (tool_defs or [])
+                if item["function"]["name"] not in used_tools
+            ]
             try:
                 response = self._llm.invoke(
                     role, system_prompt, full_user,
-                    tools=tool_defs if tool_defs else None,
+                    tools=remaining_defs or None,
                     response_format=response_format,
                 )
             except Exception as e:
@@ -922,7 +958,11 @@ class WorkflowRunner:
                     if name not in allowed_names:
                         tool_results.append({"tool": name, "error": "TOOL_PERMISSION_DENIED"})
                         continue
+                    if name in used_tools:
+                        tool_results.append({"tool": name, "error": "TOOL_ALREADY_EXECUTED"})
+                        continue
                     result = tool_handler.execute(name, args)
+                    used_tools.add(name)
                     # MC-01-R2 P0-2：generate_feasible_menus 返回业务终态 → 立即停止
                     # 同批 tool_calls 循环；其后的 expand_retrieval/adjust_menu_plan
                     # 等工具绝不执行；已执行回执仍进入统一校验。

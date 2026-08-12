@@ -16,23 +16,14 @@ def _model_source(configured_path: str, model_id: str) -> str:
     return str(path) if path.exists() else model_id
 
 
-def _cpu_model_kwargs(dtype_name: str) -> dict:
-    if dtype_name not in {"float16", "bfloat16"}:
-        return {}
-    import torch
-
-    return {"torch_dtype": getattr(torch, dtype_name)}
-
-
-def _model_runtime() -> tuple[str, dict]:
+def _model_device() -> str:
     cfg = load_config().models
     import torch
 
     device = cfg.device
     if device == "auto":
         device = "cuda" if torch.cuda.is_available() else "cpu"
-    kwargs = _cpu_model_kwargs(cfg.cpu_dtype) if device == "cpu" else {}
-    return device, kwargs
+    return device
 
 
 def _get_embedding_model():
@@ -42,12 +33,10 @@ def _get_embedding_model():
         from sentence_transformers import SentenceTransformer
 
         cfg = load_config().models
-        device, model_kwargs = _model_runtime()
         _embedding_model = SentenceTransformer(
             _model_source(cfg.bge_model_path, "BAAI/bge-m3"),
             cache_folder=".model-cache",
-            device=device,
-            model_kwargs=model_kwargs,
+            device=_model_device(),
         )
     return _embedding_model
 

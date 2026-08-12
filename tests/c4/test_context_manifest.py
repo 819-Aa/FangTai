@@ -138,6 +138,20 @@ class TestFailedRequestNoMemory:
         svc.commit_session_state("rf2", "completed", menu_artifact_ref="art")
         assert ctx.menu_history and ctx.menu_history[0]["plan_id"] == "plan-B"
 
+    def test_model_menu_projection_is_json_serializable(self) -> None:
+        svc = make_service()
+        sid = uniq("projection")
+        ctx, _manifest = svc.build_shared_context(
+            sid, ["p1"], {"raw_text": "hi"}, {"p1": 1}, request_id="rp1")
+        ctx.current_menu = CurrentMenu(plan_id="plan-C", recipe_ids=[5, 6])
+
+        projected = svc.project_model_context("query_understanding", None, sid)
+
+        import json
+
+        json.dumps(projected.menu_visible, ensure_ascii=False)
+        assert projected.menu_visible["current_menu"]["plan_id"] == "plan-C"
+
 
 class TestDefaultLoaderLoadsPermanent:
     def test_default_loader_loads_b2_permanent_constraints(self) -> None:
