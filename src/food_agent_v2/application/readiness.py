@@ -11,7 +11,6 @@ from typing import Any
 
 from food_agent_v2.core.config import load_config
 
-
 EXPECTED_FIXED_ARTIFACT_COUNTS: dict[str, int] = {
     "health_relation_coverage": 38,
     "health_relation_decisions": 65854,

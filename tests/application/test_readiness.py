@@ -8,7 +8,6 @@ import pytest
 
 from food_agent_v2.application import readiness
 
-
 BUILD_ID = "8f98393e-4ae2-4c00-bd0b-1cb07cd91a6f"
 
 
