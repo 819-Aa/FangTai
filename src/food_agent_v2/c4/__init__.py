@@ -107,7 +107,7 @@ class B2PermanentConstraintLoader:
              build_id: str | None = None) -> list[EffectiveConstraint]:
         from food_agent_v2.b2 import UserHealthProfileService
 
-        expected = build_id or self._build_id
+        expected = build_id if build_id is not None else self._build_id
         svc = UserHealthProfileService(source=self._source)
         svc.load(expected_build_id=expected)
         out: list[EffectiveConstraint] = []

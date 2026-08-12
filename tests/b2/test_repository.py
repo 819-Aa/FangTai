@@ -30,9 +30,13 @@ class _FakeCursor:
         self._sets = list(result_sets)
         self._i = 0
         self._exc = exc
+        self._execute_count = 0
+        self._exc_at_execute = 1
+        self.closed = False
 
     def execute(self, sql, params=None):
-        if self._exc is not None:
+        self._execute_count += 1
+        if self._exc is not None and self._execute_count == self._exc_at_execute:
             raise self._exc
 
     def fetchall(self):
@@ -40,16 +44,27 @@ class _FakeCursor:
         self._i += 1
         return rows
 
+    def close(self):
+        self.closed = True
+
+
+class _FakeConnection:
+    def __init__(self) -> None:
+        self.closed = False
+
+    def close(self):
+        self.closed = True
+
 
 def _payload_rows(records: list[dict]) -> list[tuple]:
     return [(json.dumps(r, ensure_ascii=False),) for r in records]
 
 
 def _mysql_source(ready_rows: list[tuple], records: list[dict],
-                  *, exc=None) -> MySQLUserProfileSource:
+                   *, exc=None) -> MySQLUserProfileSource:
     """构造只读 MySQL source，注入假 cursor（ready 查询 + payload 查询）。"""
     src = MySQLUserProfileSource()
-    src._connection = object()
+    src._connection = _FakeConnection()
     src._cursor = _FakeCursor(ready_rows, _payload_rows(records), exc=exc)
     return src
 
@@ -164,6 +179,16 @@ class TestUserIdIntegrity:
             src.load_users()
         assert excinfo.value.code == "USER_PROFILE_USER_ID_INVALID"
 
+    @pytest.mark.parametrize("boolean_id", [True, False])
+    def test_boolean_user_id_fails(self, user_records, boolean_id) -> None:
+        """JSON true/false 不是整数用户 ID，不得借 Python bool/int 继承通过。"""
+        records = copy.deepcopy(user_records)
+        records[0]["user_id"] = boolean_id
+        src = _mysql_source([(MC02_TEST_READY_BUILD,)], records)
+        with pytest.raises(ProfileRepositoryError) as excinfo:
+            src.load_users()
+        assert excinfo.value.code == "USER_PROFILE_USER_ID_INVALID"
+
     def test_mixed_build_identity_fails(self, user_records) -> None:
         records = copy.deepcopy(user_records)
         records[0]["build_id"] = "build-OTHER"
@@ -185,12 +210,74 @@ class TestDatabaseUnavailable:
 
     def test_invalid_json_payload_fails(self, user_records) -> None:
         src = MySQLUserProfileSource()
-        src._connection = object()
+        src._connection = _FakeConnection()
         src._cursor = _FakeCursor(
             [(MC02_TEST_READY_BUILD,)], [("{not-json",)])
         with pytest.raises(ProfileRepositoryError) as excinfo:
             src.load_users()
         assert excinfo.value.code == "USER_PROFILE_INVALID_JSON"
+
+
+class TestConnectionLifecycle:
+    @pytest.mark.parametrize("invalid_json", [False, True])
+    def test_connection_and_cursor_close_after_load(self, user_records, invalid_json) -> None:
+        """短生命周期 B2 source 在成功与解析失败后均确定关闭数据库资源。"""
+        src = MySQLUserProfileSource()
+        connection = _FakeConnection()
+        payload_rows = [("{not-json",)] if invalid_json else _payload_rows(user_records)
+        cursor = _FakeCursor([(MC02_TEST_READY_BUILD,)], payload_rows)
+        src._connection = connection
+        src._cursor = cursor
+
+        if invalid_json:
+            with pytest.raises(ProfileRepositoryError):
+                src.load_users()
+        else:
+            assert len(src.load_users()) == 50
+
+        assert cursor.closed is True
+        assert connection.closed is True
+        assert src._cursor is None
+        assert src._connection is None
+
+    def test_connection_and_cursor_close_after_query_failure(self, user_records) -> None:
+        """数据库查询异常同样不得遗留 source 持有的连接。"""
+        src = MySQLUserProfileSource()
+        connection = _FakeConnection()
+        cursor = _FakeCursor(exc=RuntimeError("mysql down"))
+        src._connection = connection
+        src._cursor = cursor
+
+        with pytest.raises(ProfileRepositoryError) as excinfo:
+            src.load_users()
+
+        assert excinfo.value.code == "B2_DATABASE_UNAVAILABLE"
+        assert cursor.closed is True
+        assert connection.closed is True
+        assert src._cursor is None
+        assert src._connection is None
+
+    def test_connection_closes_when_payload_query_fails(self, user_records) -> None:
+        """ready build 查询成功、第二条 payload SELECT 失败时也必须关闭。"""
+        src = MySQLUserProfileSource()
+        connection = _FakeConnection()
+        cursor = _FakeCursor(
+            [(MC02_TEST_READY_BUILD,)],
+            _payload_rows(user_records),
+            exc=RuntimeError("payload query failed"),
+        )
+        cursor._exc_at_execute = 2
+        src._connection = connection
+        src._cursor = cursor
+
+        with pytest.raises(ProfileRepositoryError) as excinfo:
+            src.load_users()
+
+        assert excinfo.value.code == "B2_DATABASE_UNAVAILABLE"
+        assert cursor.closed is True
+        assert connection.closed is True
+        assert src._cursor is None
+        assert src._connection is None
 
 
 def test_make_records_satisfy_integrity(user_records) -> None:

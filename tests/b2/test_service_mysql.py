@@ -85,6 +85,15 @@ class TestLoadCacheSemantics:
         assert svc._users == {}
         assert svc._loaded is False
 
+    def test_empty_expected_build_is_rejected(self, user_profiles_source) -> None:
+        """显式空 build_id 是非法身份，不等价于“未提供”。"""
+        svc = UserHealthProfileService(source=user_profiles_source)
+        with pytest.raises(ProfileRepositoryError) as excinfo:
+            svc.load(expected_build_id="")
+        assert excinfo.value.code == "BUILD_IDENTITY_MISMATCH"
+        assert svc._users == {}
+        assert svc._loaded is False
+
 
 class TestNoJsonlDependency:
     def test_jsonl_unavailable_still_loads_via_source(

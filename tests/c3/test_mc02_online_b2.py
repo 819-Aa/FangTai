@@ -14,9 +14,12 @@ import copy
 import uuid
 from pathlib import Path
 
+import pytest
+
 from food_agent_v2.b2.repository import InMemoryUserProfileSource, ProfileRepositoryError
 from food_agent_v2.b2.service import UserHealthProfileService
 from food_agent_v2.c3.runner import WorkflowRunner
+from food_agent_v2.c3.tool_handler import ToolContext, ToolHandler, _retrieve_recipes
 from food_agent_v2.c4 import (
     B2PermanentConstraintLoader,
     ConstraintScope,
@@ -49,6 +52,16 @@ def _reset_d1() -> None:
         "request_id": RID, "session_id": "sess_mc02", "status": "accepted",
         "created_at": "t", "updated_at": "t",
     }
+
+
+def _isolate_runtime(c4: ContextService) -> ContextService:
+    """只隔离会话锁/持久化基础设施，不替换被测 B2/C3/C4 业务路径。"""
+    c4.acquire_session_lock = lambda _session_id, _worker_id: "1"
+    c4.renew_session_lock = lambda _session_id, _token: True
+    c4.is_session_lock_held = lambda _session_id, _token: True
+    c4.release_session_lock = lambda _session_id, _token: True
+    c4._persist_session = lambda _ctx, _token=None: None
+    return c4
 
 
 def _code_strings_and_imports(rel: str) -> tuple[str, list[str]]:
@@ -104,9 +117,9 @@ class TestNoLlmWhenB2Unavailable:
             def load_users(self, expected_build_id=None):
                 raise ProfileRepositoryError("B2_DATABASE_UNAVAILABLE", "mysql down")
 
-        c4 = ContextService(
+        c4 = _isolate_runtime(ContextService(
             memory_source=InMemorySessionMemorySource(),
-            permanent_constraint_loader=B2PermanentConstraintLoader(source=_FailingSource()))
+            permanent_constraint_loader=B2PermanentConstraintLoader(source=_FailingSource())))
         llm = _CountingLLM()
         runner = WorkflowRunner(build_id=BID, llm=llm, c4=c4)
         runner.run(RID, _uniq("sess"), "推荐家常菜", [{"participant_ref": "p1", "user_id": "1"}])
@@ -121,9 +134,9 @@ class TestNoLlmWhenB2Unavailable:
         _reset_d1()
         source = InMemoryUserProfileSource(
             copy.deepcopy(user_records), ready_builds=["build-OTHER"])
-        c4 = ContextService(
+        c4 = _isolate_runtime(ContextService(
             memory_source=InMemorySessionMemorySource(),
-            permanent_constraint_loader=B2PermanentConstraintLoader(source=source))
+            permanent_constraint_loader=B2PermanentConstraintLoader(source=source)))
         llm = _CountingLLM()
         runner = WorkflowRunner(build_id=BID, llm=llm, c4=c4)
         runner.run(RID, _uniq("sess"), "推荐家常菜", [{"participant_ref": "p1", "user_id": "1"}])
@@ -140,9 +153,9 @@ class TestNoLlmWhenB2Unavailable:
         for record in records:
             record["build_id"] = BID
         source = InMemoryUserProfileSource(records, ready_builds=[BID])
-        c4 = ContextService(
+        c4 = _isolate_runtime(ContextService(
             memory_source=InMemorySessionMemorySource(),
-            permanent_constraint_loader=B2PermanentConstraintLoader(source=source))
+            permanent_constraint_loader=B2PermanentConstraintLoader(source=source)))
         llm = _CountingLLM()
         runner = WorkflowRunner(build_id=BID, llm=llm, c4=c4)
         sid = _uniq("sess")
@@ -153,6 +166,60 @@ class TestNoLlmWhenB2Unavailable:
                  if c.scope == ConstraintScope.PERMANENT}
         assert "disease_hypertension" in codes
         assert "allergy_seafood" in codes or "allergy_peanut" in codes
+
+    def test_empty_build_identity_fails_in_permanent_loader(self, user_records) -> None:
+        source = InMemoryUserProfileSource(
+            user_records, ready_builds=[str(user_records[0]["build_id"])])
+        loader = B2PermanentConstraintLoader(source=source)
+        with pytest.raises(ProfileRepositoryError) as excinfo:
+            loader.load({"p1": 1}, build_id="")
+        assert excinfo.value.code == "BUILD_IDENTITY_MISMATCH"
+
+    def test_multiplayer_retrieval_does_not_swallow_b2_failure(self, monkeypatch) -> None:
+        """多人偏好读取的 B2 故障必须成为失败回执，不能降级为普通检索。"""
+        class _RetrievalService:
+            def retrieve(self, *args, **kwargs):
+                raise AssertionError("B2 失败后不得继续普通检索")
+
+        def _fail_load(self, expected_build_id=None):
+            raise ProfileRepositoryError("B2_DATABASE_UNAVAILABLE", "mysql down")
+
+        monkeypatch.setattr("food_agent_v2.c1.get_retrieval_service",
+                            lambda: _RetrievalService())
+        monkeypatch.setattr(UserHealthProfileService, "load", _fail_load)
+        ctx = ToolContext(
+            request_id=RID,
+            build_id=BID,
+            participant_user_mapping={"p1": 1, "p2": 2},
+        )
+        with pytest.raises(ProfileRepositoryError) as excinfo:
+            _retrieve_recipes({"query": "清淡家常菜"}, ctx)
+        assert excinfo.value.code == "B2_DATABASE_UNAVAILABLE"
+
+    def test_multiplayer_b2_failure_produces_failed_tool_receipt(self, monkeypatch) -> None:
+        """真实 ToolHandler 边界把 B2 异常记录为失败回执，而不是成功检索。"""
+        class _RetrievalService:
+            pass
+
+        def _fail_load(self, expected_build_id=None):
+            raise ProfileRepositoryError("B2_DATABASE_UNAVAILABLE", "mysql down")
+
+        monkeypatch.setattr("food_agent_v2.c1.get_retrieval_service",
+                            lambda: _RetrievalService())
+        monkeypatch.setattr(UserHealthProfileService, "load", _fail_load)
+        ctx = ToolContext(
+            request_id=RID,
+            node_id="query_understanding",
+            build_id=BID,
+            participant_user_mapping={"p1": 1, "p2": 2},
+        )
+
+        result = ToolHandler(ctx).execute("retrieve_recipes", {"query": "清淡家常菜"})
+
+        assert result["error"].startswith("TOOL_EXECUTION_FAILED:")
+        assert len(ctx.tool_receipts) == 1
+        assert ctx.tool_receipts[0]["success"] is False
+        assert ctx.tool_receipts[0]["error_code"].startswith("TOOL_EXECUTION_FAILED:")
 
 
 class TestPrivacyBoundary:

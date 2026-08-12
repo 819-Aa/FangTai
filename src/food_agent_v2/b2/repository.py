@@ -56,7 +56,8 @@ def _validate_user_profile_records(build_id: str, records: list[dict]) -> list[d
     user_ids: list[int] = []
     for record in records:
         uid = record.get("user_id")
-        if not isinstance(uid, int) or uid not in USER_ID_RANGE:
+        # bool 是 int 的子类；JSON true/false 不得伪装为 user_id 1/0。
+        if type(uid) is not int or uid not in USER_ID_RANGE:
             raise ProfileRepositoryError(
                 "USER_PROFILE_USER_ID_INVALID",
                 f"user_id 缺失/非法/越界: {uid!r}",
@@ -73,7 +74,8 @@ def _validate_user_profile_records(build_id: str, records: list[dict]) -> list[d
 class MySQLUserProfileSource:
     """生产实现：从 MySQL data_builds + fixed_artifact_records 只读加载固定档案。
 
-    仅执行 SELECT 查询（autocommit 只读连接），任何数据库异常稳定失败。
+    延迟建连且仅执行 SELECT；每次 ``load_users`` 成功或失败后均确定关闭，
+    任何数据库异常稳定失败。
     """
 
     def __init__(self, *, config: MySQLConfig | None = None) -> None:
@@ -103,6 +105,22 @@ class MySQLUserProfileSource:
         self._connect()
         return self._cursor
 
+    def close(self) -> None:
+        """确定释放本 source 拥有的短生命周期数据库资源。"""
+        cursor, connection = self._cursor, self._connection
+        self._cursor = None
+        self._connection = None
+        if cursor is not None:
+            try:
+                cursor.close()
+            except Exception:
+                pass
+        if connection is not None:
+            try:
+                connection.close()
+            except Exception:
+                pass
+
     def ready_build_id(self) -> str:
         """查询 data_builds 唯一 ready 构建；0 个或多于 1 个即 fail-closed。"""
         try:
@@ -119,33 +137,39 @@ class MySQLUserProfileSource:
         return str(rows[0][0])
 
     def load_users(self, expected_build_id: str | None = None) -> list[dict]:
-        build_id = self.ready_build_id()
-        if expected_build_id is not None and str(expected_build_id) != build_id:
-            raise ProfileRepositoryError(
-                "BUILD_IDENTITY_MISMATCH",
-                f"expected_build_id={expected_build_id} 与 ready build {build_id} 不一致",
-            )
         try:
-            self.cursor.execute(
-                "SELECT payload FROM fixed_artifact_records "
-                "WHERE build_id=%s AND artifact_name='user_profiles' ORDER BY record_index",
-                (build_id,),
-            )
-            rows = self.cursor.fetchall()
-        except Exception as exc:
-            raise ProfileRepositoryError(
-                "B2_DATABASE_UNAVAILABLE", f"B2 固定档案数据库不可用: {exc}") from exc
-        records: list[dict] = []
-        for (payload,) in rows:
             try:
-                record = json.loads(payload)
-            except (json.JSONDecodeError, TypeError) as exc:
+                build_id = self.ready_build_id()
+                if expected_build_id is not None and str(expected_build_id) != build_id:
+                    raise ProfileRepositoryError(
+                        "BUILD_IDENTITY_MISMATCH",
+                        f"expected_build_id={expected_build_id} 与 ready build {build_id} 不一致",
+                    )
+                self.cursor.execute(
+                    "SELECT payload FROM fixed_artifact_records "
+                    "WHERE build_id=%s AND artifact_name='user_profiles' ORDER BY record_index",
+                    (build_id,),
+                )
+                rows = self.cursor.fetchall()
+            except ProfileRepositoryError:
+                raise
+            except Exception as exc:
                 raise ProfileRepositoryError(
-                    "USER_PROFILE_INVALID_JSON",
-                    f"user_profiles 记录非法 JSON: {exc}",
-                ) from exc
-            records.append(record)
-        return _validate_user_profile_records(build_id, records)
+                    "B2_DATABASE_UNAVAILABLE", f"B2 固定档案数据库不可用: {exc}") from exc
+
+            records: list[dict] = []
+            for (payload,) in rows:
+                try:
+                    record = json.loads(payload)
+                except (json.JSONDecodeError, TypeError) as exc:
+                    raise ProfileRepositoryError(
+                        "USER_PROFILE_INVALID_JSON",
+                        f"user_profiles 记录非法 JSON: {exc}",
+                    ) from exc
+                records.append(record)
+            return _validate_user_profile_records(build_id, records)
+        finally:
+            self.close()
 
 
 class InMemoryUserProfileSource:

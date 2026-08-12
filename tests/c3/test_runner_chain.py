@@ -168,7 +168,9 @@ class _ScriptedLLM:
 
 
 def _make_runner():
-    return WorkflowRunner(build_id=BID, llm=_ScriptedLLM(), c4=_FakeC4())
+    # 真实工具链由 runner 从数据库唯一 ready build 解析身份；不得写死与数据库
+    # 无关的测试 UUID，否则 MySQL 可用时反而因 B2 build 校验确定性失败。
+    return WorkflowRunner(llm=_ScriptedLLM(), c4=_FakeC4())
 
 
 def _reset_d1(request_id: str = RID) -> None:

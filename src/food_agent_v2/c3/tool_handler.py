@@ -166,19 +166,24 @@ def _retrieve_recipes(args: dict, ctx: ToolContext) -> dict:
 
     # 多人 → 共享查询 + 每参与者口味偏好子查询
     if len(ctx.participant_user_mapping) > 1:
-        try:
-            from food_agent_v2.b2 import UserHealthProfileService
-            b2 = UserHealthProfileService()
-            b2.load(expected_build_id=ctx.build_id)
-            prefs = []
-            for uid in ctx.participant_user_mapping.values():
-                u = b2.get_user(uid)
-                prefs.append(u.get("dietary_preferences", []) if u else [])
-            if any(prefs):
+        from food_agent_v2.b2 import UserHealthProfileService
+
+        # B2 是在线健康事实边界：加载/身份/完整性失败必须传播为失败回执，
+        # 不得被检索降级逻辑吞掉后继续运行。
+        b2 = UserHealthProfileService()
+        b2.load(expected_build_id=ctx.build_id)
+        prefs = []
+        for uid in ctx.participant_user_mapping.values():
+            u = b2.get_user(uid)
+            prefs.append(u.get("dietary_preferences", []) if u else [])
+
+        if any(prefs):
+            # 仅检索算法自身失败可降级为共享普通检索；B2 加载已经在 try 外完成。
+            try:
                 result = svc.multi_person_retrieve(query, prefs, top_k=max(top_k, 30))
-            else:
+            except Exception:
                 result = svc.retrieve(query, top_k=top_k)
-        except Exception:
+        else:
             result = svc.retrieve(query, top_k=top_k)
     else:
         result = svc.retrieve(query, top_k=top_k)

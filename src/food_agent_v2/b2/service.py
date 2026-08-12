@@ -95,10 +95,9 @@ class UserHealthProfileService:
 
         每次 load 前清空旧缓存；失败后不保留上一次用户数据（fail-closed）。
         """
-        expected = expected_build_id or None
         self._users = {}
         self._loaded = False
-        records = self._source.load_users(expected_build_id=expected)
+        records = self._source.load_users(expected_build_id=expected_build_id)
         for record in records:
             self._users[int(record["user_id"])] = record
         self._loaded = True
