@@ -62,6 +62,42 @@ class QdrantVectorStore:
     def available(self) -> bool:
         return self._connect()
 
+    def close(self) -> None:
+        client, self._client = self._client, None
+        close = getattr(client, "close", None)
+        if close is not None:
+            close()
+
+    def assert_ready_build(self, *, build_id: str, expected_count: int) -> int:
+        """验证已发布 collection 只含指定固定构建的完整点位。"""
+        if not self._connect() or self._client is None:
+            raise RuntimeError("qdrant collection unavailable")
+        from qdrant_client.models import FieldCondition, Filter, MatchValue
+
+        total = int(
+            self._client.count(
+                collection_name=self._collection,
+                exact=True,
+            ).count
+        )
+        matching = int(
+            self._client.count(
+                collection_name=self._collection,
+                count_filter=Filter(
+                    must=[
+                        FieldCondition(
+                            key="build_id",
+                            match=MatchValue(value=build_id),
+                        )
+                    ]
+                ),
+                exact=True,
+            ).count
+        )
+        if total != expected_count or matching != expected_count:
+            raise RuntimeError("qdrant build identity or point count mismatch")
+        return matching
+
     def index_documents(self, rag_path=None) -> int:
         """直接构建路径已移除（T14/INV-023）。
 

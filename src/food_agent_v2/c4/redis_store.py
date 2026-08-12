@@ -47,6 +47,12 @@ class RedisSessionStore:
     def _key(self, *parts: str) -> str:
         return f"{self._prefix}:{':'.join(parts)}"
 
+    def assert_ready(self) -> None:
+        """只读验证 Redis 可服务；失败必须显式抛出，不能沿用普通读写的静默降级。"""
+        self._connect()
+        if self._client is None or not self._client.ping():
+            raise RuntimeError("redis unavailable")
+
     # ---- 会话状态 ----
 
     def save_session_state(self, session_id: str, state: dict) -> None:

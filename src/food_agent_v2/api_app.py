@@ -204,6 +204,20 @@ async def health():
     return {"status": "ok", "version": "0.1.0"}
 
 
+@app.get("/ready")
+async def ready():
+    from food_agent_v2.application import readiness
+
+    try:
+        return readiness.check_readiness()
+    except readiness.ServiceNotReady as exc:
+        return JSONResponse(status_code=503, content={
+            "error": exc.code,
+            "message": "service not ready",
+            "checks": exc.checks,
+        })
+
+
 def main():
     import uvicorn
     cfg = get_config()
