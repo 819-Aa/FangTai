@@ -214,6 +214,62 @@ function Run-LiveAcceptance {
     }
 }
 
+function Invoke-OfflineBatch($name, [string[]]$paths) {
+    $safeName = $name -replace "[^A-Za-z0-9_-]", "_"
+    $reportPath = ".staging/t24_offline_${safeName}.xml"
+    uv run pytest @paths -m "not live" -q --junitxml=$reportPath
+    $exitCode = $LASTEXITCODE
+    if (-not (Test-Path -LiteralPath $reportPath)) {
+        Fail-Blocked "NOT_ACCEPTED" "offline batch $name produced no JUnit report"
+    }
+    $xml = [xml](Get-Content -LiteralPath $reportPath)
+    $suite = $xml.testsuites.testsuite
+    $tests = [int]$suite.tests
+    $failures = [int]$suite.failures
+    $errors = [int]$suite.errors
+    $skipped = [int]$suite.skipped
+    Write-Host "OFFLINE[$name] tests=$tests failures=$failures errors=$errors skipped=$skipped exit=$exitCode"
+    if ($exitCode -ne 0 -or $failures -ne 0 -or $errors -ne 0 -or $skipped -ne 0) {
+        Fail-Blocked "NOT_ACCEPTED" "offline batch failed: $name"
+    }
+    return $tests
+}
+
+function Run-OfflineRegression {
+    # Keep memory-heavy fixed-data builds and real BGE/Qdrant checks in isolated
+    # processes. Every collected non-live test remains included exactly once.
+    $batches = @(
+        @{ Name = "acceptance_application_architecture"; Paths = @("tests/acceptance", "tests/application", "tests/architecture") },
+        @{ Name = "b1_identity_core"; Paths = @("tests/b1/test_ingredient_identity_rebuild.py::TestIdentityRebuild") },
+        @{ Name = "b1_identity_forms"; Paths = @("tests/b1/test_ingredient_identity_rebuild.py::TestRejectedAndForms") },
+        @{ Name = "b1_identity_full"; Paths = @("tests/b1/test_ingredient_identity_rebuild.py::TestFullScale") },
+        @{ Name = "b1_rest"; Paths = @("tests/b1", "--ignore=tests/b1/test_ingredient_identity_rebuild.py") },
+        @{ Name = "b2_to_b6"; Paths = @("tests/b2", "tests/b3", "tests/b4", "tests/b5", "tests/b6") },
+        @{ Name = "c1_c2"; Paths = @("tests/c1", "tests/c2") },
+        @{ Name = "c3"; Paths = @("tests/c3") },
+        @{ Name = "c4_contracts_d1"; Paths = @("tests/c4", "tests/contracts", "tests/d1") },
+        @{ Name = "integration_real_qdrant"; Paths = @("tests/integration/test_real_qdrant_retrieval.py") },
+        @{ Name = "integration_rest"; Paths = @("tests/integration", "--ignore=tests/integration/test_real_qdrant_retrieval.py") },
+        @{ Name = "root_tests"; Paths = @(
+            "tests/test_b1_pipeline.py", "tests/test_b2_b4_health.py",
+            "tests/test_d2_answer.py", "tests/test_e2e_cases.py", "tests/test_invariants.py"
+        ) },
+        @{ Name = "execution"; Paths = @("tests/execution") }
+    )
+    $executed = 0
+    foreach ($batch in $batches) {
+        $executed += Invoke-OfflineBatch $batch.Name $batch.Paths
+    }
+    $collectOutput = uv run pytest --collect-only -q -m "not live" 2>&1
+    $collectLine = $collectOutput | Select-String "tests collected" | Select-Object -Last 1
+    if (-not $collectLine) { Fail-Blocked "NOT_ACCEPTED" "cannot parse offline collection count" }
+    $collected = [int](($collectLine -split "/")[0].Trim())
+    Write-Host "OFFLINE_TOTAL executed=$executed collected=$collected"
+    if ($executed -ne $collected) {
+        Fail-Blocked "NOT_ACCEPTED" "offline batches do not cover the exact collected suite"
+    }
+}
+
 try {
     Assert-TrackedWorktreeClean
     Assert-Step "approved manifest" { Assert-ApprovedManifest }
@@ -225,8 +281,7 @@ try {
     Assert-Step "start API and prove cross-store readiness" { Start-T23Api }
     Assert-Step "live API/model/e2e suite with zero skips" { Run-LiveAcceptance }
     Assert-Step "offline backend regression" {
-        uv run pytest -m "not live" -q
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        Run-OfflineRegression
     }
     Assert-Step "ruff" {
         uv run ruff check src tests scripts

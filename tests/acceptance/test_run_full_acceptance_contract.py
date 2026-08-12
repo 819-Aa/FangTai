@@ -47,3 +47,14 @@ def test_background_api_is_hidden_and_only_owned_pid_is_stopped() -> None:
     assert "-WindowStyle Hidden" in text
     assert "Get-CimInstance Win32_Process" not in text
     assert "Stop-Process -Id $Script:ApiProc.Id" in text
+
+
+def test_offline_regression_is_batched_but_requires_exact_total() -> None:
+    text = _text()
+    assert "function Run-OfflineRegression" in text
+    assert '"tests/b1/test_ingredient_identity_rebuild.py::TestFullScale"' in text
+    assert '"tests/integration/test_real_qdrant_retrieval.py"' in text
+    assert "$executed -ne $collected" in text
+    assert "failures -ne 0" in text
+    assert "errors -ne 0" in text
+    assert "skipped -ne 0" in text
