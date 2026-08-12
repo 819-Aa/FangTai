@@ -3,6 +3,7 @@ import { defineStore } from "pinia";
 import {
   createRequest,
   createSession,
+  getSession,
   getStatus,
   subscribeEvents,
   type SSEConnection,
@@ -12,6 +13,8 @@ import {
   type AnonymousParticipant,
   type ChatMessage,
   type PhaseEvent,
+  type PublicMenuSummary,
+  type RequestState,
 } from "@/types";
 
 function messageId(): string {
@@ -78,6 +81,30 @@ export function slotFromRef(ref: string): AnonymousParticipant {
   return { participant_ref: ref, label: `参与者 ${n || ref}` };
 }
 
+export function publicMenu(value: unknown): PublicMenuSummary | null {
+  if (!value || typeof value !== "object") return null;
+  const menu = value as Partial<PublicMenuSummary>;
+  if (!menu.build_id || !menu.plan_id || !menu.menu_hash
+      || !Array.isArray(menu.recipe_ids) || !Array.isArray(menu.items)
+      || menu.recipe_ids.length === 0 || menu.items.length !== menu.recipe_ids.length) {
+    return null;
+  }
+  const ids = menu.recipe_ids;
+  if (ids.some((id) => !Number.isInteger(id) || id <= 0)
+      || new Set(ids).size !== ids.length) return null;
+  for (let index = 0; index < menu.items.length; index += 1) {
+    const item = menu.items[index];
+    if (!item || item.recipe_id !== ids[index] || !item.name?.trim()) return null;
+  }
+  return {
+    build_id: menu.build_id,
+    plan_id: menu.plan_id,
+    menu_hash: menu.menu_hash,
+    recipe_ids: [...ids],
+    items: menu.items.map((item) => ({ recipe_id: item.recipe_id, name: item.name.trim() })),
+  };
+}
+
 // ---- session 与参与者组合持久化 ----
 
 const SESSION_KEY = "v2.session_id";
@@ -119,6 +146,7 @@ export const useRecommendationStore = defineStore("recommendation", {
       status: "" as string,
       phases: [] as PhaseEvent[],
       answer: "" as string,
+      currentMenu: null as PublicMenuSummary | null,
       clarification: "" as string,
       isStreaming: false,
       error: "" as string,
@@ -189,6 +217,7 @@ export const useRecommendationStore = defineStore("recommendation", {
       this.status = "";
       this.phases = [];
       this.answer = "";
+      this.currentMenu = null;
       this.clarification = "";
       this.error = "";
     },
@@ -282,6 +311,9 @@ export const useRecommendationStore = defineStore("recommendation", {
           }
           break;
         case "result_committed":
+          this.currentMenu = publicMenu(
+            (e.data as { menu_summary?: unknown }).menu_summary,
+          );
           this.status = "completed";
           this.finishStreaming(assistantId, "complete");
           break;
@@ -336,7 +368,7 @@ export const useRecommendationStore = defineStore("recommendation", {
             if (st.error) {
               this.error = `${st.error.code || "error"}: ${st.error.message || ""}`;
             }
-            // 轮询只读取后端状态；缺少 answer_ready 时不伪造菜单文本
+            this.applyResultSummary(st, assistantId);
             this.finishStreaming(assistantId, st.status === "completed" ? "complete" : "error");
             return;
           }
@@ -346,6 +378,31 @@ export const useRecommendationStore = defineStore("recommendation", {
         this.pollTimer = window.setTimeout(tick, interval);
       };
       this.pollTimer = window.setTimeout(tick, interval);
+    },
+    applyResultSummary(state: RequestState, assistantId: string) {
+      const summary = state.result_summary;
+      if (!summary) return;
+      const menu = publicMenu(summary.menu_summary);
+      if (menu) this.currentMenu = menu;
+      const text = summary.answer?.text?.trim() || "";
+      if (text) {
+        this.answer = text;
+        const pending = this.messages.find((message) => message.id === assistantId);
+        if (pending) pending.content = text;
+      }
+    },
+    async restoreSession() {
+      if (!this.sessionId) return;
+      try {
+        const state = await getSession(this.sessionId);
+        const menu = publicMenu(state.current_menu);
+        if (menu) {
+          this.currentMenu = menu;
+          this.status = "completed";
+        }
+      } catch {
+        // 持久化 session 不存在或暂不可用时保留匿名参与者选择，允许用户继续新建会话。
+      }
     },
   },
 });

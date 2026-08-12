@@ -27,6 +27,7 @@ describe("ChatPanel（回答正文显示）", () => {
         isStreaming: true,
         canSend: false,
         participants: [],
+        currentMenu: null,
       },
     });
     expect(wrapper.text()).toContain("为您推荐三道家常菜");
@@ -52,9 +53,21 @@ describe("ChatPanel（回答正文显示）", () => {
         isStreaming: false,
         canSend: true,
         participants: [],
+        currentMenu: {
+          build_id: "build-1",
+          plan_id: "plan-1",
+          menu_hash: "a".repeat(64),
+          recipe_ids: [101, 202],
+          items: [
+            { recipe_id: 101, name: "番茄炒蛋" },
+            { recipe_id: 202, name: "清炒时蔬" },
+          ],
+        },
       },
     });
     expect(wrapper.text()).toContain("为您推荐三道家常菜");
     expect(wrapper.text()).toContain("菜单已生成");
+    expect(wrapper.get("[data-testid='committed-menu']").text()).toContain("番茄炒蛋");
+    expect(wrapper.get("[data-testid='committed-menu']").text()).toContain("清炒时蔬");
   });
 });

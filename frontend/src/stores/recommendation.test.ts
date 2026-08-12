@@ -9,7 +9,7 @@ import {
   terminalLabel,
   useRecommendationStore,
 } from "./recommendation";
-import { createSession } from "@/api/client";
+import { createSession, getSession } from "@/api/client";
 
 vi.mock("@/api/client", () => ({
   createSession: vi.fn(async (refs: string[]) => ({
@@ -22,6 +22,12 @@ vi.mock("@/api/client", () => ({
   getStatus: vi.fn(async () => ({
     request_id: "r-1", session_id: "sess-mock", status: "running",
     created_at: "t",
+  })),
+  getSession: vi.fn(async () => ({
+    session_id: "sess-mock",
+    participant_refs: ["p1"],
+    request_count: 1,
+    current_menu: null,
   })),
   subscribeEvents: vi.fn(() => ({ close: vi.fn(), lastEventId: "" })),
 }));
@@ -134,6 +140,66 @@ describe("终态 Reducer（onSseEvent 分支）", () => {
     expect(store.isStreaming).toBe(false);
     expect(store.connection).toBeNull();
   });
+  it("result_committed 只消费后端结构化菜单，不解析回答正文", () => {
+    const store = useRecommendationStore();
+    const mid = assistant(store);
+    store.onSseEvent({
+      id: "ev_result_menu",
+      event: "result_committed",
+      data: {
+        menu_summary: {
+          build_id: "build-1",
+          plan_id: "plan-1",
+          menu_hash: "a".repeat(64),
+          recipe_ids: [101, 202],
+          items: [
+            { recipe_id: 101, name: "番茄炒蛋" },
+            { recipe_id: 202, name: "清炒时蔬" },
+          ],
+        },
+      },
+    }, mid);
+    expect(store.currentMenu?.items.map((item) => item.name)).toEqual([
+      "番茄炒蛋", "清炒时蔬",
+    ]);
+  });
+  it("非法菜单身份不进入 UI", () => {
+    const store = useRecommendationStore();
+    const mid = assistant(store);
+    store.onSseEvent({
+      id: "ev_bad_menu",
+      event: "result_committed",
+      data: {
+        menu_summary: {
+          build_id: "build-1", plan_id: "plan-1", menu_hash: "x",
+          recipe_ids: [101], items: [{ recipe_id: 999, name: "错菜" }],
+        },
+      },
+    }, mid);
+    expect(store.currentMenu).toBeNull();
+  });
+  it("轮询完成响应恢复回答正文与结构化菜单", () => {
+    const store = useRecommendationStore();
+    const mid = assistant(store);
+    store.applyResultSummary({
+      request_id: "r-1",
+      session_id: "sess-1",
+      status: "completed",
+      created_at: "t",
+      result_summary: {
+        status: "completed",
+        answer: { text: "轮询恢复的回答", menu_ref: "menu:1", evidence_refs: [] },
+        menu_summary: {
+          build_id: "build-1", plan_id: "plan-1", menu_hash: "c".repeat(64),
+          recipe_ids: [303], items: [{ recipe_id: 303, name: "轮询恢复菜品" }],
+        },
+      },
+    }, mid);
+    expect(store.answer).toBe("轮询恢复的回答");
+    expect(store.messages.find((message) => message.id === mid)?.content)
+      .toBe("轮询恢复的回答");
+    expect(store.currentMenu?.items[0].name).toBe("轮询恢复菜品");
+  });
   it("error 分支：显示错误并进入失败状态、关闭连接", () => {
     const store = useRecommendationStore();
     const mid = assistant(store);
@@ -240,6 +306,28 @@ describe("session 与参与者生命周期", () => {
     expect(store.sessionRefs).toEqual(["p1", "p2"]);
     expect(store.selectedRefs).toEqual(["p1", "p2"]);
     expect(store.slots.map((s) => s.participant_ref)).toEqual(["p1", "p2"]);
+  });
+  it("刷新后从 session 恢复当前已提交菜单", async () => {
+    localStorage.setItem("v2.session_id", "sess-persisted");
+    localStorage.setItem("v2.session_refs", JSON.stringify(["p1"]));
+    vi.mocked(getSession).mockResolvedValueOnce({
+      session_id: "sess-persisted",
+      participant_refs: ["p1"],
+      request_count: 1,
+      current_menu: {
+        build_id: "build-1",
+        plan_id: "plan-1",
+        menu_hash: "b".repeat(64),
+        recipe_ids: [101],
+        items: [{ recipe_id: 101, name: "恢复菜品" }],
+      },
+    });
+    const store = useRecommendationStore();
+
+    await store.restoreSession();
+
+    expect(store.currentMenu?.items[0].name).toBe("恢复菜品");
+    expect(store.status).toBe("completed");
   });
   it("组合变化不静默复用旧 session", async () => {
     const store = useRecommendationStore();

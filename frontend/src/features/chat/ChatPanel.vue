@@ -10,7 +10,12 @@ import {
   UserRound,
 } from "@lucide/vue";
 import { terminalLabel } from "@/stores/recommendation";
-import type { AnonymousParticipant, ChatMessage, PhaseEvent } from "@/types";
+import type {
+  AnonymousParticipant,
+  ChatMessage,
+  PhaseEvent,
+  PublicMenuSummary,
+} from "@/types";
 
 const props = defineProps<{
   messages: ChatMessage[];
@@ -21,6 +26,7 @@ const props = defineProps<{
   isStreaming: boolean;
   canSend: boolean;
   participants: AnonymousParticipant[];
+  currentMenu: PublicMenuSummary | null;
 }>();
 const emit = defineEmits<{ send: [message: string] }>();
 
@@ -114,6 +120,23 @@ function phaseBadge(e: PhaseEvent): string {
           </template>
         </div>
       </article>
+
+      <section
+        v-if="currentMenu"
+        class="committed-menu"
+        data-testid="committed-menu"
+        aria-label="已提交菜单"
+      >
+        <div class="committed-menu-title">
+          <CheckCircle2 :size="15" /> 已提交菜单
+        </div>
+        <ol>
+          <li v-for="item in currentMenu.items" :key="item.recipe_id">
+            <span>{{ item.name }}</span>
+            <small>#{{ item.recipe_id }}</small>
+          </li>
+        </ol>
+      </section>
     </div>
 
     <div v-if="phases.length" class="phase-panel">

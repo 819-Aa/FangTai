@@ -2,6 +2,7 @@ import type {
   AnonymousParticipant,
   PhaseEvent,
   RequestState,
+  SessionState,
 } from "@/types";
 
 const API = (import.meta.env.VITE_API_BASE_URL || "/api").replace(/\/$/, "");
@@ -26,6 +27,10 @@ export function createSession(participantRefs: string[]): Promise<{ session_id: 
       participants: participantRefs.map((r) => ({ participant_ref: r })),
     }),
   });
+}
+
+export function getSession(sessionId: string): Promise<SessionState> {
+  return request<SessionState>(`/v1/sessions/${sessionId}`);
 }
 
 export function createRequest(payload: {

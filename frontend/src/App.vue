@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { onMounted } from "vue";
 import { Sparkles } from "@lucide/vue";
 
 import ChatPanel from "@/features/chat/ChatPanel.vue";
@@ -6,6 +7,7 @@ import ParticipantContext from "@/features/participants/ParticipantContext.vue";
 import { useRecommendationStore } from "@/stores/recommendation";
 
 const store = useRecommendationStore();
+onMounted(() => store.restoreSession());
 
 // 挂载时不再创建空参与者 session；首次发送时按当前选中参与者创建。
 // 默认提供一个匿名成员（从持久化 session 关联组合恢复）。
@@ -39,6 +41,7 @@ const store = useRecommendationStore();
       :is-streaming="store.isStreaming"
       :can-send="store.canSend"
       :participants="store.selectedSlots"
+      :current-menu="store.currentMenu"
       @send="store.send"
     />
   </div>

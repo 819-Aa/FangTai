@@ -110,6 +110,17 @@ body {
 .answer-text { margin: 0; white-space: pre-wrap; }
 .thinking { display: flex; align-items: center; gap: 6px; color: var(--muted); margin: 0; }
 .error-text { margin: 0; color: var(--red); }
+.committed-menu {
+  align-self: flex-start; width: min(100%, 760px); padding: 12px 14px;
+  border: 1px solid #bbf7d0; border-radius: 12px; background: #f0fdf4;
+}
+.committed-menu-title {
+  display: flex; align-items: center; gap: 6px; color: #15803d;
+  font-size: 13px; font-weight: 700;
+}
+.committed-menu ol { margin: 8px 0 0; padding-left: 22px; }
+.committed-menu li { margin: 4px 0; font-size: 14px; }
+.committed-menu small { margin-left: 8px; color: var(--muted); }
 
 /* ---- 阶段面板 ---- */
 .phase-panel {
