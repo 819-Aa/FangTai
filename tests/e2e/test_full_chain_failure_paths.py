@@ -5,6 +5,7 @@
 """
 
 import json
+import os
 import time
 import urllib.error
 import urllib.request
@@ -18,7 +19,8 @@ from food_agent_v2.core.config import load_config
 # live：真实全链路验收（需 H04 环境 + API 服务器）；默认不进入普通回归
 pytestmark = pytest.mark.live
 
-API = "http://localhost:8001"
+# 验收脚本通过 T23_API_BASE 指向绑定同一 T23 环境的隔离 API；默认 8001 仅作后备
+API = os.environ.get("T23_API_BASE", "http://localhost:8001")
 
 
 def _post(payload: dict) -> dict:
@@ -380,12 +382,12 @@ class TestBusinessTerminals:
             f"{message!r} 应命中 {expected}，实际 {result['status']} error={result.get('error')}")
 
     def test_strict_time_indeterminate_terminal(self, _api_ready) -> None:
-        """严格时间无法判定 → strict_time_indeterminate 独立终态（不伪装 failed）。"""
+        """严格时间无法判定 → 精确 strict_time_indeterminate（不得 accepted/completed/failed）。"""
         resp = _post({
             "idempotency_key": f"e2e-{uuid.uuid4().hex[:12]}",
             "participants": [{"participant_ref": "p1"}],
             "message": "严格必须在 10 分钟内完成但无法判断时间", "config": {},
         })
         result = _wait_terminal(resp["request_id"], max_wait=240)
-        assert result["status"] in ("strict_time_indeterminate", "completed", "failed"), (
-            f"严格时间路径意外终态: {result['status']}")
+        assert result["status"] == "strict_time_indeterminate", (
+            f"应 strict_time_indeterminate，实际 {result['status']} error={result.get('error')}")

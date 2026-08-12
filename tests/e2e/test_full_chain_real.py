@@ -10,6 +10,7 @@
 """
 
 import json
+import os
 import time
 import urllib.request
 import uuid
@@ -23,7 +24,8 @@ from food_agent_v2.core.config import load_config
 # live：真实全链路验收，需 H04 空 V2 环境 + API 服务器 + 真实 LLM；默认不进入普通回归
 pytestmark = pytest.mark.live
 
-API = "http://localhost:8001"
+# 验收脚本通过 T23_API_BASE 指向绑定同一 T23 环境的隔离 API；默认 8001 仅作后备
+API = os.environ.get("T23_API_BASE", "http://localhost:8001")
 TERMINAL = {"completed", "failed", "no_safe_menu", "no_feasible_menu",
             "needs_clarification", "cancelled", "interrupted",
             "strict_time_indeterminate"}
@@ -126,6 +128,9 @@ def _assert_cross_store(rid: str, session_id: str) -> None:
         recipe_ids = sorted(int(x) for x in (evidence.get("recipe_ids") or []))
         menu_hash = evidence.get("menu_hash")
         assert plan_id and recipe_ids and menu_hash, f"audit 菜单身份缺失: {rid}"
+        # 最终校验必须 PASS（多人每道菜安全由此保证）
+        assert evidence.get("final_validation_verdict") == "PASS", f"final validation 非 PASS: {rid}"
+        assert evidence.get("recipe_ids") and evidence.get("menu_hash")
         # 同一 plan_id/menu_hash/recipe_ids 跨 store 一致
         cur.execute("SELECT participant_refs, request_count, current_menu_plan_id "
                     "FROM sessions WHERE session_id=%s", (session_id,))
