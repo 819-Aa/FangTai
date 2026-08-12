@@ -54,3 +54,8 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 ignore = ["E501"]
+
+[tool.pytest.ini_options]
+markers = [
+    "live: 真实模型/外部依赖验收测试（默认不运行，需 LLM API 可用）",
+]

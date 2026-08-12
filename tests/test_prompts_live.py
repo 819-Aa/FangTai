@@ -22,6 +22,9 @@ from food_agent_v2.c3.prompts import get_prompt
 from food_agent_v2.c3.runner import WorkflowRunner
 from food_agent_v2.core.config import load_config
 
+# live：真实模型验收测试，默认不进入普通回归（pytest -m "not live" 排除）
+pytestmark = pytest.mark.live
+
 _RID = "11111111-1111-1111-1111-111111111111"
 _CTX = f"## 上下文\nrequest_id: {_RID}, participant_refs: [p1]\n"
 
