@@ -43,6 +43,31 @@ def _mysql_available() -> bool:
 pytestmark = pytest.mark.skipif(not _mysql_available(), reason="MySQL 不可用")
 
 
+@pytest.fixture(autouse=True)
+def _deterministic_c1_candidates(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Runner 接线测试不重复承担 BGE/Qdrant 质量验收。
+
+    这里只替换 C1 候选端口；后续 B2/B3/B4/C2、工具回执和五角色 Runner 仍走
+    真实实现。真实向量检索由 integration/e2e 套件在 T23 环境独立验收。
+    """
+
+    class RetrievalPort:
+        def retrieve(self, _query: str, top_k: int = 20):
+            candidates = [
+                SimpleNamespace(recipe_id=recipe_id, name=f"固定菜品{recipe_id}", source_paths=[])
+                for recipe_id in range(1, max(top_k, 30) + 1)
+            ]
+            return SimpleNamespace(
+                total_candidates=len(candidates),
+                candidates=candidates,
+            )
+
+    monkeypatch.setattr(
+        "food_agent_v2.c1.get_retrieval_service",
+        lambda: RetrievalPort(),
+    )
+
+
 class _FakeC4:
     def __init__(self) -> None:
         self._sessions: dict = {}

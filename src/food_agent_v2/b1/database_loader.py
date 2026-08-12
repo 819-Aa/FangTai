@@ -58,12 +58,8 @@ def _read_jsonl(path: Path) -> list[dict]:
         return [json.loads(line) for line in handle if line.strip()]
 
 
-def _manifest_artifacts(manifest_path: Path, manifest) -> dict[str, list[dict]]:
-    root = Path(manifest_path).resolve().parent
-    return {
-        name: _read_jsonl((root / manifest.artifacts[name].relative_path).resolve())
-        for name in REQUIRED_ARTIFACTS
-    }
+def _read_manifest_artifact(root: Path, manifest, name: str) -> list[dict]:
+    return _read_jsonl((root / manifest.artifacts[name].relative_path).resolve())
 
 
 def _verify_builder_commit(builder_version: str) -> None:
@@ -138,7 +134,7 @@ def initialize_verified_fixed_data(
             f"Qdrant target {collection!r} is not empty",
         )
 
-    artifacts = _manifest_artifacts(manifest_path, manifest)
+    artifact_root = manifest_path.parent
     expected_counts = {name: manifest.artifacts[name].row_count for name in REQUIRED_ARTIFACTS}
     manifest_sha256 = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
     build_metadata = {
@@ -157,15 +153,26 @@ def initialize_verified_fixed_data(
     vector_published = False
     try:
         mysql.begin(build_metadata)
+        rag_documents: list[dict] | None = None
         for artifact_name in REQUIRED_ARTIFACTS:
-            mysql.load_artifact(artifact_name, artifacts[artifact_name])
+            records = _read_manifest_artifact(artifact_root, manifest, artifact_name)
+            mysql.load_artifact(artifact_name, records)
+            if artifact_name == "rag_documents":
+                # 仅该产物在 MySQL 导入后还需供 Qdrant 使用；其余逐类释放，
+                # 避免 19 类/十余万行固定事实同时驻留内存。
+                rag_documents = records
         actual_counts = mysql.artifact_counts()
         if actual_counts != expected_counts:
             raise InitializationError(
                 "MYSQL_ARTIFACT_PARITY_FAILED",
                 f"expected={expected_counts}, actual={actual_counts}",
             )
-        expected_recipe_ids = {int(item["recipe_id"]) for item in artifacts["rag_documents"]}
+        if rag_documents is None:
+            raise InitializationError(
+                "DATABASE_INITIALIZATION_FAILED",
+                "verified build is missing rag_documents",
+            )
+        expected_recipe_ids = {int(item["recipe_id"]) for item in rag_documents}
         mysql_recipe_ids = mysql.artifact_key_values("rag_documents", "recipe_id")
         if mysql_recipe_ids != expected_recipe_ids:
             raise InitializationError(
@@ -176,7 +183,6 @@ def initialize_verified_fixed_data(
         phase = "vector"
         vector.create_staging_collection(staging_collection)
         vector_created = True
-        rag_documents = artifacts["rag_documents"]
         vector.index_documents(staging_collection, rag_documents)
         actual_ids = vector.point_ids(staging_collection)
         if actual_ids != mysql_recipe_ids:
@@ -249,7 +255,7 @@ def initialize_verified_fixed_data(
         "mysql_artifact_counts": expected_counts,
         "qdrant_collection": collection,
         "qdrant_physical_collection": staging_collection,
-        "qdrant_point_count": len(artifacts["rag_documents"]),
+        "qdrant_point_count": len(rag_documents),
         "recorded_at": datetime.now(UTC).isoformat(),
     }
     try:

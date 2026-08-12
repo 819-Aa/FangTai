@@ -20,7 +20,7 @@ from .test_staging_initialization import FakeMySQLTarget, FakeVectorTarget
 
 
 def test_qdrant_missing_one_point_blocks_commit(verified_build: Path) -> None:
-    mysql = FakeMySQLTarget()
+    mysql = FakeMySQLTarget(retain_artifacts={"rag_documents"})
     vector = FakeVectorTarget(drop_last_point=True)
 
     with pytest.raises(InitializationError, match="VECTOR_INDEX_PARITY_FAILED"):
@@ -39,7 +39,7 @@ def test_qdrant_missing_one_point_blocks_commit(verified_build: Path) -> None:
 
 
 def test_successful_initialization_has_mysql_qdrant_recipe_parity(verified_build: Path) -> None:
-    mysql = FakeMySQLTarget()
+    mysql = FakeMySQLTarget(retain_artifacts={"rag_documents"})
     vector = FakeVectorTarget()
 
     report = initialize_verified_fixed_data(

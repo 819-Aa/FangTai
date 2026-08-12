@@ -17,30 +17,45 @@ from food_agent_v2.b1.rebuild import DataPipelineError, build_fixed_data_staging
 
 
 class FakeMySQLTarget:
-    def __init__(self, *, fail_on_artifact: str | None = None, non_empty: bool = False):
+    def __init__(self, *, fail_on_artifact: str | None = None, non_empty: bool = False,
+                 retain_artifacts: set[str] | None = None):
         self.fail_on_artifact = fail_on_artifact
         self.non_empty = non_empty
         self.pending: dict[str, list[dict]] = {}
         self.committed: dict[str, list[dict]] = {}
         self.build_metadata: dict = {}
         self.rolled_back = False
+        self.retain_artifacts = retain_artifacts
+        self.pending_counts: dict[str, int] = {}
+        self.pending_keys: dict[tuple[str, str], set[int]] = {}
 
     def fixed_data_is_empty(self) -> bool:
         return not self.non_empty and not self.committed
 
     def begin(self, build_metadata: dict) -> None:
         self.pending = {}
+        self.pending_counts = {}
+        self.pending_keys = {}
         self.build_metadata = dict(build_metadata)
 
     def load_artifact(self, artifact_name: str, records: list[dict]) -> None:
         if artifact_name == self.fail_on_artifact:
             raise RuntimeError("injected database failure")
-        self.pending[artifact_name] = records
+        self.pending_counts[artifact_name] = len(records)
+        if artifact_name == "rag_documents" and records and "recipe_id" in records[0]:
+            self.pending_keys[(artifact_name, "recipe_id")] = {
+                int(record["recipe_id"]) for record in records
+            }
+        if self.retain_artifacts is None or artifact_name in self.retain_artifacts:
+            self.pending[artifact_name] = records
 
     def artifact_counts(self) -> dict[str, int]:
-        return {name: len(records) for name, records in self.pending.items()}
+        return dict(self.pending_counts)
 
     def artifact_key_values(self, artifact_name: str, field: str) -> set[int]:
+        key = (artifact_name, field)
+        if key in self.pending_keys:
+            return set(self.pending_keys[key])
         return {int(record[field]) for record in self.pending.get(artifact_name, [])}
 
     def commit(self) -> None:
@@ -49,6 +64,8 @@ class FakeMySQLTarget:
 
     def rollback(self) -> None:
         self.pending = {}
+        self.pending_counts = {}
+        self.pending_keys = {}
         self.rolled_back = True
 
 
