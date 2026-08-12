@@ -76,10 +76,34 @@ class LLMClient:
             extra_body=self._llm_config.extra_body_for_role(role),
         )
 
+    def invoke_messages(
+        self,
+        role: str,
+        system_prompt: str,
+        messages: list[dict[str, Any]],
+        tools: list[dict] | None = None,
+        response_format: dict | None = None,
+    ) -> dict:
+        """继续一次标准 tool-calling 会话，保留 assistant/tool 对应关系。"""
+        model = self._llm_config.model_for_role(role)
+        if not self._api_key or not self._base_url:
+            raise ModelInvocationError(
+                "MODEL_NOT_CONFIGURED", "缺少 LLM API 配置（api_key/base_url）")
+        return self._call_openai(
+            model=model,
+            system_prompt=system_prompt,
+            user_message=None,
+            messages=messages,
+            tools=tools,
+            response_format=response_format,
+            extra_body=self._llm_config.extra_body_for_role(role),
+        )
+
     def _call_openai(
-        self, model: str, system_prompt: str, user_message: str,
+        self, model: str, system_prompt: str, user_message: str | None,
         tools: list[dict] | None, response_format: dict | None,
         extra_body: dict | None,
+        messages: list[dict[str, Any]] | None = None,
     ) -> dict:
         """通过 OpenAI 兼容 API 调用。"""
         import time as _time
@@ -93,14 +117,15 @@ class LLMClient:
             max_retries=0,  # T17：SDK 不自动重试，失败交给 runner fail-closed
         )
 
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_message},
-        ]
+        request_messages = [{"role": "system", "content": system_prompt}]
+        if messages is not None:
+            request_messages.extend(messages)
+        else:
+            request_messages.append({"role": "user", "content": user_message or ""})
 
         kwargs: dict[str, Any] = {
             "model": model,
-            "messages": messages,
+            "messages": request_messages,
             "temperature": 0.1,
         }
 

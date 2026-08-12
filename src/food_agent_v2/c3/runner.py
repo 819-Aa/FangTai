@@ -308,16 +308,7 @@ class WorkflowRunner:
 
             if node == NodeType.QUERY_UNDERSTANDING:
                 state, q_raw, q_artifact = self._run_model_node(
-                    state,
-                    c4,
-                    tool_ctx,
-                    "query_understanding",
-                    user_message=message,
-                    # Retrieval is a deterministic prerequisite, not a decision the
-                    # language model may omit.  The model receives the authoritative
-                    # result and remains responsible only for QueryPlan semantics.
-                    deterministic_tools=[("retrieve_recipes", {"query": message})],
-                )
+                    state, c4, tool_ctx, "query_understanding", user_message=message)
                 if state.is_terminal():
                     break
                 # 查询理解输出必须为合法 QueryPlanArtifact（无澄清绕过；不满足即 fail-closed）
@@ -657,9 +648,7 @@ class WorkflowRunner:
 
     def _run_model_node(self, state: WorkflowState, c4: ContextService,
                         tool_ctx: ToolContext, role: str, user_message: str,
-                        handoff: dict | None = None,
-                        deterministic_tools: list[tuple[str, dict]] | None = None,
-                        ) -> tuple[WorkflowState, dict, BaseModel | None]:
+                        handoff: dict | None = None) -> tuple[WorkflowState, dict, BaseModel | None]:
         """执行一个模型节点，返回 (新状态, 原始输出, 校验后的类型化 Artifact)。
 
         必需工具漏调/失败、模型异常、回执预算/身份失败、Artifact Schema 违约
@@ -677,19 +666,8 @@ class WorkflowRunner:
         model_ctx = c4.project_model_context(role, handoff, state.shared_context_ref or "")
         pre_count = len(tool_ctx.tool_receipts)
 
-        deterministic_results: list[dict] = []
-        if deterministic_tools:
-            handler = ToolHandler(tool_ctx)
-            for tool_name, arguments in deterministic_tools:
-                deterministic_results.append({
-                    "tool": tool_name,
-                    "result": handler.execute(tool_name, arguments),
-                })
-
         result = self._call_model(role, policy, model_ctx, user_message, tool_ctx,
-                                  response_format=self._artifact_response_format(policy, role),
-                                  already_executed={item["tool"] for item in deterministic_results},
-                                  deterministic_results=deterministic_results)
+                                  response_format=self._artifact_response_format(policy, role))
 
         if result.get("status") == "failed":
             err = WorkflowError("MODEL_CALL_FAILED",
@@ -900,14 +878,13 @@ class WorkflowRunner:
     def _call_model(self, role: str, policy: Any, model_ctx,
                      user_input: str, tool_ctx: ToolContext,
                      response_format: dict | None = None,
-                     already_executed: set[str] | None = None,
-                     deterministic_results: list[dict] | None = None) -> dict:
+                     already_executed: set[str] | None = None) -> dict:
         """调用 LLM——函数调用模式 + 严格 json_schema（可选）。
 
         只允许真实工具调用后的正常结果续接；不做必需工具提示补齐、不代调、
         不 nudge 空输出；空输出立即失败；循环耗尽即失败。
         """
-        system_prompt = get_prompt(role)
+        system_prompt = self._prompt_with_tool_contract(get_prompt(role), policy)
         tool_defs = self._build_tool_defs(policy)
         tool_handler = ToolHandler(tool_ctx)
 
@@ -919,14 +896,10 @@ class WorkflowRunner:
         }
         ctx_json = json.dumps(ctx_data, ensure_ascii=False, default=str)
         full_user = f"## 上下文\n{ctx_json}\n\n## 任务\n{user_input}"
+        conversation: list[dict[str, Any]] = [
+            {"role": "user", "content": full_user},
+        ]
         used_tools = set(already_executed or ())
-        if deterministic_results:
-            rendered = "\n".join(
-                f"[{item['tool']}] "
-                f"{json.dumps(item['result'], ensure_ascii=False, default=str)[:1000]}"
-                for item in deterministic_results
-            )
-            full_user += f"\n\n## 已执行确定性工具\n{rendered}"
 
         for _round in range(5):
             remaining_defs = [
@@ -934,11 +907,20 @@ class WorkflowRunner:
                 if item["function"]["name"] not in used_tools
             ]
             try:
-                response = self._llm.invoke(
-                    role, system_prompt, full_user,
-                    tools=remaining_defs or None,
-                    response_format=response_format,
-                )
+                invoke_messages = getattr(self._llm, "invoke_messages", None)
+                if callable(invoke_messages):
+                    response = invoke_messages(
+                        role, system_prompt, conversation,
+                        tools=remaining_defs or None,
+                        response_format=response_format,
+                    )
+                else:
+                    # 兼容现有的注入式测试客户端；生产客户端始终走标准消息协议。
+                    response = self._llm.invoke(
+                        role, system_prompt, full_user,
+                        tools=remaining_defs or None,
+                        response_format=response_format,
+                    )
             except Exception as e:
                 return {"status": "failed", "error": str(e), "content": ""}
 
@@ -952,14 +934,30 @@ class WorkflowRunner:
                 tool_results = []
                 allowed_names = {t.name for t in policy.allowed_tools}
                 terminal = None
-                for tc in tool_calls:
+                assistant_calls = []
+                for index, tc in enumerate(tool_calls):
                     name = tc.get("name", "")
                     args = tc.get("arguments", {})
+                    call_id = tc.get("id") or f"call-{_round}-{index}"
+                    assistant_calls.append({
+                        "id": call_id,
+                        "type": "function",
+                        "function": {
+                            "name": name,
+                            "arguments": json.dumps(args, ensure_ascii=False, default=str),
+                        },
+                    })
                     if name not in allowed_names:
-                        tool_results.append({"tool": name, "error": "TOOL_PERMISSION_DENIED"})
+                        tool_results.append({
+                            "tool": name, "tool_call_id": call_id,
+                            "error": "TOOL_PERMISSION_DENIED",
+                        })
                         continue
                     if name in used_tools:
-                        tool_results.append({"tool": name, "error": "TOOL_ALREADY_EXECUTED"})
+                        tool_results.append({
+                            "tool": name, "tool_call_id": call_id,
+                            "error": "TOOL_ALREADY_EXECUTED",
+                        })
                         continue
                     result = tool_handler.execute(name, args)
                     used_tools.add(name)
@@ -970,12 +968,29 @@ class WorkflowRunner:
                         note = result.get("note")
                         if note in ("no_safe_menu", "no_feasible_menu"):
                             terminal = note
-                            tool_results.append({"tool": name, "result": result})
+                            tool_results.append({
+                                "tool": name, "tool_call_id": call_id, "result": result,
+                            })
                             break
-                    tool_results.append({"tool": name, "result": result})
+                    tool_results.append({
+                        "tool": name, "tool_call_id": call_id, "result": result,
+                    })
 
                 if terminal is not None:
                     return {"status": "terminal", "terminal": terminal, "content": ""}
+
+                conversation.append({
+                    "role": "assistant",
+                    "content": content or None,
+                    "tool_calls": assistant_calls,
+                })
+                for tool_result in tool_results:
+                    payload = tool_result.get("result", tool_result.get("error", ""))
+                    conversation.append({
+                        "role": "tool",
+                        "tool_call_id": tool_result["tool_call_id"],
+                        "content": json.dumps(payload, ensure_ascii=False, default=str),
+                    })
 
                 results_text = "\n".join(
                     f"[{tr['tool']}] {json.dumps(tr.get('result', tr.get('error', '')), ensure_ascii=False, default=str)[:500]}"
@@ -991,6 +1006,20 @@ class WorkflowRunner:
             return self._parse_result(content, role)
 
         return {"status": "failed", "error": "MODEL_NO_VALID_OUTPUT", "content": ""}
+
+    @staticmethod
+    def _prompt_with_tool_contract(system_prompt: str, policy: Any) -> str:
+        """把 RolePolicy 的证据门槛告知模型，不替模型执行任何工具。"""
+        required = list(policy.required_tool_receipts)
+        if not required:
+            return system_prompt
+        required_text = "、".join(required)
+        return (
+            f"{system_prompt}\n\n## 节点完成契约\n"
+            f"要完成本节点，必须由你决定何时发起并成功调用这些工具：{required_text}。\n"
+            "工具返回后再基于权威结果继续；不要重复调用已经成功的工具。"
+            "如果直接提交最终输出而缺少任一成功回执，工作流将 fail-closed。"
+        )
 
     def _build_tool_defs(self, policy: Any) -> list[dict] | None:
         if not policy.allowed_tools:

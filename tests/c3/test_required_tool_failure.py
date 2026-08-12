@@ -5,6 +5,7 @@ REQUIRED_TOOL_NOT_CALLED；模型异常/空输出 → MODEL_CALL_FAILED；漏调
 补齐、不 nudge 空输出、不自动重试。
 """
 
+from copy import deepcopy
 from types import SimpleNamespace
 from uuid import UUID
 
@@ -48,6 +49,7 @@ class _FakeLLM:
         self._responses = responses
         self._raise_on_invoke = raise_on_invoke
         self.calls: list[str] = []  # 每次调用的 user_message
+        self.system_prompts: list[str] = []
         self.tool_defs: list[list[str]] = []
 
     def invoke(self, role, system_prompt, user_message, tools=None, response_format=None):
@@ -55,10 +57,29 @@ class _FakeLLM:
             raise RuntimeError("api down")
         idx = min(len(self.calls), len(self._responses) - 1)
         self.calls.append(user_message)
+        self.system_prompts.append(system_prompt)
         self.tool_defs.append([
             item["function"]["name"] for item in (tools or [])
         ])
         return self._responses[idx]
+
+
+class _ConversationLLM:
+    """仅实现生产多轮工具协议，确保 Runner 不退回文本拼接。"""
+
+    def __init__(self, responses: list[dict]):
+        self._responses = responses
+        self.calls: list[list[dict]] = []
+
+    def invoke_messages(
+        self, role, system_prompt, messages, tools=None, response_format=None,
+    ):
+        idx = min(len(self.calls), len(self._responses) - 1)
+        self.calls.append(deepcopy(messages))
+        return self._responses[idx]
+
+    def invoke(self, *args, **kwargs):
+        raise AssertionError("生产 Runner 不应把工具结果退化为普通 user_message")
 
 
 def make_runner(responses: list[dict], raise_on_invoke: bool = False):
@@ -182,52 +203,6 @@ class TestRealCallModelFailClosed:
         assert err is not None
         assert err.error_code == "WORKFLOW_RETRY_LIMIT_EXCEEDED"
 
-    def test_preexecuted_retrieval_satisfies_query_node(self, monkeypatch) -> None:
-        """Runner 可在模型前确定性检索，模型只负责语义 Artifact。"""
-        from food_agent_v2.c3 import tool_handler
-
-        semantic = {
-            "flavor_preferences": ["家常"],
-            "cuisine_preferences": [],
-            "dish_types": [],
-            "cooking_methods": [],
-            "preferred_ingredients": [],
-            "meal_type": None,
-            "scenario": None,
-            "diversity_requirements": [],
-            "dish_count_requested": 4,
-            "health_exclusions": [],
-            "preference_exclusions": [],
-            "time_constraint_seconds": 2700,
-            "time_constraint_policy": "hard",
-            "evidence_refs": [],
-        }
-        runner, llm = make_runner([
-            {"content": __import__("json").dumps(semantic), "tool_calls": []}
-        ])
-        ctx = make_ctx()
-        ctx.participant_user_mapping = {"p1": 1}
-        monkeypatch.setitem(
-            tool_handler._TOOL_MAP,
-            "retrieve_recipes",
-            lambda args, _ctx: {"total": 1, "candidates": [{"recipe_id": 7}]},
-        )
-
-        new_state, _raw, artifact = runner._run_model_node(
-            make_state(),
-            _FakeC4(),
-            ctx,
-            "query_understanding",
-            "推荐三菜一汤",
-            deterministic_tools=[("retrieve_recipes", {"query": "推荐三菜一汤"})],
-        )
-
-        assert new_state.status == RequestStatus.ACCEPTED
-        assert artifact is not None
-        assert [r.tool_name for r in new_state.tool_receipts] == ["retrieve_recipes"]
-        assert "retrieve_recipes" not in llm.tool_defs[0]
-        assert "已执行确定性工具" in llm.calls[0]
-
     def test_used_tool_is_not_offered_again_next_round(self) -> None:
         """单节点已执行工具从下一轮 tools 中移除，避免模型重复调用。"""
         runner, llm = make_runner([
@@ -245,3 +220,56 @@ class TestRealCallModelFailClosed:
 
         assert "get_current_menu" in llm.tool_defs[0]
         assert "get_current_menu" not in llm.tool_defs[1]
+
+    def test_tool_result_continues_with_assistant_and_tool_messages(self) -> None:
+        """下一轮必须保留 assistant tool_call 与同 id 的 tool result。"""
+        llm = _ConversationLLM([
+            {
+                "content": "",
+                "tool_calls": [{
+                    "id": "call-current-menu",
+                    "name": "get_current_menu",
+                    "arguments": {},
+                }],
+            },
+            {"content": '{"intent": "new"}', "tool_calls": []},
+        ])
+        runner = WorkflowRunner(build_id=BID, llm=llm)
+
+        result = runner._call_model(
+            "query_understanding",
+            ROLE_POLICIES["query_understanding"],
+            _FakeC4().project_model_context("query_understanding", None, "x"),
+            "hi",
+            make_ctx(),
+        )
+
+        assert result == {"intent": "new"}
+        assert len(llm.calls) == 2
+        continuation = llm.calls[1]
+        assert [message["role"] for message in continuation] == [
+            "user", "assistant", "tool",
+        ]
+        assert continuation[1]["tool_calls"][0]["id"] == "call-current-menu"
+        assert continuation[2]["tool_call_id"] == "call-current-menu"
+
+    def test_required_receipts_are_declared_as_completion_contract(self) -> None:
+        """策略门槛应显式进入提示，但 Runner 不应代模型执行工具。"""
+        runner, llm = make_runner([
+            {"content": '{"intent": "new"}', "tool_calls": []},
+        ])
+        ctx = make_ctx()
+
+        runner._call_model(
+            "query_understanding",
+            ROLE_POLICIES["query_understanding"],
+            _FakeC4().project_model_context("query_understanding", None, "x"),
+            "hi",
+            ctx,
+        )
+
+        prompt = llm.system_prompts[0]
+        assert "节点完成契约" in prompt
+        assert "retrieve_recipes" in prompt
+        assert "由你决定何时发起" in prompt
+        assert ctx.tool_receipts == []
