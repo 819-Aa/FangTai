@@ -8,12 +8,14 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from food_agent_v2.b2 import (
-    UserHealthProfileService, IndicatorStatus, ConstraintScope, ConstraintEffect,
-    _allergy_to_constraint_code, _disease_to_constraint_code,
+    ConstraintEffect,
+    ConstraintScope,
+    IndicatorStatus,
+    UserHealthProfileService,
+    _allergy_to_constraint_code,
+    _disease_to_constraint_code,
 )
-from food_agent_v2.b4 import HealthRuleEngine, RecipeHealthResult
-from food_agent_v2.b3.identity_resolver import get_resolver
-from food_agent_v2.b3.recipe_views import get_view_builder
+from food_agent_v2.b4 import HealthRuleEngine
 
 
 @pytest.fixture(scope="module")

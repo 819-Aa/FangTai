@@ -4,15 +4,16 @@ import json
 import sys
 from pathlib import Path
 
-import pytest
-
 # 确保 src 在 sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from food_agent_v2.core.paths import CLEANED_RECIPES, CLEANED_USERS, CLEANED_DIR
-from food_agent_v2.b1.recipe_cleaning import clean_recipes, load_raw_recipes, clean_one
-from food_agent_v2.b1.user_cleaning import clean_users, load_raw_users
-from food_agent_v2.b1.ingredient_identity import build_ingredient_registry, normalize_ingredient_name
+from food_agent_v2.b1.ingredient_identity import (
+    build_ingredient_registry,
+    normalize_ingredient_name,
+)
+from food_agent_v2.b1.recipe_cleaning import clean_recipes
+from food_agent_v2.b1.user_cleaning import clean_users
+from food_agent_v2.core.paths import CLEANED_DIR
 
 
 class TestRecipeCleaning:

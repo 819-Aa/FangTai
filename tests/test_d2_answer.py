@@ -2,12 +2,16 @@
 
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from food_agent_v2.d2 import (
-    audit_answer_text, validate_answer_dish_set,
-    UserVisibleAnalysis, AnswerArtifact,
-    map_sse_to_ui_state, FRONTEND_DO_NOT,
+    FRONTEND_DO_NOT,
+    AnswerArtifact,
+    UserVisibleAnalysis,
+    audit_answer_text,
+    map_sse_to_ui_state,
+    validate_answer_dish_set,
 )
 
 

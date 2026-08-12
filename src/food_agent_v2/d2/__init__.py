@@ -9,9 +9,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import Any
-
+from enum import StrEnum
 
 # ---- 禁止表述检测 ----
 
@@ -70,7 +68,7 @@ class UserVisibleAnalysis:
 
 # ---- 前端 SSE 状态机 ----
 
-class FrontendState(str, Enum):
+class FrontendState(StrEnum):
     IDLE = "idle"
     LOADING = "loading"
     STREAMING_ANSWER = "streaming_answer"

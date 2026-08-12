@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 from food_agent_v2.core.paths import CLEANED_DIR
 

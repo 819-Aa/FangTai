@@ -17,9 +17,8 @@ from __future__ import annotations
 import json
 import re
 import sys
-from pathlib import Path
 
-from food_agent_v2.core.paths import CLEANED_RECIPES, CLEANED_DIR
+from food_agent_v2.core.paths import CLEANED_DIR, CLEANED_RECIPES
 
 SYSTEM_PROMPT = (
     "你是中餐菜品制作时间估算专家。根据菜品名称、食材清单和烹饪步骤，"
