@@ -47,7 +47,8 @@ class _FakeC4:
     def __init__(self) -> None:
         self._sessions: dict = {}
 
-    def build_shared_context(self, session_id, participant_refs, raw, mapping, request_id=None):
+    def build_shared_context(self, session_id, participant_refs, raw, mapping,
+                             request_id=None, build_id=None):
         return SimpleNamespace(session_id=session_id), {}
 
     def validate_context_integrity(self, ref):

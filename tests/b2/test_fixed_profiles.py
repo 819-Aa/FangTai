@@ -12,8 +12,8 @@ from food_agent_v2.b2.constraint_registry import ALLOWED_CONSTRAINT_CODES
 
 
 @pytest.fixture(scope="module")
-def svc() -> UserHealthProfileService:
-    service = UserHealthProfileService()
+def svc(user_profiles_source) -> UserHealthProfileService:
+    service = UserHealthProfileService(source=user_profiles_source)
     service.load()
     return service
 

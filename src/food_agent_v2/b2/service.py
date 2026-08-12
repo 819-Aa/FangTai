@@ -2,12 +2,13 @@
 
 读取固定档案 → 全校验 50 份 → 用封闭注册表派生约束（未知映射 fail-closed）
 → 临时信号验证（明确禁忌绑定标准 ingredient_id）→ 角色匿名投影。
+
+MC-02：在线运行只经 UserProfileSource 端口读取唯一 ready MySQL 构建的固定档案
+（data_builds + fixed_artifact_records），不再读取 JSONL/CSV/原始用户文件；
+数据库不可用或 build 身份不一致即稳定失败，绝不回退文件。
 """
 
 from __future__ import annotations
-
-import json
-from pathlib import Path
 
 from food_agent_v2.b2.constraint_registry import (
     allergy_to_constraint_code,
@@ -15,6 +16,10 @@ from food_agent_v2.b2.constraint_registry import (
     indicator_to_constraint_code,
     is_allowed_code,
     special_stage_status,
+)
+from food_agent_v2.b2.repository import (
+    MySQLUserProfileSource,
+    UserProfileSource,
 )
 from food_agent_v2.b2.schemas import (
     CodedHealthConstraint,
@@ -26,7 +31,6 @@ from food_agent_v2.b2.schemas import (
     ProfileValidationResult,
     TemporaryHealthConstraint,
 )
-from food_agent_v2.core.paths import CLEANED_USERS
 
 
 class HealthProfileError(RuntimeError):
@@ -75,19 +79,28 @@ def _resolve_taboo_ingredient_id(resolver: object, name: str) -> int | None:
 
 
 class UserHealthProfileService:
-    """用户健康档案读取、约束派生与角色投影。"""
+    """用户健康档案读取、约束派生与角色投影。
 
-    def __init__(self) -> None:
+    默认生产 source 为 MySQLUserProfileSource（唯一 ready 构建只读）；
+    单元测试注入 InMemory/Fake source，禁止服务走文件。
+    """
+
+    def __init__(self, source: UserProfileSource | None = None) -> None:
         self._users: dict[int, dict] = {}
         self._loaded = False
+        self._source = source or MySQLUserProfileSource()
 
-    def load(self, path: Path | None = None) -> None:
-        path = path or CLEANED_USERS
-        with path.open("r", encoding="utf-8") as handle:
-            for line in handle:
-                if line.strip():
-                    user = json.loads(line)
-                    self._users[int(user["user_id"])] = user
+    def load(self, expected_build_id: str | None = None) -> None:
+        """从固定档案来源加载；expected_build_id 与 ready build 不一致即失败。
+
+        每次 load 前清空旧缓存；失败后不保留上一次用户数据（fail-closed）。
+        """
+        expected = expected_build_id or None
+        self._users = {}
+        self._loaded = False
+        records = self._source.load_users(expected_build_id=expected)
+        for record in records:
+            self._users[int(record["user_id"])] = record
         self._loaded = True
 
     def get_user(self, user_id: int) -> dict | None:

@@ -169,7 +169,7 @@ def _retrieve_recipes(args: dict, ctx: ToolContext) -> dict:
         try:
             from food_agent_v2.b2 import UserHealthProfileService
             b2 = UserHealthProfileService()
-            b2.load()
+            b2.load(expected_build_id=ctx.build_id)
             prefs = []
             for uid in ctx.participant_user_mapping.values():
                 u = b2.get_user(uid)
@@ -201,7 +201,7 @@ def _get_health_constraints(args: dict, ctx: ToolContext) -> dict:
     """B2 获取参与者约束（使用真实的 participant→user_id 映射）。"""
     from food_agent_v2.b2 import UserHealthProfileService
     svc = UserHealthProfileService()
-    svc.load()
+    svc.load(expected_build_id=ctx.build_id)
 
     result = {}
     constraint_sets = {}
@@ -248,7 +248,7 @@ def _evaluate_recipe_health(args: dict, ctx: ToolContext) -> dict:
     engine = HealthRuleEngine()
     engine.load_relations()
     b2 = UserHealthProfileService()
-    b2.load()
+    b2.load(expected_build_id=ctx.build_id)
 
     # 构建所有参与者的约束集
     all_constraints = {}
@@ -383,7 +383,7 @@ def _validate_selected_menu_health(args: dict, ctx: ToolContext) -> dict:
     engine = HealthRuleEngine()
     engine.load_relations()
     b2 = UserHealthProfileService()
-    b2.load()
+    b2.load(expected_build_id=ctx.build_id)
 
     all_constraints = {}
     for ref, uid in ctx.participant_user_mapping.items():

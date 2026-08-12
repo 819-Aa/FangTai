@@ -93,13 +93,23 @@ def manifest_core(ctx: SharedWorkflowContext) -> dict:
 
 
 class B2PermanentConstraintLoader:
-    """默认永久约束加载器：根据 participant_user_id_mapping 从 B2 固定档案派生。"""
+    """默认永久约束加载器：根据 participant_user_id_mapping 从 B2 固定档案派生。
 
-    def load(self, participant_user_id_mapping: dict[str, int]) -> list[EffectiveConstraint]:
+    MC-02：B2 服务只读唯一 ready MySQL 构建；load() 可显式传入 build_id，
+    不一致即失败（BUILD_IDENTITY_MISMATCH → PermanentConstraintLoadFailed）。
+    """
+
+    def __init__(self, build_id: str | None = None, source: Any | None = None) -> None:
+        self._build_id = build_id
+        self._source = source
+
+    def load(self, participant_user_id_mapping: dict[str, int],
+             build_id: str | None = None) -> list[EffectiveConstraint]:
         from food_agent_v2.b2 import UserHealthProfileService
 
-        svc = UserHealthProfileService()
-        svc.load()
+        expected = build_id or self._build_id
+        svc = UserHealthProfileService(source=self._source)
+        svc.load(expected_build_id=expected)
         out: list[EffectiveConstraint] = []
         for ref, uid in (participant_user_id_mapping or {}).items():
             cs = svc.derive_constraints(uid, ref)
@@ -266,6 +276,19 @@ class ContextService:
             self._memory_source = default_mysql_session_memory_source()
         return self._memory_source
 
+    @staticmethod
+    def _load_permanent_constraints(loader: Any, user_id_mapping: dict[str, int],
+                                    build_id: str | None) -> list[Any]:
+        """调用永久约束加载器；支持 build_id 的加载器传入本次 build_id。
+
+        测试 Fake 若仅声明 load(mapping)，则只传 mapping（向后兼容）。
+        """
+        import inspect
+
+        if "build_id" in inspect.signature(loader.load).parameters:
+            return loader.load(user_id_mapping, build_id=build_id)
+        return loader.load(user_id_mapping)
+
     # ---- 会话锁绑定（失锁 fail-closed）----
 
     def bind_session_lock(self, session_id: str, token: str) -> None:
@@ -401,11 +424,13 @@ class ContextService:
         current_message: dict, user_id_mapping: dict[str, int],
         request_id: str = "",
         permanent_constraints: list[EffectiveConstraint] | None = None,
+        build_id: str | None = None,
     ) -> tuple[SharedWorkflowContext, ContextManifest]:
         """构建 SharedWorkflowContext（C4 §8.1）。
 
         T18 约束先行：构建 ContextManifest 前必须形成完整有效约束——
         B2 固定档案永久约束（permanent_constraints）为权威基础，会话级临时约束追加。
+        MC-02：build_id 传入永久约束加载器，B2 只读该 build 的固定档案。
         """
         if not request_id:
             request_id = str(uuid.uuid4())[:8]
@@ -472,10 +497,11 @@ class ContextService:
         # 约束先行（T18）：默认生产实现根据 participant_user_id_mapping 从 B2 加载
         # 完整永久约束（真实调用路径），再生成 ContextManifest；可显式传入覆盖。
         # fail-closed：B2 加载异常不得降级为空约束继续运行。
+        # MC-02：本次 build_id 传到永久约束加载器（B2 只读该 ready 构建）。
         if permanent_constraints is None:
             try:
-                permanent_constraints = self._get_permanent_constraint_loader().load(
-                    user_id_mapping)
+                permanent_constraints = self._load_permanent_constraints(
+                    self._get_permanent_constraint_loader(), user_id_mapping, build_id)
             except PermanentConstraintLoadFailed:
                 raise
             except Exception as exc:

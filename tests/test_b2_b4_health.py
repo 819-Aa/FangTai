@@ -19,8 +19,8 @@ from food_agent_v2.b4 import HealthRuleEngine
 
 
 @pytest.fixture(scope="module")
-def b2_service():
-    svc = UserHealthProfileService()
+def b2_service(user_profiles_source):
+    svc = UserHealthProfileService(source=user_profiles_source)
     svc.load()
     return svc
 

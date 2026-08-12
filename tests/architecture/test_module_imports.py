@@ -17,8 +17,9 @@ SRC = REPO_ROOT / "src"
 #: 每个基础设施客户端只允许其拥有模块导入。
 #: b3.repository 是固定数据 Repository 适配器（T11），允许直接读 MySQL。
 #: c4.mysql_repository 是会话记忆 Repository 适配器（T18），读取已提交会话边界。
+#: b2.repository 是固定档案 Repository 适配器（MC-02），只读 ready 构建的 user_profiles。
 INFRA_OWNERS = {
-    "pymysql": {"application", "b3", "c4"},
+    "pymysql": {"application", "b3", "c4", "b2"},
     "redis": {"c4"},
     "qdrant_client": {"c1"},
 }

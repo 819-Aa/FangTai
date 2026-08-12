@@ -266,6 +266,8 @@ class WorkflowRunner:
                 {"raw_text": message, "timestamp": time.time()},
                 user_id_mapping,
                 request_id=request_id,
+                # MC-02：本次 build_id 传到永久约束加载器（B2 只读该 ready 构建）
+                build_id=build_id,
             )
         except PermanentConstraintLoadFailed as exc:
             # 约束先行 fail-closed：永久约束加载失败 → failed，不进模型节点

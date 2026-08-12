@@ -160,10 +160,17 @@ class TestC1TimeBoost:
 
 # ---- C4：压缩保留精华 + 完整性 ----
 
+class _NoB2Loader:
+    """单元测试隔离：默认 B2 加载器返回空（不依赖 B2/MySQL 固定档案）。"""
+
+    def load(self, participant_user_id_mapping):
+        return []
+
+
 class TestC4Compression:
     def test_compress_preserves_immutable(self):
         from food_agent_v2.c4 import ContextService, ConversationEvent, EventType
-        svc = ContextService()
+        svc = ContextService(permanent_constraint_loader=_NoB2Loader())
         ctx, m = svc.build_shared_context("sess_t", ["p1"], {"raw_text": "第一轮"},
                                           {"p1": 1}, request_id="r1")
         # 加 250 个事件超预算
@@ -184,7 +191,7 @@ class TestC4Compression:
 
     def test_restore_session(self):
         from food_agent_v2.c4 import ContextService
-        svc = ContextService()
+        svc = ContextService(permanent_constraint_loader=_NoB2Loader())
         svc.build_shared_context("sess_r", ["p1"], {"raw_text": "hi"},
                                  {"p1": 1}, request_id="r1")
         svc._sessions.clear()

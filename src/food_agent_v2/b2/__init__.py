@@ -14,6 +14,13 @@ from food_agent_v2.b2.constraint_registry import (
     special_group_to_constraint_code,
     special_stage_status,
 )
+from food_agent_v2.b2.repository import (
+    InMemoryUserProfileSource,
+    MySQLUserProfileSource,
+    ProfileRepositoryError,
+    UserProfileSource,
+    default_mysql_user_profile_source,
+)
 from food_agent_v2.b2.schemas import (
     CodedHealthConstraint,
     ConstraintEffect,
@@ -53,14 +60,19 @@ __all__ = [
     "HealthGoal",
     "HealthProfileError",
     "IndicatorStatus",
+    "InMemoryUserProfileSource",
+    "MySQLUserProfileSource",
     "ParticipantHealthConstraintSet",
+    "ProfileRepositoryError",
     "ProfileValidationResult",
     "SPECIAL_STAGE_RULES",
     "TemporaryHealthConstraint",
     "URIC_ACID_FEMALE_HIGH",
     "URIC_ACID_MALE_HIGH",
     "UserHealthProfileService",
+    "UserProfileSource",
     "allergy_to_constraint_code",
+    "default_mysql_user_profile_source",
     "disease_to_constraint_code",
     "indicator_to_constraint_code",
     "is_allowed_code",
