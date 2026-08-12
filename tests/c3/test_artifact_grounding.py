@@ -440,7 +440,8 @@ class TestDualArtifact:
         ctx.previous_results["feasible_menus"] = self._plans()
         new_state, _feasible = runner._build_dual_artifacts(state, ctx)
         assert new_state.is_terminal()
-        assert new_state.error.error_code == "HEALTH_MENU_PLANNING_EMPTY"
+        # MC-01：无权威健康回执 → HEALTH_EVALUATION_REQUIRED
+        assert new_state.error.error_code == "HEALTH_EVALUATION_REQUIRED"
 
 
 class TestFinalValidationExtraction:

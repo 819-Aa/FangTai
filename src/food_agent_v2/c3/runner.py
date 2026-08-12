@@ -548,12 +548,19 @@ class WorkflowRunner:
         必需工具回执身份已由 post_check 校验。任一构建失败即 fail-closed。
         """
         receipt = tool_ctx.previous_results.get("health_evaluation")
+        if receipt is None or not getattr(receipt, "safe_recipe_ids", None) is not None:
+            return self._fail(state, "HEALTH_EVALUATION_REQUIRED",
+                              "缺少权威健康评估回执"), None
+        safe_ids = tuple(int(r) for r in (receipt.safe_recipe_ids or []))
+        # MC-01：权威 safe 为空 → no_safe_menu（不构建 Artifact，不进入后续节点）
+        if not safe_ids:
+            return (reduce_workflow_state(
+                state, action="health_menu_planning", result="no_safe_menu"), None)
         plans = tool_ctx.previous_results.get("feasible_menus", [])
-        if receipt is None or not plans:
-            return self._fail(state, "HEALTH_MENU_PLANNING_EMPTY",
-                              "健康评估或可行菜单缺失（工具回执不足）"), None
-
-        safe_ids = tuple(int(r) for r in receipt.safe_recipe_ids)
+        # MC-01：safe 非空但无可行方案 → no_feasible_menu（不得回退不安全候选）
+        if not plans:
+            return (reduce_workflow_state(
+                state, action="health_menu_planning", result="no_feasible_menu"), None)
         try:
             health_artifact = HealthEvaluationArtifact(
                 artifact_id=uuid.uuid4(),

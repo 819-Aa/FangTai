@@ -270,20 +270,36 @@ def _evaluate_recipe_health(args: dict, ctx: ToolContext) -> dict:
 
 
 def _generate_feasible_menus(args: dict, ctx: ToolContext) -> dict:
-    """C2 菜单规划：基于 B4 安全候选生成方案。"""
+    """C2 菜单规划：唯一安全候选来源 = 权威 HealthEvaluationReceipt.safe_recipe_ids。
+
+    - 绝不从 retrieval / retrieval_expanded 等原始召回恢复候选（MC-01）；
+    - 模型传入的 safe_recipe_ids 不得成为权威：若含权威集合之外的 recipe_id，
+      返回 SAFE_RECIPE_IDS_MISMATCH（不得静默过滤后继续）；
+    - 无有效健康回执 → HEALTH_EVALUATION_REQUIRED；
+    - 权威 safe 为空 → no_safe_menu（不调用 MenuPlanner）；
+    - safe 非空但 C2 无方案 → no_feasible_menu（不得回退使用不安全候选）。
+    """
     from food_agent_v2.c2 import MenuHardConstraints, MenuPlanner
 
-    safe_ids = args.get("safe_recipe_ids", [])
-    # 如果模型没传 safe_recipe_ids，使用上一步 evaluate_recipe_health 返回的
-    if not safe_ids:
-        safe_ids = ctx.safe_recipe_ids
-    if not safe_ids:
-        # 如果上一步也没有，从 retrieval 结果取
-        retrieval = ctx.previous_results.get("retrieval")
-        if retrieval:
-            safe_ids = [c.recipe_id for c in retrieval.candidates[:30]]
-    if not safe_ids:
-        return {"plans": [], "count": 0, "note": "no safe candidates available"}
+    # 1. 唯一权威来源：最新一次 evaluate_recipe_health 的 HealthEvaluationReceipt
+    receipt = ctx.previous_results.get("health_evaluation")
+    if receipt is None or not getattr(receipt, "safe_recipe_ids", None) is not None:
+        return {"error": "HEALTH_EVALUATION_REQUIRED", "plans": [], "count": 0,
+                "note": "missing authoritative health evaluation receipt"}
+    authoritative_safe = set(int(r) for r in (getattr(receipt, "safe_recipe_ids", []) or []))
+
+    # 2. 模型列表不得成为权威：传入权威集合之外的 recipe_id → 明确报错
+    model_safe = args.get("safe_recipe_ids", [])
+    if model_safe:
+        outside = [rid for rid in model_safe if int(rid) not in authoritative_safe]
+        if outside:
+            return {"error": "SAFE_RECIPE_IDS_MISMATCH", "plans": [], "count": 0,
+                    "note": f"model safe_recipe_ids 含非权威 recipe_id: {outside[:5]}"}
+
+    # 3. 权威 safe 为空 → no_safe_menu（不调用 MenuPlanner，不生成方案）
+    if not authoritative_safe:
+        return {"plans": [], "count": 0, "note": "no_safe_menu", "safe_count": 0}
+    safe_ids = sorted(authoritative_safe)
 
     planner = MenuPlanner()
     planner.set_safe_candidates(safe_ids)
@@ -306,6 +322,10 @@ def _generate_feasible_menus(args: dict, ctx: ToolContext) -> dict:
     )
     plans = planner.plan(hard, target_count=5)
     ctx.previous_results["feasible_menus"] = plans
+
+    if not plans:
+        # 权威 safe 非空但 C2 无法生成满足硬约束的方案 → no_feasible_menu（不回退）
+        return {"plans": [], "count": 0, "note": "no_feasible_menu", "safe_count": len(safe_ids)}
 
     return {
         "plans": [{
