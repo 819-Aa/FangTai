@@ -324,6 +324,8 @@ class WorkflowRunner:
                         1, round(q_artifact.time_constraint_seconds / 60))
 
             elif node == NodeType.HEALTH_MENU_PLANNING:
+                # MC-01-R2 P0-1：节点入口清除旧健康回执，禁止复用前一轮/前一节点回执
+                tool_ctx.previous_results.pop("health_evaluation", None)
                 hm_input = {
                     "query_plan": state.query_plan_artifact,
                     "retrieved_candidate_recipe_ids": retrieved_ids,
@@ -665,19 +667,15 @@ class WorkflowRunner:
         result = self._call_model(role, policy, model_ctx, user_message, tool_ctx,
                                   response_format=self._artifact_response_format(policy, role))
 
-        if result.get("status") == "terminal":
-            # MC-01-R1 P0：generate_feasible_menus 返回业务终态（no_safe/no_feasible）
-            # → 立即结束当前 health 节点，转精确业务终态，不再依赖模型后续输出。
-            terminal = result.get("terminal")
-            return reduce_workflow_state(
-                state, action="health_menu_planning", result=terminal), result, None
-
         if result.get("status") == "failed":
             err = WorkflowError("MODEL_CALL_FAILED",
                                 result.get("error") or "模型调用失败",
                                 failed_node=state.current_node)
             return reduce_workflow_state(state, action="fail", error=err), result, None
 
+        # MC-01-R2 P0-1：无论普通结果还是业务 terminal，都必须先统一执行本节点
+        # 回执校验（budget / identity / required tool / record_receipts），
+        # 全部通过后才能转换业务终态；任一失败 fail-closed，不得进入终态。
         node_receipts = tool_ctx.tool_receipts[pre_count:]
 
         budget_err = self._validate_tool_budget(node_receipts)
@@ -687,6 +685,15 @@ class WorkflowRunner:
         post_err = NodeValidator.post_check(state, policy, result if result else None, node_receipts)
         if post_err:
             return reduce_workflow_state(state, action="fail", error=post_err), result, None
+
+        if result.get("status") == "terminal":
+            # 业务终态：校验通过 → 记录本节点回执到 WorkflowState，再转精确终态
+            state = reduce_workflow_state(
+                state, action="record_receipts",
+                receipts=self._as_authoritative_receipts(node_receipts))
+            terminal = result.get("terminal")
+            return reduce_workflow_state(
+                state, action="health_menu_planning", result=terminal), result, None
 
         # 真实 input_fingerprint：绑定本节点 request/node/role/ModelContext 投影与用户输入
         fingerprint_seed = self._fingerprint_seed(state, role, model_ctx, user_message)
@@ -914,13 +921,15 @@ class WorkflowRunner:
                         tool_results.append({"tool": name, "error": "TOOL_PERMISSION_DENIED"})
                         continue
                     result = tool_handler.execute(name, args)
-                    # MC-01-R1 P0：权威健康回执已产生后，generate_feasible_menus 返回
-                    # no_safe_menu / no_feasible_menu → 立即结束当前模型节点，
-                    # 绝不依赖模型再输出摘要、绝不再调用模型。
+                    # MC-01-R2 P0-2：generate_feasible_menus 返回业务终态 → 立即停止
+                    # 同批 tool_calls 循环；其后的 expand_retrieval/adjust_menu_plan
+                    # 等工具绝不执行；已执行回执仍进入统一校验。
                     if name == "generate_feasible_menus" and isinstance(result, dict):
                         note = result.get("note")
                         if note in ("no_safe_menu", "no_feasible_menu"):
                             terminal = note
+                            tool_results.append({"tool": name, "result": result})
+                            break
                     tool_results.append({"tool": name, "result": result})
 
                 if terminal is not None:

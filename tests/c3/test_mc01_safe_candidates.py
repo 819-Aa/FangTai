@@ -11,6 +11,8 @@
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
+
 from food_agent_v2.c3.runner import WorkflowRunner
 from food_agent_v2.c3.state import RequestStatus, WorkflowState
 from food_agent_v2.c3.tool_handler import ToolContext, _generate_feasible_menus
@@ -230,3 +232,218 @@ class TestNoSafeTerminalPersistence:
             assert "answer_ready" not in types
             assert "result_committed" not in types
             assert "error" not in types
+
+
+class TestRunModelNodeTerminalValidation:
+    """MC-01-R2 P0-1：真实 _run_model_node 校验通过后才进入业务终态。"""
+
+    def _run_health(self, fake_llm, evaluate_fn):
+        import food_agent_v2.c3.tool_handler as th
+        from food_agent_v2.c3 import NodeValidator
+
+        class _C4:
+            def project_model_context(self, role, handoff, ref):
+                return SimpleNamespace(role=role, conversation_visible=[],
+                                       constraint_visible=[], menu_visible={})
+            def commit_session_state(self, request_id, status, **kw):
+                pass
+
+        state = WorkflowState(request_id=RID, build_id=BID, status=RequestStatus.RUNNING,
+                              current_node="health_menu_planning", participant_refs=["p1"])
+        ctx = _ctx()
+        runner = WorkflowRunner(build_id=BID, llm=fake_llm, c4=_C4())
+        with patch.dict(th._TOOL_MAP, {
+                "evaluate_recipe_health": evaluate_fn,
+                "get_health_constraints": lambda a, c: {"participants": {}},
+                "expand_retrieval": lambda a, c: (_ for _ in ()).throw(
+                    AssertionError("expand_retrieval 不应执行"))}), \
+                patch.object(NodeValidator, "pre_check", return_value=None):
+            new_state, _r, _a = runner._run_model_node(
+                state, _C4(), ctx, "health_menu_planning", "msg")
+        return new_state, ctx
+
+    def test_real_run_model_node_no_safe_menu(self) -> None:
+        """真实 _run_model_node 进入 no_safe_menu（非直调 _call_model）。"""
+        calls: list[str] = []
+
+        class _FakeLLM:
+            def invoke(self, role, *a, **k):
+                calls.append(role)
+                if len(calls) == 1:
+                    return {"content": "", "tool_calls": [
+                        {"name": "get_health_constraints", "arguments": {}},
+                        {"name": "evaluate_recipe_health", "arguments": {"recipe_ids": [1, 2]}}]}
+                if len(calls) == 2:
+                    return {"content": "", "tool_calls": [
+                        {"name": "generate_feasible_menus",
+                         "arguments": {"safe_recipe_ids": [], "dish_count": 4}}]}
+                raise AssertionError(f"模型不应被再次调用（第 {len(calls)} 次）")
+
+        def fake_eval(a, c):
+            c.previous_results["health_evaluation"] = _receipt([])
+            c.safe_recipe_ids = []
+            return {"safe_recipe_ids": [], "safe_count": 0}
+
+        new_state, ctx = self._run_health(_FakeLLM(), fake_eval)
+        assert new_state.status == RequestStatus.NO_SAFE_MENU
+        assert calls == ["health_menu_planning", "health_menu_planning"]
+        # 终态节点回执已记录进 WorkflowState
+        assert len(new_state.tool_receipts) >= 3  # constraints + evaluate + generate
+
+    def test_required_tools_missing_cannot_enter_no_safe(self) -> None:
+        """必需工具缺失 → post_check 拒绝，不得进入 no_safe_menu。"""
+        import food_agent_v2.c3.tool_handler as th
+        from food_agent_v2.c3 import NodeValidator
+
+        class _C4:
+            def project_model_context(self, role, handoff, ref):
+                return SimpleNamespace(role=role, conversation_visible=[],
+                                       constraint_visible=[], menu_visible={})
+            def commit_session_state(self, request_id, status, **kw):
+                pass
+        calls: list[str] = []
+
+        class _NoEvalLLM:
+            def invoke(self, role, *a, **k):
+                calls.append(role)
+                # 只调 constraints + generate（缺 evaluate）；第 2 轮正常结束
+                if len(calls) == 1:
+                    return {"content": "", "tool_calls": [
+                        {"name": "get_health_constraints", "arguments": {}},
+                        {"name": "generate_feasible_menus",
+                         "arguments": {"safe_recipe_ids": [], "dish_count": 4}}]}
+                return {"content": "{}", "tool_calls": []}
+        state = WorkflowState(request_id=RID, build_id=BID, status=RequestStatus.RUNNING,
+                              current_node="health_menu_planning", participant_refs=["p1"])
+        ctx = _ctx()
+        runner = WorkflowRunner(build_id=BID, llm=_NoEvalLLM(), c4=_C4())
+        with patch.dict(th._TOOL_MAP, {
+                "get_health_constraints": lambda a, c: {"participants": {}}}), \
+                patch.object(NodeValidator, "pre_check", return_value=None):
+            new_state, _r, _a = runner._run_model_node(
+                state, _C4(), ctx, "health_menu_planning", "msg")
+        assert new_state.is_terminal()
+        assert new_state.status != RequestStatus.NO_SAFE_MENU
+        assert new_state.error.error_code == "REQUIRED_TOOL_NOT_CALLED"
+
+    def test_failed_required_receipt_cannot_enter_terminal(self) -> None:
+        """失败必需回执 → TOOL_EXECUTION_FAILED，不得进入业务终态。"""
+        import food_agent_v2.c3.tool_handler as th
+        from food_agent_v2.c3 import NodeValidator
+
+        class _C4:
+            def project_model_context(self, role, handoff, ref):
+                return SimpleNamespace(role=role, conversation_visible=[],
+                                       constraint_visible=[], menu_visible={})
+            def commit_session_state(self, request_id, status, **kw):
+                pass
+        calls: list[str] = []
+
+        class _FailedEvalLLM:
+            def invoke(self, role, *a, **k):
+                calls.append(role)
+                if len(calls) == 1:
+                    return {"content": "", "tool_calls": [
+                        {"name": "get_health_constraints", "arguments": {}},
+                        {"name": "evaluate_recipe_health", "arguments": {"recipe_ids": [1, 2]}}]}
+                if len(calls) == 2:
+                    return {"content": "", "tool_calls": [
+                        {"name": "generate_feasible_menus",
+                         "arguments": {"safe_recipe_ids": [], "dish_count": 4}}]}
+                return {"content": "{}", "tool_calls": []}
+
+        def failed_eval(a, c):
+            return {"error": "TOOL_EXECUTION_FAILED: boom", "safe_recipe_ids": []}
+        state = WorkflowState(request_id=RID, build_id=BID, status=RequestStatus.RUNNING,
+                              current_node="health_menu_planning", participant_refs=["p1"])
+        ctx = _ctx()
+        runner = WorkflowRunner(build_id=BID, llm=_FailedEvalLLM(), c4=_C4())
+        with patch.dict(th._TOOL_MAP, {
+                "evaluate_recipe_health": failed_eval,
+                "get_health_constraints": lambda a, c: {"participants": {}}}), \
+                patch.object(NodeValidator, "pre_check", return_value=None):
+            new_state, _r, _a = runner._run_model_node(
+                state, _C4(), ctx, "health_menu_planning", "msg")
+        assert new_state.is_terminal()
+        assert new_state.status != RequestStatus.NO_SAFE_MENU
+        assert new_state.error.error_code == "TOOL_EXECUTION_FAILED"
+
+    def test_trailing_tool_after_terminal_never_executes(self) -> None:
+        """generate 返回终态后，同批 trailing 工具（expand_retrieval）绝不执行。"""
+        calls: list[str] = []
+
+        class _FakeLLM:
+            def invoke(self, role, *a, **k):
+                calls.append(role)
+                if len(calls) == 1:
+                    return {"content": "", "tool_calls": [
+                        {"name": "get_health_constraints", "arguments": {}},
+                        {"name": "evaluate_recipe_health", "arguments": {"recipe_ids": [1, 2]}}]}
+                if len(calls) == 2:
+                    return {"content": "", "tool_calls": [
+                        {"name": "generate_feasible_menus",
+                         "arguments": {"safe_recipe_ids": [], "dish_count": 4}},
+                        {"name": "expand_retrieval", "arguments": {}}]}
+                raise AssertionError(f"模型不应被再次调用（第 {len(calls)} 次）")
+
+        def fake_eval(a, c):
+            c.previous_results["health_evaluation"] = _receipt([])
+            c.safe_recipe_ids = []
+            return {"safe_recipe_ids": [], "safe_count": 0}
+
+        # expand_retrieval 在 _run_health 中被替换为必抛函数；若被调用则测试失败
+        new_state, _ctx_ = self._run_health(_FakeLLM(), fake_eval)
+        assert new_state.status == RequestStatus.NO_SAFE_MENU
+        assert calls == ["health_menu_planning", "health_menu_planning"]
+
+
+class TestErrorCodeWhitelist:
+    """MC-01-R2 P1：错误码白名单化。"""
+
+    def _post_check_receipt(self, error_code):
+        from uuid import UUID as _UUID
+
+        from food_agent_v2.c3 import ROLE_POLICIES, NodeValidator
+        from food_agent_v2.c3.receipts import ToolReceipt
+        from food_agent_v2.c3.state import WorkflowState
+        policy = ROLE_POLICIES["health_menu_planning"]
+        state = WorkflowState(request_id=RID, build_id=BID,
+                              current_node="health_menu_planning")
+
+        def _rec(tool_name, success, err=None):
+            return ToolReceipt(
+                request_id=_UUID(RID), node_id="health_menu_planning",
+                tool_call_id=f"c-{tool_name}", tool_name=tool_name,
+                input_hash="a" * 64, output_hash="b" * 64,
+                build_id=_UUID(BID), success=success, error_code=err)
+        # 所有必需工具：constraints/evaluate 成功；generate 按 error_code 失败
+        receipts = [
+            _rec("get_health_constraints", True),
+            _rec("evaluate_recipe_health", True),
+            _rec("generate_feasible_menus", False, error_code),
+        ]
+        return NodeValidator.post_check(state, policy, None, receipts)
+
+    def test_unknown_error_code_normalized(self) -> None:
+        """动态/未知 error_code → 规范化为 TOOL_EXECUTION_FAILED。"""
+        err = self._post_check_receipt("SOME:dynamic:garbage:abc")
+        assert err.error_code == "TOOL_EXECUTION_FAILED"
+        assert "garbage" not in err.message and "SOME" not in err.message
+
+    def test_allowed_codes_stay_precise(self) -> None:
+        """两个白名单错误码保持精确。"""
+        err1 = self._post_check_receipt("SAFE_RECIPE_IDS_MISMATCH")
+        assert err1.error_code == "SAFE_RECIPE_IDS_MISMATCH"
+        err2 = self._post_check_receipt("HEALTH_EVALUATION_REQUIRED")
+        assert err2.error_code == "HEALTH_EVALUATION_REQUIRED"
+
+
+@pytest.fixture(autouse=True)
+def _clean_global_d1():
+    """MC-01-R2 测试 10：结束后清理全局 D1 requests/events/cursors（固定 ID 不污染）。"""
+    from food_agent_v2.d1 import api as d1_api
+    yield
+    d1_api._requests.clear()
+    d1_api._events.clear()
+    d1_api._event_cursors.clear()
+    d1_api._idempotency.clear()

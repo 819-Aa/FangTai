@@ -20,6 +20,14 @@ from food_agent_v2.c3.state import (
     reduce_workflow_state,
 )
 
+# MC-01-R2 P1：允许从失败工具回执原样传播的稳定业务/控制错误码白名单；
+# 白名单外的动态错误文本一律规范化为 TOOL_EXECUTION_FAILED。
+ALLOWED_TOOL_ERROR_CODES = {
+    "SAFE_RECIPE_IDS_MISMATCH",
+    "HEALTH_EVALUATION_REQUIRED",
+}
+
+
 ERROR_CODES = {
     "REQUIRED_TOOL_NOT_CALLED": "模型未调用必需工具",
     "TOOL_PERMISSION_DENIED": "模型调用了角色禁用工具",
@@ -168,9 +176,9 @@ class NodeValidator:
             if required not in received:
                 return WorkflowError("REQUIRED_TOOL_NOT_CALLED", f"未调用必需工具: {required}", failed_node=state.current_node)
             if not received[required]:
-                # MC-01-R1 P1：传播失败回执的原始稳定 error_code
-                # （SAFE_RECIPE_IDS_MISMATCH / HEALTH_EVALUATION_REQUIRED 等），
-                # 不得折叠成泛化 TOOL_EXECUTION_FAILED。
+                # MC-01-R2 P1：只允许白名单化的稳定业务/控制错误码原样传播；
+                # 其他动态字符串/异常文本/参数内容一律规范化为 TOOL_EXECUTION_FAILED，
+                # 公开错误不得泄漏内部异常或用户输入。
                 for r in tool_receipts:
                     if _receipt_get(r, "tool_name") != required:
                         continue
@@ -179,7 +187,7 @@ class NodeValidator:
                         continue
                     orig = getattr(r, "error_code", None) or (
                         r.get("error_code") if isinstance(r, dict) else None)
-                    if orig and orig != "TOOL_EXECUTION_FAILED":
+                    if orig and orig in ALLOWED_TOOL_ERROR_CODES:
                         return WorkflowError(
                             str(orig), f"{required} 工具失败: {orig}",
                             failed_node=state.current_node)

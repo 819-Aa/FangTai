@@ -257,6 +257,8 @@ def _evaluate_recipe_health(args: dict, ctx: ToolContext) -> dict:
         all_constraints[ref] = cs.hard_constraints
 
     batch = engine.evaluate_batch(recipe_ids, ing_map, all_constraints)
+    # MC-01-R2 P0-1：绑定回执到当前请求，供 generate 校验新鲜度（禁止跨请求复用）
+    batch.request_id = ctx.request_id
     ctx.previous_results["health_evaluation"] = batch
     ctx.safe_recipe_ids = batch.safe_recipe_ids
 
@@ -287,6 +289,10 @@ def _generate_feasible_menus(args: dict, ctx: ToolContext) -> dict:
     if not isinstance(receipt, HealthEvaluationReceipt):
         return {"error": "HEALTH_EVALUATION_REQUIRED", "plans": [], "count": 0,
                 "note": "missing authoritative health evaluation receipt"}
+    # MC-01-R2 P0-1：禁止复用前一轮/前一请求/前一节点的 HealthEvaluationReceipt
+    if str(receipt.request_id or "") != str(ctx.request_id):
+        return {"error": "HEALTH_EVALUATION_REQUIRED", "plans": [], "count": 0,
+                "note": "stale health evaluation receipt"}
     authoritative_safe = set(int(r) for r in (receipt.safe_recipe_ids or []))
 
     # 2. 模型列表不得成为权威：传入权威集合之外的 recipe_id → 明确报错
