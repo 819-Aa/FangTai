@@ -247,7 +247,8 @@ class ContextService:
     """
 
     def __init__(self, memory_source: Any = None,
-                 permanent_constraint_loader: Any = None):
+                 permanent_constraint_loader: Any = None,
+                 menu_repository: Any = None):
         self._sessions: dict[str, SharedWorkflowContext] = {}
         self._events: dict[str, list[ConversationEvent]] = {}
         self._menu_histories: dict[str, list[dict]] = {}
@@ -256,6 +257,7 @@ class ContextService:
         self._redis = None  # 惰性初始化
         self._memory_source = memory_source  # 已提交边界来源（默认 MySQL）
         self._permanent_constraint_loader = permanent_constraint_loader
+        self._menu_repository = menu_repository
 
     def _get_permanent_constraint_loader(self):
         if self._permanent_constraint_loader is None:
@@ -411,12 +413,25 @@ class ContextService:
         if not meta:
             return None
         menus = src.load_menu_versions(session_id)
+        current_menu = menus[-1] if menus else None
+        if current_menu:
+            from food_agent_v2.application.menu_projection import (
+                build_current_public_menu,
+            )
+
+            build_id, items = build_current_public_menu(
+                current_menu.get("recipe_ids", []),
+                repository=self._menu_repository,
+            )
+            current_menu = dict(current_menu)
+            current_menu["build_id"] = build_id
+            current_menu["items"] = items
         return {
             "session_id": session_id,
             "participant_refs": meta.get("participant_refs", []),
             "request_count": meta.get("request_count", 0),
             "last_request_at": meta.get("last_request_at"),
-            "current_menu": menus[-1] if menus else None,
+            "current_menu": current_menu,
         }
 
     def build_shared_context(

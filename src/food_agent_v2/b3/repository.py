@@ -99,6 +99,22 @@ class MySQLArtifactRecordSource:
         self._connect()
         return self._cursor
 
+    def close(self) -> None:
+        """释放本 source 拥有的数据库资源。"""
+        cursor, connection = self._cursor, self._connection
+        self._cursor = None
+        self._connection = None
+        if cursor is not None:
+            try:
+                cursor.close()
+            except Exception:
+                pass
+        if connection is not None:
+            try:
+                connection.close()
+            except Exception:
+                pass
+
     def ready_build_id(self) -> str:
         self.cursor.execute("SELECT build_id FROM data_builds WHERE status='ready'")
         rows = self.cursor.fetchall()
@@ -138,6 +154,12 @@ class FixedDataRepository:
         if self._build_id is None:
             self._build_id = self._source.ready_build_id()
         return self._build_id
+
+    def close(self) -> None:
+        """若底层记录源拥有 close 生命周期，则确定释放。"""
+        close = getattr(self._source, "close", None)
+        if close is not None:
+            close()
 
     def _records(self, artifact_name: str, build_id: str) -> list[dict]:
         records = self._source.records(artifact_name, build_id)

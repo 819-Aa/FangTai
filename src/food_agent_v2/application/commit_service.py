@@ -92,7 +92,8 @@ def _validate_commit_payload(health_evidence: dict, status: str,
     if status != "completed":
         return  # 非 completed 只记录终态，不要求健康审计
     required = [
-        "request_id", "plan_id", "menu_hash", "recipe_ids",
+        "request_id", "build_id", "plan_id", "menu_hash", "recipe_ids",
+        "menu_items",
         "final_validation", "menu_decision", "review", "answer",
         "participant_constraint_refs", "ingredient_relation_coverage_refs",
         "override_refs", "tool_receipt_refs", "tool_input_output_hashes",
@@ -128,6 +129,23 @@ def _validate_commit_payload(health_evidence: dict, status: str,
         raise AuditCommitFailed("健康审计 plan_id/menu_hash 为空")
     if not health_evidence.get("recipe_ids"):
         raise AuditCommitFailed("健康审计 recipe_ids 为空")
+    build_id = health_evidence.get("build_id")
+    if not isinstance(build_id, str) or not build_id.strip():
+        raise AuditCommitFailed("健康审计 build_id 为空")
+    recipe_ids = list(health_evidence.get("recipe_ids") or [])
+    menu_items = list(health_evidence.get("menu_items") or [])
+    if len(menu_items) != len(recipe_ids):
+        raise AuditCommitFailed("menu_items 与 recipe_ids 数量不一致")
+    item_ids = []
+    for item in menu_items:
+        if (not isinstance(item, dict)
+                or type(item.get("recipe_id")) is not int
+                or not isinstance(item.get("name"), str)
+                or not item["name"].strip()):
+            raise AuditCommitFailed("menu_items 含非法公开菜品投影")
+        item_ids.append(item["recipe_id"])
+    if item_ids != recipe_ids:
+        raise AuditCommitFailed("menu_items 顺序/身份与 recipe_ids 不一致")
 
     plans = {fv.get("plan_id"), md.get("plan_id"), ans.get("plan_id")}
     if len(plans) != 1 or plans.pop() != health_evidence["plan_id"]:
@@ -199,6 +217,7 @@ def _build_outbox_rows(request_id: str, final_plan_id: str,
                        menu_hash: str, menu_ref: str,
                        evidence_refs: list[str]) -> list[dict]:
     recipe_ids = (health_evidence or {}).get("recipe_ids", [])
+    menu_items = (health_evidence or {}).get("menu_items", [])
     return [
         {
             "event_id": f"ev_answer_{request_id}",
@@ -216,9 +235,11 @@ def _build_outbox_rows(request_id: str, final_plan_id: str,
             "seq": 2,
             "payload": {
                 "menu_summary": {
+                    "build_id": (health_evidence or {}).get("build_id", ""),
                     "plan_id": final_plan_id,
                     "menu_hash": menu_hash,
                     "recipe_ids": recipe_ids,
+                    "items": menu_items,
                 },
             },
         },

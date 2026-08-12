@@ -351,6 +351,46 @@ class TestRestoreCombined:
         svc = make_service()
         assert svc._restore_session(uniq("none")) is None
 
+    def test_get_session_projects_committed_menu_from_ready_build(self) -> None:
+        """公开会话菜单必须携带同一 build 与固定菜名投影。"""
+        from food_agent_v2.b3.repository import RecipeRetrievalView, RepositoryError
+
+        class _MenuRepo:
+            def ready_build_id(self):
+                return "build-ready"
+
+            def get_retrieval_view(self, recipe_ids, build_id):
+                if build_id != "build-ready":
+                    raise RepositoryError("BUILD_IDENTITY_MISMATCH", "bad build")
+                names = {1: "番茄炒蛋", 2: "清炒时蔬"}
+                return [RecipeRetrievalView(
+                    recipe_id, names[recipe_id], [], [], {}, None, None, [])
+                    for recipe_id in recipe_ids]
+
+            def close(self):
+                pass
+
+        source = InMemorySessionMemorySource()
+        sid = uniq("session-menu")
+        source.sessions[sid] = {
+            "session_id": sid, "participant_refs": ["p1"],
+            "current_menu_plan_id": "plan-A", "request_count": 1,
+        }
+        source.menus[sid] = [{
+            "plan_id": "plan-A", "menu_hash": "a" * 64,
+            "recipe_ids": [2, 1], "committed_at": "t",
+        }]
+        svc = ContextService(memory_source=source, menu_repository=_MenuRepo())
+
+        current = svc.get_session_state(sid)["current_menu"]
+
+        assert current["build_id"] == "build-ready"
+        assert current["recipe_ids"] == [2, 1]
+        assert current["items"] == [
+            {"recipe_id": 2, "name": "清炒时蔬"},
+            {"recipe_id": 1, "name": "番茄炒蛋"},
+        ]
+
 
 class _FakeConstraint:
     def __init__(self, code: str, refs: list[str]) -> None:

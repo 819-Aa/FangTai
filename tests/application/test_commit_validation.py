@@ -52,8 +52,13 @@ def _audit(rid: str, plan_id: str, menu_hash: str = "a" * 64,
     """T19 完整健康审计（Artifact 链 + 引用）。"""
     return {
         "request_id": rid,
+        "build_id": "7" * 32,
         "plan_id": plan_id,
         "recipe_ids": [1, 2],
+        "menu_items": [
+            {"recipe_id": 1, "name": "菜品一"},
+            {"recipe_id": 2, "name": "菜品二"},
+        ],
         "menu_hash": menu_hash,
         "final_validation": {
             "ref": "fv:1", "request_id": rid, "plan_id": plan_id,
@@ -271,7 +276,12 @@ class TestOuterBinding:
                     (rid,))
         import json as _json
         payload = _json.loads(ob[0][0])
+        assert payload["menu_summary"]["build_id"] == "7" * 32
         assert payload["menu_summary"]["menu_hash"] == "a" * 64
+        assert payload["menu_summary"]["items"] == [
+            {"recipe_id": 1, "name": "菜品一"},
+            {"recipe_id": 2, "name": "菜品二"},
+        ]
 
     def test_audit_write_failure_rolls_back_all(self) -> None:
         """事务中间故障（outbox 写入前抛错）→ 结果/会话/菜单/outbox 全部回滚。"""
@@ -507,6 +517,26 @@ class TestArtifactAuditValidation:
             commit_request_result(rid, sid, "completed", "plan-A",
                                   _audit(rid, "plan-A", verdict="EXCLUDE"),
                                   participant_refs=["p1"], fencing_token="10")
+
+    @pytest.mark.parametrize("mutator", [
+        lambda audit: audit.update(menu_items=[]),
+        lambda audit: audit.update(menu_items=[
+            {"recipe_id": 2, "name": "菜品二"},
+            {"recipe_id": 1, "name": "菜品一"},
+        ]),
+        lambda audit: audit.update(build_id=""),
+    ])
+    def test_public_menu_projection_is_strictly_bound(self, mutator) -> None:
+        rid, sid = _unique("r"), _unique("s")
+        audit = _audit(rid, "plan-A")
+        mutator(audit)
+        with pytest.raises(AuditCommitFailed):
+            commit_request_result(
+                rid, sid, "completed", "plan-A", audit,
+                participant_refs=["p1"], fencing_token="10",
+            )
+        assert _query("SELECT COUNT(*) FROM recommendation_logs WHERE request_id=%s",
+                      (rid,))[0][0] == 0
 
     def test_menu_hash_mismatch_fails(self) -> None:
         rid, sid = _unique("r"), _unique("s")

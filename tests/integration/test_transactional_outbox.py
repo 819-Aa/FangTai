@@ -48,8 +48,10 @@ def _reset_d1() -> None:
 def _audit(rid: str, plan_id: str) -> dict:
     return {
         "request_id": rid,
+        "build_id": "7" * 32,
         "plan_id": plan_id,
         "recipe_ids": [1],
+        "menu_items": [{"recipe_id": 1, "name": "菜品一"}],
         "menu_hash": "a" * 64,
         "final_validation": {
             "ref": "fv:1", "request_id": rid, "plan_id": plan_id,

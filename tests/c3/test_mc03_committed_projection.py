@@ -32,6 +32,7 @@ def _completed_state() -> WorkflowState:
         status=RequestStatus.COMPLETED,
         shared_context_ref=SID,
         participant_refs=["p1"],
+        build_id="7" * 32,
     )
     state.health_evaluation_artifact = HealthEvaluationArtifact(
         artifact_id=UUID("10000000-0000-0000-0000-000000000001"),
@@ -115,6 +116,11 @@ def test_committed_result_survives_immediate_dispatch_failure() -> None:
     with patch.object(d1_api, "_persist_request", lambda request_id: None), \
             patch("food_agent_v2.application.commit_request_result",
                   return_value={"committed": True}), \
+            patch("food_agent_v2.application.menu_projection.build_public_menu",
+                  return_value=[
+                      {"recipe_id": 101, "name": "菜品甲"},
+                      {"recipe_id": 202, "name": "菜品乙"},
+                  ]), \
             patch("food_agent_v2.application.outbox.dispatch_request",
                   side_effect=RuntimeError("redis temporarily unavailable")):
         runner._finalize(state, RID, _C4(), lock_token="1")
@@ -131,9 +137,14 @@ def test_committed_result_survives_immediate_dispatch_failure() -> None:
             "evidence_refs": ["answer:evidence"],
         },
         "menu_summary": {
+            "build_id": "7" * 32,
             "plan_id": PLAN,
             "menu_hash": MENU_HASH,
             "recipe_ids": [101, 202],
+            "items": [
+                {"recipe_id": 101, "name": "菜品甲"},
+                {"recipe_id": 202, "name": "菜品乙"},
+            ],
         },
     }
     assert not any(e["event"] == "request_terminal"
@@ -149,6 +160,11 @@ def test_commit_failure_has_no_success_projection() -> None:
     with patch.object(d1_api, "_persist_request", lambda request_id: None), \
             patch("food_agent_v2.application.commit_request_result",
                   side_effect=RuntimeError("commit failed")), \
+            patch("food_agent_v2.application.menu_projection.build_public_menu",
+                  return_value=[
+                      {"recipe_id": 101, "name": "菜品甲"},
+                      {"recipe_id": 202, "name": "菜品乙"},
+                  ]), \
             patch("food_agent_v2.application.outbox.dispatch_request") as dispatch:
         runner._finalize(state, RID, _C4(), lock_token="1")
 

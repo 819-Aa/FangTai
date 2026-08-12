@@ -148,7 +148,9 @@ class TestDeterministicFailures:
         sid = f"e2e-s-{uuid.uuid4().hex[:8]}"
         commit_request_result(
             rid, sid, "completed", "plan-A",
-            {"request_id": rid, "plan_id": "plan-A", "recipe_ids": [1], "menu_hash": "a" * 64,
+            {"request_id": rid, "build_id": "8f98393e-4ae2-4c00-bd0b-1cb07cd91a6f",
+             "plan_id": "plan-A", "recipe_ids": [1], "menu_hash": "a" * 64,
+             "menu_items": [{"recipe_id": 1, "name": "菜品一"}],
              "final_validation": {"request_id": rid, "plan_id": "plan-A", "menu_hash": "a" * 64,
                                   "recipe_ids": [1], "verdict": "PASS", "content_hash": "b" * 64},
              "menu_decision": {"request_id": rid, "plan_id": "plan-A", "menu_hash": "a" * 64,
@@ -207,8 +209,10 @@ class TestDeterministicFailures:
         try:
             commit_request_result(
                 rid, sid, "completed", "plan-A",
-                {"request_id": rid, "plan_id": "plan-A", "recipe_ids": [1],
+                {"request_id": rid, "build_id": "8f98393e-4ae2-4c00-bd0b-1cb07cd91a6f",
+                 "plan_id": "plan-A", "recipe_ids": [1],
                  "menu_hash": "a" * 64,
+                 "menu_items": [{"recipe_id": 1, "name": "菜品一"}],
                  "final_validation": {"request_id": rid, "plan_id": "plan-A",
                                       "menu_hash": "a" * 64, "recipe_ids": [1],
                                       "verdict": "PASS", "content_hash": "b" * 64},

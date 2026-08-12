@@ -1091,6 +1091,8 @@ class WorkflowRunner:
     def _committed_result_summary(
         fva: FinalValidationArtifact,
         ans: AnswerArtifact,
+        build_id: str,
+        menu_items: list[dict] | None = None,
     ) -> dict:
         """构造已提交结果的公开只读投影（API 轮询/刷新恢复使用）。
 
@@ -1105,9 +1107,11 @@ class WorkflowRunner:
                 "evidence_refs": list(ans.evidence_refs),
             },
             "menu_summary": {
+                "build_id": build_id,
                 "plan_id": fva.plan_id,
                 "menu_hash": fva.menu_hash,
                 "recipe_ids": list(fva.recipe_ids),
+                "items": list(menu_items or []),
             },
         }
 
@@ -1145,6 +1149,7 @@ class WorkflowRunner:
                 rid_text = str(fva.request_id) if isinstance(fva, FinalValidationArtifact) else request_id
                 health_evidence = {
                     "request_id": request_id,
+                    "build_id": state.build_id,
                     "plan_id": fva.plan_id if isinstance(fva, FinalValidationArtifact) else "",
                     "recipe_ids": list(fva.recipe_ids) if isinstance(fva, FinalValidationArtifact) else [],
                     "menu_hash": fva.menu_hash if isinstance(fva, FinalValidationArtifact) else "",
@@ -1207,6 +1212,14 @@ class WorkflowRunner:
                     if isinstance(ans, AnswerArtifact) else False,
                     "tool_receipt_count": len(state.tool_receipts),
                 }
+                # 结构化菜单名只从同一 ready build 的固定 B3 视图派生；
+                # 不解析模型回答，不允许缺菜/错 build 后继续提交。
+                from food_agent_v2.application.menu_projection import build_public_menu
+                menu_items = build_public_menu(
+                    list(fva.recipe_ids) if isinstance(fva, FinalValidationArtifact) else [],
+                    state.build_id,
+                )
+                health_evidence["menu_items"] = menu_items
                 commit_request_result(
                     request_id=request_id,
                     session_id=state.shared_context_ref or "",
@@ -1226,7 +1239,8 @@ class WorkflowRunner:
                 # D1 只保存同一提交事实的公开投影，供 SSE 中断后的轮询/刷新恢复。
                 if (isinstance(fva, FinalValidationArtifact)
                         and isinstance(ans, AnswerArtifact)):
-                    result_summary = self._committed_result_summary(fva, ans)
+                    result_summary = self._committed_result_summary(
+                        fva, ans, state.build_id, menu_items)
             except Exception as e:  # noqa: BLE001
                 effective_status = RequestStatus.FAILED.value
                 error = error or WorkflowError("AUDIT_COMMIT_FAILED", str(e))
