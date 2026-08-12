@@ -70,6 +70,19 @@ def _redis_events(request_id: str) -> list[dict]:
     return blob.get("events", []) or []
 
 
+def _qdrant_has_recipe(recipe_id: int) -> int:
+    """Qdrant 是否含该 recipe_id 点。返回命中数。"""
+    cfg = load_config().qdrant
+    body = json.dumps({"filter": {"must": [{"key": "recipe_id",
+                                            "match": {"value": recipe_id}}]},
+                       "exact": True}).encode()
+    req = urllib.request.Request(
+        f"http://{cfg.host}:{cfg.rest_port}/collections/{cfg.collection}/points/count",
+        data=body, headers={"Content-Type": "application/json"}, method="POST")
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        return int(json.loads(resp.read())["result"]["count"])
+
+
 @pytest.fixture(scope="module")
 def _api_ready():
     try:
@@ -101,6 +114,7 @@ def _run_success_case(message: str, participants: list[dict],
 def _assert_cross_store(rid: str, session_id: str) -> None:
     """API completed、MySQL result/audit/menu/outbox、Redis SSE 终态一致。"""
     conn, cur = _mysql()
+    menu: dict | None = None
     try:
         cur.execute("SELECT status, final_plan_id, health_evidence, commit_hash "
                     "FROM recommendation_logs WHERE request_id=%s", (rid,))
@@ -108,25 +122,48 @@ def _assert_cross_store(rid: str, session_id: str) -> None:
         assert row and row[0] == "completed" and row[1], f"result 缺失/未完成: {rid}"
         assert row[3], f"commit_hash 缺失: {rid}"
         evidence = json.loads(row[2] or "{}")
-        assert evidence.get("plan_id"), f"audit 缺 plan_id: {rid}"
+        plan_id = row[1]
+        recipe_ids = sorted(int(x) for x in (evidence.get("recipe_ids") or []))
+        menu_hash = evidence.get("menu_hash")
+        assert plan_id and recipe_ids and menu_hash, f"audit 菜单身份缺失: {rid}"
+        # 同一 plan_id/menu_hash/recipe_ids 跨 store 一致
         cur.execute("SELECT participant_refs, request_count, current_menu_plan_id "
                     "FROM sessions WHERE session_id=%s", (session_id,))
         srow = cur.fetchone()
-        assert srow and srow[2] == row[1], f"session current_menu 不一致: {session_id}"
-        cur.execute("SELECT plan_id, menu_hash FROM menu_versions "
+        assert srow and srow[2] == plan_id, f"session current_menu 不一致: {session_id}"
+        cur.execute("SELECT plan_id, menu_hash, recipe_ids FROM menu_versions "
                     "WHERE session_id=%s ORDER BY committed_at DESC LIMIT 1", (session_id,))
         mrow = cur.fetchone()
-        assert mrow and mrow[0] == row[1], f"menu_versions 缺失/不一致: {session_id}"
+        assert mrow and mrow[0] == plan_id, f"menu_versions plan 不一致: {session_id}"
+        assert mrow[1] == menu_hash, f"menu_versions menu_hash 不一致: {session_id}"
+        assert sorted(int(x) for x in (json.loads(mrow[2] or "[]") if mrow[2] else [])) == recipe_ids
         cur.execute("SELECT event_type, status FROM outbox WHERE request_id=%s "
                     "ORDER BY seq", (rid,))
         ob = cur.fetchall()
         assert [r[0] for r in ob] == ["answer_ready", "result_committed"], f"outbox 顺序错误: {rid}"
         assert all(r[1] == "dispatched" for r in ob), f"outbox 未全部投递: {rid}"
+        # outbox result_committed payload 与同一菜单身份一致
+        cur.execute("SELECT payload FROM outbox WHERE request_id=%s AND event_type=%s",
+                    (rid, "result_committed"))
+        ob_payload = json.loads(cur.fetchone()[0])
+        summary = ob_payload.get("menu_summary") or {}
+        assert summary.get("plan_id") == plan_id, f"outbox plan 不一致: {rid}"
+        assert summary.get("menu_hash") == menu_hash, f"outbox menu_hash 不一致: {rid}"
+        assert sorted(int(x) for x in (summary.get("recipe_ids") or [])) == recipe_ids
+        menu = {"plan_id": plan_id, "menu_hash": menu_hash, "recipe_ids": recipe_ids}
     finally:
         conn.close()
-    types = [e.get("event") for e in _redis_events(rid)]
-    assert "answer_ready" in types, f"SSE 缺 answer_ready: {rid}"
-    assert "result_committed" in types, f"SSE 缺 result_committed: {rid}"
+    # Redis SSE result_committed 与同一菜单身份一致
+    result_events = [e for e in _redis_events(rid) if e.get("event") == "result_committed"]
+    assert result_events, f"SSE 缺 result_committed: {rid}"
+    sse_summary = (json.loads(result_events[0]["data"]) or {}).get("menu_summary") or {}
+    assert sse_summary.get("plan_id") == menu["plan_id"], f"SSE plan 不一致: {rid}"
+    assert sse_summary.get("menu_hash") == menu["menu_hash"], f"SSE menu_hash 不一致: {rid}"
+    # Qdrant 含最终菜单全部 recipe ids
+    for rid_id in menu["recipe_ids"]:
+        count = _qdrant_has_recipe(rid_id)
+        assert count > 0, f"Qdrant 缺少最终菜单 recipe {rid_id}"
+    return menu
 
 
 class TestRealFullChain:
@@ -142,8 +179,16 @@ class TestRealFullChain:
         _assert_cross_store(info["request_id"], info["session_id"])
 
     def test_explicit_dish_count(self, _api_ready) -> None:
+        """明确菜数（四菜一汤）→ 精确满足 5 道。"""
         info = _run_success_case("四菜一汤，家常口味", [{"participant_ref": "p1"}])
-        _assert_cross_store(info["request_id"], info["session_id"])
+        menu = _assert_cross_store(info["request_id"], info["session_id"])
+        assert len(menu["recipe_ids"]) == 5, f"四菜一汤应 5 道，实际 {len(menu['recipe_ids'])}"
+
+    def test_default_five_dishes(self, _api_ready) -> None:
+        """未指定菜数 → 默认 5 道。"""
+        info = _run_success_case("推荐晚餐，家常口味", [{"participant_ref": "p1"}])
+        menu = _assert_cross_store(info["request_id"], info["session_id"])
+        assert len(menu["recipe_ids"]) == 5, f"默认应 5 道，实际 {len(menu['recipe_ids'])}"
 
     def test_soft_as_fast_as_possible(self, _api_ready) -> None:
         info = _run_success_case("推荐晚餐，尽量快一点", [{"participant_ref": "p1"}])

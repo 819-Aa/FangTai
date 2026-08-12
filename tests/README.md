@@ -12,13 +12,24 @@ V2测试分为单元测试、契约测试、集成测试、跨模块场景测试
 
 ## T23 真实全链路验收
 
-`tests/e2e/test_full_chain_real.py`：成功路径（单人、多人全员交集、明确菜数、默认 5 道、
-软"尽量快"、硬截止可证明、多轮替换/恢复、SSE 断线重连、幂等重放、刷新继续同 session），
-并做跨库一致断言（API completed ↔ MySQL result/audit/session/outbox ↔ Redis SSE 终态）。
+`tests/e2e/test_full_chain_real.py`：成功路径（单人、多人、明确菜数、默认 5 道、软/硬时间、
+多轮、幂等），跨库断言比较**同一份 plan_id/menu_hash/recipe_ids**（API result ↔ MySQL
+result/audit/session/menu/outbox ↔ Redis SSE ↔ Qdrant recipe 存在性）。结果语义断言：
+明确菜数精确满足、默认恰好 5 道。
 
-`tests/e2e/test_full_chain_failure_paths.py`：失败路径（无安全/无可行/严格时间独立终态、
-健康矩阵缺键、Qdrant/Redis/MySQL 不可用、模型漏调必需工具、提交审计失败、dispatcher 崩溃
-恢复、取消、恶意提示注入、未知事件、答案改菜），全部 fail-closed，不伪装成普通 failed。
+`tests/e2e/test_full_chain_failure_paths.py`：失败路径（非法 ref 422、注入、取消、未知事件、
+dispatcher 发布后标记前崩溃恢复、审计提交回滚、健康矩阵缺键、Redis 不可用 503、答案改菜
+INV-005 拒绝、模型漏必需工具），全部 fail-closed；业务终态 `assert status == expected`。
+
+**本地已验证（确定性、无需 API 服务器/模型）**：健康矩阵缺键、Redis 不可用 503、答案改菜、
+模型漏必需工具、未知事件、dispatcher 崩溃恢复、审计回滚——7 项真实 PASS。
+
+**需要 H04 空 V2 环境 + API 服务器 + 真实 LLM**（按 `scripts/run_full_acceptance.ps1` 执行）：
+真实成功路径、业务终态精确断言、live 0 skip 报告。环境不满足时脚本返回
+`BLOCKED_T23_EMPTY_ENV`。
+
+**真实浏览器前端全链路（页面渲染/SSE 断线重连 UI）不在本仓库测试实现范围内**——需要扩大
+T23 allowed_paths 时返回 `BLOCKED_T23_SCOPE`，不以 README 或单元测试冒充。
 
 验收执行：`powershell -ExecutionPolicy Bypass -File scripts/run_full_acceptance.ps1`
 
