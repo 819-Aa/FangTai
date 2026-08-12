@@ -665,6 +665,13 @@ class WorkflowRunner:
         result = self._call_model(role, policy, model_ctx, user_message, tool_ctx,
                                   response_format=self._artifact_response_format(policy, role))
 
+        if result.get("status") == "terminal":
+            # MC-01-R1 P0：generate_feasible_menus 返回业务终态（no_safe/no_feasible）
+            # → 立即结束当前 health 节点，转精确业务终态，不再依赖模型后续输出。
+            terminal = result.get("terminal")
+            return reduce_workflow_state(
+                state, action="health_menu_planning", result=terminal), result, None
+
         if result.get("status") == "failed":
             err = WorkflowError("MODEL_CALL_FAILED",
                                 result.get("error") or "模型调用失败",
@@ -899,6 +906,7 @@ class WorkflowRunner:
             if tool_calls:
                 tool_results = []
                 allowed_names = {t.name for t in policy.allowed_tools}
+                terminal = None
                 for tc in tool_calls:
                     name = tc.get("name", "")
                     args = tc.get("arguments", {})
@@ -906,7 +914,17 @@ class WorkflowRunner:
                         tool_results.append({"tool": name, "error": "TOOL_PERMISSION_DENIED"})
                         continue
                     result = tool_handler.execute(name, args)
+                    # MC-01-R1 P0：权威健康回执已产生后，generate_feasible_menus 返回
+                    # no_safe_menu / no_feasible_menu → 立即结束当前模型节点，
+                    # 绝不依赖模型再输出摘要、绝不再调用模型。
+                    if name == "generate_feasible_menus" and isinstance(result, dict):
+                        note = result.get("note")
+                        if note in ("no_safe_menu", "no_feasible_menu"):
+                            terminal = note
                     tool_results.append({"tool": name, "result": result})
+
+                if terminal is not None:
+                    return {"status": "terminal", "terminal": terminal, "content": ""}
 
                 results_text = "\n".join(
                     f"[{tr['tool']}] {json.dumps(tr.get('result', tr.get('error', '')), ensure_ascii=False, default=str)[:500]}"

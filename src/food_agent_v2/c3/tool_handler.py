@@ -279,14 +279,15 @@ def _generate_feasible_menus(args: dict, ctx: ToolContext) -> dict:
     - 权威 safe 为空 → no_safe_menu（不调用 MenuPlanner）；
     - safe 非空但 C2 无方案 → no_feasible_menu（不得回退使用不安全候选）。
     """
+    # 1. 唯一权威来源：最新一次 evaluate_recipe_health 的 HealthEvaluationReceipt
+    from food_agent_v2.b4.schemas import HealthEvaluationReceipt
     from food_agent_v2.c2 import MenuHardConstraints, MenuPlanner
 
-    # 1. 唯一权威来源：最新一次 evaluate_recipe_health 的 HealthEvaluationReceipt
     receipt = ctx.previous_results.get("health_evaluation")
-    if receipt is None or not getattr(receipt, "safe_recipe_ids", None) is not None:
+    if not isinstance(receipt, HealthEvaluationReceipt):
         return {"error": "HEALTH_EVALUATION_REQUIRED", "plans": [], "count": 0,
                 "note": "missing authoritative health evaluation receipt"}
-    authoritative_safe = set(int(r) for r in (getattr(receipt, "safe_recipe_ids", []) or []))
+    authoritative_safe = set(int(r) for r in (receipt.safe_recipe_ids or []))
 
     # 2. 模型列表不得成为权威：传入权威集合之外的 recipe_id → 明确报错
     model_safe = args.get("safe_recipe_ids", [])

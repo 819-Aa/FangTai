@@ -168,6 +168,21 @@ class NodeValidator:
             if required not in received:
                 return WorkflowError("REQUIRED_TOOL_NOT_CALLED", f"未调用必需工具: {required}", failed_node=state.current_node)
             if not received[required]:
+                # MC-01-R1 P1：传播失败回执的原始稳定 error_code
+                # （SAFE_RECIPE_IDS_MISMATCH / HEALTH_EVALUATION_REQUIRED 等），
+                # 不得折叠成泛化 TOOL_EXECUTION_FAILED。
+                for r in tool_receipts:
+                    if _receipt_get(r, "tool_name") != required:
+                        continue
+                    success = bool(r.success) if hasattr(r, "success") else bool(r.get("success", True))
+                    if success:
+                        continue
+                    orig = getattr(r, "error_code", None) or (
+                        r.get("error_code") if isinstance(r, dict) else None)
+                    if orig and orig != "TOOL_EXECUTION_FAILED":
+                        return WorkflowError(
+                            str(orig), f"{required} 工具失败: {orig}",
+                            failed_node=state.current_node)
                 return WorkflowError("TOOL_EXECUTION_FAILED", f"必需工具执行失败: {required}", failed_node=state.current_node)
         if policy.output_artifact_type and not output_artifact:
             return WorkflowError("SCHEMA_VALIDATION_FAILED", "缺少输出 Artifact", failed_node=state.current_node)
