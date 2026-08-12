@@ -8,6 +8,7 @@ Repository（无 JSONL）。内存/伪 reranker 只允许通过显式注入的 f
 
 from __future__ import annotations
 
+import gc
 import math
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -15,6 +16,7 @@ from typing import Protocol
 
 from food_agent_v2.b3.repository import MySQLArtifactRecordSource
 from food_agent_v2.c1.qdrant_client import QdrantVectorStore
+from food_agent_v2.core.config import load_config
 
 RRF_K = 60
 LEXICAL_WEIGHT = 0.3
@@ -128,7 +130,24 @@ class BM25Index:
 def _get_production_reranker() -> RerankerPort:
     from sentence_transformers import CrossEncoder
 
-    return CrossEncoder("BAAI/bge-reranker-v2-m3", cache_folder=".model-cache")
+    from food_agent_v2.c1.qdrant_client import _model_runtime, _model_source
+
+    cfg = load_config().models
+    device, model_kwargs = _model_runtime()
+    return CrossEncoder(
+        _model_source(cfg.reranker_model_path, "BAAI/bge-reranker-v2-m3"),
+        cache_folder=".model-cache",
+        device=device,
+        model_kwargs=model_kwargs,
+    )
+
+
+def low_memory_model_mode() -> bool:
+    return load_config().models.low_memory_mode
+
+
+def release_model_memory() -> None:
+    gc.collect()
 
 
 class RecipeRetrievalService:
@@ -144,6 +163,7 @@ class RecipeRetrievalService:
         self._index = BM25Index()
         self._vector = vector_store or QdrantVectorStore()
         self._reranker = reranker  # 生产默认惰性加载真实 BGE；测试注入 fixture
+        self._owns_reranker = reranker is None
         self._source = source or MySQLArtifactRecordSource()
         self._build_id: str | None = None
         self._eligible: set[int] = set()
@@ -271,6 +291,10 @@ class RecipeRetrievalService:
             scores = list(self._reranker.predict(pairs))
         except Exception as exc:
             raise RetrievalError("RERANKER_UNAVAILABLE", f"重排失败: {exc}") from exc
+        finally:
+            if self._owns_reranker and low_memory_model_mode():
+                self._reranker = None
+                release_model_memory()
         if len(scores) != len(candidates):
             raise RetrievalError("RERANKER_UNAVAILABLE", "重排结果数量与候选不一致")
         ranked = sorted(zip(candidates, scores, strict=True), key=lambda x: -x[1])
@@ -357,5 +381,7 @@ def warmup_models() -> None:
     """预热 BGE-M3 嵌入与 BGE-Reranker（文档 07 §13）。"""
     from food_agent_v2.c1.qdrant_client import _get_embedding_model
 
+    if low_memory_model_mode():
+        return
     _get_embedding_model()
     _get_production_reranker()

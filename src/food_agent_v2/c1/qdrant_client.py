@@ -2,10 +2,37 @@
 
 from __future__ import annotations
 
+import gc
+from pathlib import Path
+
 from food_agent_v2.core.config import load_config
 
 # 模块级 BGE-M3 模型缓存：避免每次检索都重新加载 ~2GB 模型（文档 07 §13：启动预热，首轮不承担冷加载）
 _embedding_model = None
+
+
+def _model_source(configured_path: str, model_id: str) -> str:
+    path = Path(configured_path)
+    return str(path) if path.exists() else model_id
+
+
+def _cpu_model_kwargs(dtype_name: str) -> dict:
+    if dtype_name not in {"float16", "bfloat16"}:
+        return {}
+    import torch
+
+    return {"torch_dtype": getattr(torch, dtype_name)}
+
+
+def _model_runtime() -> tuple[str, dict]:
+    cfg = load_config().models
+    import torch
+
+    device = cfg.device
+    if device == "auto":
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+    kwargs = _cpu_model_kwargs(cfg.cpu_dtype) if device == "cpu" else {}
+    return device, kwargs
 
 
 def _get_embedding_model():
@@ -14,8 +41,22 @@ def _get_embedding_model():
     if _embedding_model is None:
         from sentence_transformers import SentenceTransformer
 
-        _embedding_model = SentenceTransformer("BAAI/bge-m3", cache_folder=".model-cache")
+        cfg = load_config().models
+        device, model_kwargs = _model_runtime()
+        _embedding_model = SentenceTransformer(
+            _model_source(cfg.bge_model_path, "BAAI/bge-m3"),
+            cache_folder=".model-cache",
+            device=device,
+            model_kwargs=model_kwargs,
+        )
     return _embedding_model
+
+
+def _release_embedding_model() -> None:
+    """Release the process-owned embedder before the reranker is loaded."""
+    global _embedding_model
+    _embedding_model = None
+    gc.collect()
 
 
 class QdrantVectorStore:
@@ -118,7 +159,11 @@ class QdrantVectorStore:
             return []
 
         model = _get_embedding_model()
-        embedding = model.encode(query_text, normalize_embeddings=True)
+        try:
+            embedding = model.encode(query_text, normalize_embeddings=True)
+        finally:
+            if load_config().models.low_memory_mode:
+                _release_embedding_model()
 
         results = self._client.query_points(
             collection_name=self._collection,

@@ -83,6 +83,9 @@ class ModelConfig:
     bge_model_path: str = ".model-cache/bge-m3"
     reranker_model_path: str = ".model-cache/bge-reranker-v2-m3"
     rag_warmup_on_startup: bool = True
+    low_memory_mode: bool = True
+    device: str = "auto"
+    cpu_dtype: str = "float16"
 
 
 @dataclass
@@ -148,6 +151,9 @@ def load_config() -> AppConfig:
             bge_model_path=os.getenv("BGE_MODEL_PATH", ".model-cache/bge-m3"),
             reranker_model_path=os.getenv("RERANKER_MODEL_PATH", ".model-cache/bge-reranker-v2-m3"),
             rag_warmup_on_startup=os.getenv("RAG_WARMUP_ON_STARTUP", "true").lower() == "true",
+            low_memory_mode=os.getenv("MODEL_LOW_MEMORY_MODE", "true").lower() == "true",
+            device=os.getenv("MODEL_DEVICE", "auto").lower(),
+            cpu_dtype=os.getenv("MODEL_CPU_DTYPE", "float16").lower(),
         ),
         api=APIConfig(
             host=os.getenv("API_HOST", "0.0.0.0"),
