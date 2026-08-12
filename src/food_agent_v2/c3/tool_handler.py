@@ -313,6 +313,16 @@ def _generate_feasible_menus(args: dict, ctx: ToolContext) -> dict:
         return {"plans": [], "count": 0, "note": "no_safe_menu", "safe_count": 0}
     safe_ids = sorted(authoritative_safe)
 
+    query_plan = ctx.previous_results.get("query_plan")
+    requested_count = getattr(query_plan, "dish_count_requested", None)
+    dish_types = {
+        str(item).strip().lower()
+        for item in (getattr(query_plan, "dish_types", ()) or ())
+    }
+
+    def _requests(*labels: str) -> bool:
+        return any(label.lower() in dish_types for label in labels)
+
     planner = MenuPlanner()
     planner.set_safe_candidates(safe_ids)
     # 注入 recipe_features 供 C2 偏好/多样性评分使用
@@ -320,17 +330,31 @@ def _generate_feasible_menus(args: dict, ctx: ToolContext) -> dict:
         from food_agent_v2.b3.recipe_views import get_view_builder
         builder = get_view_builder()
         features = {}
+        retrieval = ctx.previous_results.get("retrieval")
+        ranked = list(getattr(retrieval, "candidates", []) or [])
+        rank_scores = {
+            int(candidate.recipe_id): (len(ranked) - index) / max(len(ranked), 1)
+            for index, candidate in enumerate(ranked)
+        }
         for rid in safe_ids:
             rv = builder.build_retrieval_view(rid)
             if rv:
-                features[rid] = {"name": rv.name, "fields": rv.searchable_fields}
+                features[rid] = {
+                    "name": rv.name,
+                    "fields": rv.searchable_fields,
+                    "preference_score": rank_scores.get(rid, 0.0),
+                }
         planner.set_recipe_features(features)
     except Exception:
         pass
     hard = MenuHardConstraints(
-        dish_count=args.get("dish_count", 4),
+        dish_count=requested_count or MenuHardConstraints().dish_count,
         # 模型没传时间限制时，自动使用查询理解提取的严格时间约束
         strict_time_limit=args.get("time_limit_minutes") or ctx.time_limit_minutes,
+        require_soup=_requests("汤", "汤品", "soup"),
+        require_staple=_requests("主食", "staple"),
+        require_drink=_requests("饮品", "饮料", "drink"),
+        require_dessert=_requests("甜品", "甜点", "dessert"),
     )
     plans = planner.plan(hard, target_count=5)
     ctx.previous_results["feasible_menus"] = plans

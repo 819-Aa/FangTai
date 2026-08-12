@@ -49,6 +49,20 @@ def make_planner(count: int = 8, b6_available: bool = True) -> MenuPlanner:
     return planner
 
 
+def make_typed_planner() -> MenuPlanner:
+    planner = MenuPlanner(b5=FakeB5(), b6=FakeB6())
+    planner.set_safe_candidates([1, 2, 3, 4, 5, 6])
+    planner.set_recipe_features({
+        1: {"name": "番茄蛋汤", "preference_score": 0.2, "fields": {}},
+        2: {"name": "紫菜汤", "preference_score": 0.1, "fields": {}},
+        3: {"name": "红柚果茶", "preference_score": 1.0, "fields": {}},
+        4: {"name": "榴莲冰淇淋", "preference_score": 1.0, "fields": {}},
+        5: {"name": "青椒肉丝", "preference_score": 0.8, "fields": {}},
+        6: {"name": "清炒时蔬", "preference_score": 0.7, "fields": {}},
+    })
+    return planner
+
+
 class TestMenuHardConstraints:
     def test_empty_safe_candidates_no_feasible(self) -> None:
         planner = MenuPlanner(b5=FakeB5(), b6=FakeB6())
@@ -94,3 +108,26 @@ class TestMenuHardConstraints:
         # 锁定菜不在 B4 安全候选集 → 无可行菜单（08 §9.1 LOCKED_RECIPE_NOT_SAFE）。
         planner = make_planner(count=6)
         assert planner.plan(MenuHardConstraints(dish_count=3, locked_recipe_ids={99})) == []
+
+    def test_required_soup_is_present(self) -> None:
+        planner = make_typed_planner()
+        plans = planner.plan(MenuHardConstraints(dish_count=3, require_soup=True))
+        assert plans
+        assert all(
+            sum(planner._classify_dish_type(
+                planner._recipe_features[rid]["name"]) == "soup"
+                for rid in plan.recipe_ids) == 1
+            for plan in plans
+        )
+
+    def test_drink_and_dessert_do_not_replace_meal_dishes_by_default(self) -> None:
+        planner = make_typed_planner()
+        plans = planner.plan(MenuHardConstraints(dish_count=3, require_soup=True))
+        assert plans
+        for plan in plans:
+            types = {
+                planner._classify_dish_type(planner._recipe_features[rid]["name"])
+                for rid in plan.recipe_ids
+            }
+            assert "drink" not in types
+            assert "dessert" not in types

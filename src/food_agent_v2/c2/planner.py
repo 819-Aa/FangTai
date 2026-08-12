@@ -81,6 +81,16 @@ class MenuPlanner:
                 if self._recipe_features.get(r, {}).get("has_available_ingredients", True)
             ]
 
+        # 饮品/甜点只有 QueryPlan 明确要求时才能进入正餐菜单，不能替代菜或汤。
+        candidates = [
+            rid for rid in candidates
+            if self._classify_dish_type(
+                self._recipe_features.get(rid, {}).get("name", "")
+            ) not in (
+                (() if constraints.require_drink else ("drink",))
+                + (() if constraints.require_dessert else ("dessert",))
+            )
+        ]
         available_remaining = [r for r in candidates if r not in locked]
         if len(locked) + len(available_remaining) < constraints.dish_count:
             return []  # 候选不足，无法精确凑满菜数
@@ -128,6 +138,31 @@ class MenuPlanner:
         remaining = [r for r in candidates if r not in locked]
         scores = self._score_all_candidates(remaining, b5, b6, weights, selected)
         ranked = sorted(scores, key=lambda x: (-x[1], x[0]))  # 策略加权总分降序，同分按 recipe_id 稳定
+
+        required_slots = [
+            slot for slot, required in (
+                ("soup", hard.require_soup),
+                ("staple", hard.require_staple),
+                ("drink", hard.require_drink),
+                ("dessert", hard.require_dessert),
+            ) if required
+        ]
+        for required_slot in required_slots:
+            if slot_counts.get(required_slot, 0) > 0:
+                continue
+            match = next((
+                rid for rid, _score, _aux in ranked
+                if rid not in selected and self._classify_dish_type(
+                    self._recipe_features.get(rid, {}).get("name", "")
+                ) == required_slot
+            ), None)
+            if match is None or len(selected) >= dish_count:
+                return None
+            selected.append(match)
+            name = self._recipe_features.get(match, {}).get("name", "")
+            if name:
+                selected_names.add(name)
+            slot_counts[required_slot] += 1
 
         slot_max = {"soup": MAX_SOUP, "staple": MAX_STAPLE, "drink": MAX_DRINK, "dessert": MAX_DESSERT}
         for rid, _, _ in ranked:

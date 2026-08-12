@@ -71,6 +71,47 @@ class TestGenerateFeasibleMenus:
         result = _generate_feasible_menus({"safe_recipe_ids": [], "dish_count": 4}, ctx)
         assert result.get("error") == "HEALTH_EVALUATION_REQUIRED"
 
+    def test_query_plan_dish_count_overrides_model_tool_argument(self) -> None:
+        """工具参数不得把 QueryPlan 已确认的 5 道篡改成 3 道。"""
+        ctx = _ctx()
+        ctx.previous_results["health_evaluation"] = _receipt([1, 2, 3, 4, 5, 6])
+        ctx.previous_results["query_plan"] = SimpleNamespace(
+            dish_count_requested=5,
+            dish_types=("汤",),
+            flavor_preferences=("家常",),
+        )
+        with patch("food_agent_v2.c2.MenuPlanner") as planner_cls:
+            planner_cls.return_value.plan.return_value = []
+            _generate_feasible_menus(
+                {"safe_recipe_ids": [1, 2, 3, 4, 5, 6], "dish_count": 3}, ctx)
+        hard = planner_cls.return_value.plan.call_args.args[0]
+        assert hard.dish_count == 5
+        assert hard.require_soup is True
+
+    def test_c1_rank_becomes_c2_preference_evidence(self) -> None:
+        """健康过滤后仍保留 C1 相关性顺序，不能按 recipe_id 重新选菜。"""
+        ctx = _ctx()
+        ctx.previous_results["health_evaluation"] = _receipt([10, 20, 30])
+        ctx.previous_results["retrieval"] = SimpleNamespace(candidates=[
+            SimpleNamespace(recipe_id=30, score=0.9, rerank_score=0.95),
+            SimpleNamespace(recipe_id=10, score=0.7, rerank_score=0.8),
+            SimpleNamespace(recipe_id=20, score=0.6, rerank_score=0.7),
+        ])
+        with (
+            patch("food_agent_v2.c2.MenuPlanner") as planner_cls,
+            patch("food_agent_v2.b3.recipe_views.get_view_builder") as builder,
+        ):
+            builder.return_value.build_retrieval_view.side_effect = lambda rid: (
+                SimpleNamespace(name=f"菜{rid}", searchable_fields={})
+            )
+            planner_cls.return_value.plan.return_value = []
+            _generate_feasible_menus(
+                {"safe_recipe_ids": [10, 20, 30], "dish_count": 3}, ctx)
+
+        features = planner_cls.return_value.set_recipe_features.call_args.args[0]
+        assert features[30]["preference_score"] > features[10]["preference_score"]
+        assert features[10]["preference_score"] > features[20]["preference_score"]
+
 
 class TestBuildDualArtifacts:
     """runner 级：_build_dual_artifacts 按权威回执区分终态（无 DB）。"""

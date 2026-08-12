@@ -41,6 +41,7 @@ class MenuHardConstraints:
     require_soup: bool = False
     require_staple: bool = False
     require_drink: bool = False
+    require_dessert: bool = False
 
 
 @dataclass

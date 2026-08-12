@@ -315,6 +315,9 @@ class WorkflowRunner:
                 state = reduce_workflow_state(state, action="query_understanding", success=True)
                 state = reduce_workflow_state(
                     state, action="set_artifact", artifact="query_plan", value=q_artifact)
+                # 供后续工具执行 QueryPlan 已确认的硬约束；模型仍决定是否调用工具，
+                # 但 tool arguments 不得覆盖上游权威 Artifact。
+                tool_ctx.previous_results["query_plan"] = q_artifact
                 d1_api.publish_analysis_event(request_id, "query_understanding",
                                               "理解需求完成", [])
                 _retrieval = tool_ctx.previous_results.get("retrieval")
