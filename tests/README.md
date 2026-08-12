@@ -31,10 +31,17 @@ completed/result_committed、刷新继续同 session（localStorage 比较 + 请
 SSE 首次连接中断后原生 Last-Event-ID 重连无丢失重复、菜单跨库一致。Vite 经
 `VITE_API_BASE_URL=http://localhost:38001` 访问 T23 隔离 API（绝不访问 8001）。
 
-验收执行（需所有者授权，创建全新隔离环境与三个新卷）：
-`powershell -ExecutionPolicy Bypass -File scripts/run_full_acceptance.ps1 -ConfirmAuthorizedEmptyT23`
+验收执行分为两个互斥入口：
+
+- 复验当前所有者授权且已初始化的 T23 隔离环境：
+  `powershell -ExecutionPolicy Bypass -File scripts/run_full_acceptance.ps1 -UseExistingAuthorizedT23`
+- 仅在所有者再次明确授权全新空 T23 环境时首次初始化：
+  `powershell -ExecutionPolicy Bypass -File scripts/run_full_acceptance.ps1 -InitializeAuthorizedEmptyT23`
+
+现有环境模式严格核对精确容器、卷、端口、manifest/build 和 `/ready` 三存储
+身份；禁止 `docker compose up`、`data-rebuild`、`data-initialize` 与卷删除。
 
 脚本严格锁定 H04 BuildManifest 批准值（SHA-256 / build_id / builder commit），
-不 data-rebuild；任何未授权资源复用/缺失均返回 `BLOCKED_T23_EMPTY_ENV` /
-`BLOCKED_T23_DATA_POLICY`；live 0 skip 机器可解析报告。
+不 data-rebuild；任何资源身份不一致或数据策略不一致均返回精确 `BLOCKED_*`；
+live 0 skip 使用 JUnit 机器可解析报告。
 

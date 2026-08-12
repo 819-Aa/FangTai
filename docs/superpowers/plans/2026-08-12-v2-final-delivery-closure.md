@@ -29,11 +29,11 @@
 - Consumes: `commit_request_result(...) -> dict`、`FinalValidationArtifact`、`AnswerArtifact`。
 - Produces: `WorkflowRunner._committed_result_summary(fva, ans) -> dict`，供 D1 状态轮询和前端恢复。
 
-- [ ] **Step 1: 写 dispatcher 失败与 commit 失败的对照测试**
-- [ ] **Step 2: 运行测试，确认当前 dispatcher 失败会错误反写 failed**
-- [ ] **Step 3: 将原子提交与即时 outbox 投递拆为两个错误边界**
-- [ ] **Step 4: 断言 completed `result_summary` 精确包含 answer 与 menu_summary，且禁止字段投影仍有效**
-- [ ] **Step 5: 运行 `uv run pytest tests/c3/test_mc03_committed_projection.py tests/integration/test_api_application.py -q` 并提交**
+- [x] **Step 1: 写 dispatcher 失败与 commit 失败的对照测试**
+- [x] **Step 2: 运行测试，确认当前 dispatcher 失败会错误反写 failed**
+- [x] **Step 3: 将原子提交与即时 outbox 投递拆为两个错误边界**
+- [x] **Step 4: 断言 completed `result_summary` 精确包含 answer 与 menu_summary，且禁止字段投影仍有效**
+- [x] **Step 5: 运行 `uv run pytest tests/c3/test_mc03_committed_projection.py tests/integration/test_api_application.py -q` 并提交**
 
 ### Task 2: MC-03 结构化菜单公开投影
 
@@ -50,11 +50,11 @@
 - Produces: `build_public_menu(recipe_ids: list[int], build_id: str) -> list[dict]`，每项仅含 `recipe_id/name`。
 - `result_summary.menu_summary`、outbox `menu_summary` 与 C4 `current_menu` 均含相同 `plan_id/menu_hash/recipe_ids/items`。
 
-- [ ] **Step 1: 写未知 recipe/build mismatch fail-closed 与确定顺序测试**
-- [ ] **Step 2: 用 B3 固定 Repository 实现只读菜名投影**
-- [ ] **Step 3: 在提交健康证据与 outbox 中绑定 items，不解析回答文本**
-- [ ] **Step 4: C4 会话查询按唯一 ready build 派生同一 items**
-- [ ] **Step 5: 运行 Application/C4/API 回归并提交**
+- [x] **Step 1: 写未知 recipe/build mismatch fail-closed 与确定顺序测试**
+- [x] **Step 2: 用 B3 固定 Repository 实现只读菜名投影**
+- [x] **Step 3: 在提交健康证据与 outbox 中绑定 items，不解析回答文本**
+- [x] **Step 4: C4 会话查询按唯一 ready build 派生同一 items**
+- [x] **Step 5: 运行 Application/C4/API 回归并提交**
 
 ### Task 3: MC-04 真实 readiness
 
@@ -66,10 +66,10 @@
 **Interfaces:**
 - Produces: `check_readiness() -> dict`；`GET /ready` 成功 200，失败 503 `SERVICE_NOT_READY`。
 
-- [ ] **Step 1: 写 MySQL/Redis/Qdrant 任一失败即 503 的测试**
-- [ ] **Step 2: 校验唯一 ready build、必需固定 artifact、Qdrant collection/点位与 Redis PING**
-- [ ] **Step 3: 保持 `/health` 为无 I/O liveness，`/ready` 不加载模型、不写数据**
-- [ ] **Step 4: 在 T23 现有环境实测 `/ready` 并提交**
+- [x] **Step 1: 写 MySQL/Redis/Qdrant 任一失败即 503 的测试**
+- [x] **Step 2: 校验唯一 ready build、必需固定 artifact、Qdrant collection/点位与 Redis PING**
+- [x] **Step 3: 保持 `/health` 为无 I/O liveness，`/ready` 不加载模型、不写数据**
+- [x] **Step 4: 在 T23 现有环境实测 `/ready` 并提交**
 
 ### Task 4: MC-05 前端菜单与断线/刷新恢复
 
@@ -86,10 +86,10 @@
 **Interfaces:**
 - Produces: `PublicMenuSummary`、`getSession(sessionId)`、store `currentMenu/restoreSession()`。
 
-- [ ] **Step 1: 写 result_committed、轮询 completed、刷新 session 三种恢复测试**
-- [ ] **Step 2: store 统一归并 `menu_summary`，SSE 与 polling 不产生两套状态**
-- [ ] **Step 3: App 挂载恢复会话菜单，ChatPanel 展示菜名列表与完成身份**
-- [ ] **Step 4: 运行 `npm test -- --run`、`npm run build` 并提交**
+- [x] **Step 1: 写 result_committed、轮询 completed、刷新 session 三种恢复测试**
+- [x] **Step 2: store 统一归并 `menu_summary`，SSE 与 polling 不产生两套状态**
+- [x] **Step 3: App 挂载恢复会话菜单，ChatPanel 展示菜名列表与完成身份**
+- [x] **Step 4: 运行 `npm test -- --run`、`npm run build` 并提交**
 
 ### Task 5: MC-06 既有 T23 只读复验脚本
 
@@ -101,10 +101,10 @@
 **Interfaces:**
 - Produces: `-UseExistingAuthorizedT23` 与 `-InitializeAuthorizedEmptyT23` 互斥入口。
 
-- [ ] **Step 1: 写脚本 guard 测试，证明复验模式不含 rebuild/initialize/delete**
-- [ ] **Step 2: 复验模式校验精确容器、卷、端口、manifest/build、artifact 计数与 Qdrant 1914 点位**
-- [ ] **Step 3: API 启动门槛改用 `/ready`，保留 live 0 skip/JUnit/退出码校验**
-- [ ] **Step 4: 更新跨库断言，使 API/SSE/session/outbox 前端共享同一菜单 items 与身份**
+- [x] **Step 1: 写脚本 guard 测试，证明复验模式不含 rebuild/initialize/delete**
+- [x] **Step 2: 复验模式校验精确容器、卷、端口、manifest/build、artifact 计数与 Qdrant 1914 点位**
+- [x] **Step 3: API 启动门槛改用 `/ready`，保留 live 0 skip/JUnit/退出码校验**
+- [x] **Step 4: 更新跨库断言，使 API/SSE/session/outbox 前端共享同一菜单 items 与身份**
 - [ ] **Step 5: 运行脚本静态 guard 与确定性回归并提交**
 
 ### Task 6: T24 真实验收与报告

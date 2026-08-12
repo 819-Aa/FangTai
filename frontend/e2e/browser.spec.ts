@@ -64,6 +64,10 @@ test("页面刷新继续同一 session（核对刷新后的第二次请求）", 
   }));
   expect(after.sid).toBe(before.sid);
   expect(after.refs).toEqual(before.refs);
+  // 刷新必须从 session 已提交事实恢复结构化菜单，不依赖内存中的回答文本。
+  await expect(page.locator("[data-testid='committed-menu']")).toBeVisible();
+  const restoredItems = page.locator("[data-testid='committed-menu'] li");
+  expect(await restoredItems.count()).toBeGreaterThan(0);
   // 刷新后再次发送，并核对请求载荷继续使用同一 session_id
   await page.locator(".composer textarea").fill("再推荐一道汤");
   await page.locator(".send-button").click();
@@ -90,12 +94,15 @@ test("SSE 人为中断一次连接后仍 completed，result_committed 只展示�
   await expect(page.locator(".answer-badge")).toHaveCount(1, { timeout: 60000 });
 });
 
-test("浏览器最终菜单展示（真实可用）：回答正文可见", async ({ page }) => {
+test("浏览器最终菜单展示（真实可用）：正文与结构化菜单均可见", async ({ page }) => {
   await submitRecommendation(page, "推荐四菜一汤");
   const status = (await page.locator(".terminal-bar").textContent())?.trim();
   expect(status).toBe(terminalLabel("completed"));
   const answerText = await page.locator(".answer-text").textContent();
   expect(answerText?.trim().length).toBeGreaterThan(0);
-  const api = await fetch(`${API}/health`);
+  const menu = page.locator("[data-testid='committed-menu'] li");
+  expect(await menu.count()).toBeGreaterThan(0);
+  for (const row of await menu.allTextContents()) expect(row.trim().length).toBeGreaterThan(0);
+  const api = await fetch(`${API}/ready`);
   expect(api.ok).toBe(true);
 });
