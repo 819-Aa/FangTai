@@ -663,18 +663,21 @@ class WorkflowRunner:
         session_id: str,
         c4: ContextService,
         user_id_mapping: dict[str, int],
-    ) -> WorkflowState | None:
+    ) -> WorkflowState:
         """R-002：消费 QueryPlanArtifact.health_exclusions，建立临时健康约束闭环。
 
         每个排除项：parse → b2.validate_temporary_signal（fail-closed）→
         c4.store_temporary_constraint。任一无法封闭映射（HEALTH_SIGNAL_AMBIGUOUS）
-        → 返回 needs_clarification 状态；全部成功返回 None（继续主流程）。
+        → 返回 needs_clarification 状态；全部成功返回原 state（继续主流程）。
+
+        契约：**始终返回 state，绝不返回 None**（调用方直接 `state = ...` 后
+        立即 `state.is_terminal()`，None 会导致 AttributeError）。
         """
         from food_agent_v2.b2 import HealthProfileError, UserHealthProfileService
 
         exclusions = getattr(artifact, "health_exclusions", ()) or ()
         if not exclusions:
-            return None
+            return state
 
         b2 = UserHealthProfileService()
         b2.load(expected_build_id=state.build_id)
@@ -708,7 +711,7 @@ class WorkflowRunner:
                 "source_refs": list(temp.source_refs or []),
                 "scope": temp.scope.value,
             })
-        return None
+        return state
 
     @staticmethod
     def _needs_clarification(

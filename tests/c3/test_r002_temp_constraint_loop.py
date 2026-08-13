@@ -152,6 +152,35 @@ class TestRunnerNeedsClarification:
             assert new_state.error is not None
             assert new_state.error.error_code == "HEALTH_SIGNAL_AMBIGUOUS"
 
+    def test_success_returns_state_not_none(self) -> None:
+        """全部信号验证成功 → 返回原 state（绝不返回 None）。
+
+        回归：R-002 初版成功路径返回 None，主循环 state=... 后立即
+        state.is_terminal() 触发 'NoneType' has no attribute 'is_terminal'。
+        """
+        from food_agent_v2.c3.state import WorkflowState
+        runner = WorkflowRunner()
+        c4 = _mem_c4()
+        c4._sessions[SID] = _session()
+        state = WorkflowState(
+            request_id=RID, build_id=BUILD, status=RequestStatus.RUNNING,
+            participant_refs=["p1"],
+        )
+        artifact = QueryPlanArtifact(
+            artifact_id="10000000-0000-0000-0000-0000000000aa",
+            request_id=RID,
+            participant_refs=("p1",),
+            health_exclusions=("p1:疾病:高血压",),
+            input_fingerprint="1" * 64,
+            content_hash="2" * 64,
+        )
+        new_state = runner._handle_query_plan_exclusions(
+            state, artifact, SID, c4, {"p1": 1})
+        assert new_state is not None
+        assert new_state is state  # 成功路径返回原 state
+        assert new_state.status == RequestStatus.RUNNING  # 未变成澄清/失败
+        assert new_state.error is None
+
 
 # ---------------------------------------------------------------------------
 # 4) 集成：有效临时禁忌 → C4 存储 → to_b4 含禁忌 → 不被丢弃
