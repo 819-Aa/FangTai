@@ -331,7 +331,9 @@ class WorkflowRunner:
                 if _retrieval:
                     retrieved_ids = [c.recipe_id for c in _retrieval.candidates]
                 tool_ctx.time_limit_minutes = None
-                if q_artifact.time_constraint_seconds:
+                # ADR-0005：只有硬截止（policy="hard"）才触发严格时间判定；
+                # flexible 软偏好（"45分钟内"/"尽量快"）不设严格时限，只参与软排序。
+                if q_artifact.time_constraint_policy == "hard" and q_artifact.time_constraint_seconds:
                     tool_ctx.time_limit_minutes = max(
                         1, round(q_artifact.time_constraint_seconds / 60))
 
