@@ -6,7 +6,7 @@ V2测试分为单元测试、契约测试、集成测试、跨模块场景测试
 
 ## 分级运行
 
-- `uv run pytest -m "not live" -q`：普通回归（597 项），排除真实模型 live 测试。
+- `uv run pytest -m "not live" -q`：普通回归（717 项），排除真实模型 live 测试。
 - `uv run pytest tests/test_prompts_live.py -q`：真实模型 live 验收（7 项，需 DeepSeek API key）。
 - `uv run pytest tests/e2e -q`：T23 真实全链路验收（需所有者授权的 T23 隔离环境已
   data-initialize、隔离 API 运行于 localhost:38001）。

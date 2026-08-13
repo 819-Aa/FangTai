@@ -29,7 +29,8 @@ D1 是适配层，不做业务判断。它不知道什么是"健康安全"，不
 - 前端不能在缺少事件时自行补写业务文本。
 - 相同幂等键 + 相同规范化载荷 → 返回已有 `request_id`；相同幂等键 + 不同载荷 → `IDEMPOTENCY_KEY_REUSED`。
 - API 默认在启动阶段预热 BGE-M3 与重排模型，首轮请求不再承担模型冷加载时间。
-- D1 不负责健康检查（另有 `/health` 端点，属于基础设施运维接口）。
+- D1 不负责健康检查（另有 `/health` 与 `/ready` 端点，属于基础设施运维接口）。
+- `/health` 是无 I/O 的 liveness 探针；`/ready`（MC-04）校验唯一 ready build、固定 Artifact、Qdrant collection/点位与 Redis PING，任一失败返回 503 `SERVICE_NOT_READY`，且不加载模型、不写数据。
 - D1 不直接连接 MySQL、Qdrant 或模型供应商——通过 C3 和基础设施适配器。
 
 ## 3. 职责
@@ -298,7 +299,7 @@ D1 在序列化响应 JSON 和 SSE event payload 之前，必须确认不包含�
 
 ## 8. CORS 与开发代理
 
-开发环境：前端 `localhost:5173` 通过 Vite proxy 将 `/api` 和 `/v1` 代理至 API `localhost:8000`。CORS 在开发环境宽放，生产环境限制为前端部署域。
+开发环境：前端 `localhost:5174` 通过 Vite proxy 将 `/api` 和 `/v1` 代理至 API `localhost:8001`。CORS 在开发环境宽放，生产环境限制为前端部署域。
 
 ## 9. 启动与预热
 
