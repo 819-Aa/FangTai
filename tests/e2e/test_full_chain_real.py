@@ -207,9 +207,17 @@ class TestRealFullChain:
         info = _run_success_case("推荐晚餐，尽量快一点", [{"participant_ref": "p1"}])
         _assert_cross_store(info["request_id"], info["session_id"])
 
-    def test_hard_deadline_provable(self, _api_ready) -> None:
-        info = _run_success_case("30分钟内必须完成的晚餐", [{"participant_ref": "p1"}])
-        _assert_cross_store(info["request_id"], info["session_id"])
+    def test_hard_deadline_indeterminate_when_unprovable(self, _api_ready) -> None:
+        """硬截止"30分钟必须完成"：固定数据大部分菜缺显式步骤时长，B5 无法高权威
+        证明严格时间 → 诚实返回 strict_time_indeterminate（ADR-0005，不伪造时间承诺）。"""
+        resp = _post({
+            "idempotency_key": f"e2e-{uuid.uuid4().hex[:12]}",
+            "participants": [{"participant_ref": "p1"}],
+            "message": "30分钟内必须完成的晚餐", "config": {},
+        })
+        result = _wait_terminal(resp["request_id"])
+        assert result["status"] == "strict_time_indeterminate", (
+            f"应 strict_time_indeterminate，实际 {result['status']} error={result.get('error')}")
 
     def test_session_reused_across_turns(self, _api_ready) -> None:
         """同一 session_id 连续多轮：会话与菜单历史持续复用。"""
