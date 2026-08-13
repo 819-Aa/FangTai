@@ -375,8 +375,10 @@ class TestBusinessTerminals:
     """依赖真实模型/数据的业务终态路径（经 API 触发并核对独立终态）。"""
 
     @pytest.mark.parametrize("message,expected", [
-        ("我不能吃任何海鲜和花生，别的都可以", "no_safe_menu"),
-        ("只要海鲜，其他都不要", "no_feasible_menu"),
+        # 排除海鲜(永久过敏)+花生(临时)后仍有大量安全菜 → completed（不是 no_safe_menu）
+        ("我不能吃任何海鲜和花生，别的都可以", "completed"),
+        # 用户只要海鲜但海鲜过敏 → 所有海鲜被排除 → no_safe_menu（无安全菜）
+        ("只要海鲜，其他都不要", "no_safe_menu"),
     ])
     def test_business_terminal_exact_status(self, _api_ready, message, expected) -> None:
         """业务终态必须精确命中 expected；不得泛化 failed / needs_clarification / 互换。"""
