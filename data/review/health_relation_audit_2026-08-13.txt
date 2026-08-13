@@ -1,0 +1,121 @@
+健康关系矩阵假阴性审计（待人工复核，未自动修改任何决定）
+疑似漏排合计: 96 条
+
+
+[allergy_alcohol] 11 条疑似漏排:
+  id=664 name=玫瑰露酒
+  id=745 name=花雕酒
+  id=804 name=绍酒
+  id=952 name=樱桃酒
+  id=1421 name=波特酒
+  id=1623 name=红酒醋
+  id=1713 name=无酒精汽酒
+  id=1741 name=老酒
+  id=1867 name=清酒
+  id=1947 name=苹果酒
+  id=2109 name=烧酒
+
+[allergy_crab] 1 条疑似漏排:
+  id=799 name=蟹味菇
+
+[allergy_dairy] 6 条疑似漏排:
+  id=669 name=奶粉
+  id=682 name=三花淡奶
+  id=1154 name=脱脂奶粉
+  id=1234 name=淡奶
+  id=1997 name=全脂奶粉
+  id=2032 name=婴儿奶粉
+
+[allergy_egg] 1 条疑似漏排:
+  id=42 name=蛋清
+
+[allergy_fish] 25 条疑似漏排:
+  id=36 name=蒸鱼豉油
+  id=124 name=小鲍鱼
+  id=237 name=蒸鱼鼓油
+  id=318 name=鱿鱼
+  id=446 name=鲍鱼汁
+  id=635 name=鲍鱼
+  id=958 name=鲜鱿鱼
+  id=1019 name=鱿鱼须
+  id=1050 name=鱿鱼圈
+  id=1065 name=嫩鱿鱼
+  id=1166 name=鲍鱼仔
+  id=1179 name=阿根廷鱿鱼须
+  id=1216 name=蒸鱼豆豉油
+  id=1388 name=鲍鱼肉
+  id=1515 name=大连鲜鲍鱼
+  id=1581 name=八头鲜鲍鱼
+  id=1702 name=墨鱼
+  id=1800 name=小墨鱼
+  id=1897 name=本港大鱿鱼
+  id=1998 name=鱿鱼肉
+  id=2002 name=比目鱼
+  id=2012 name=净鱿鱼
+  id=2033 name=章鱼干
+  id=2149 name=目鱼花
+  id=2158 name=墨鱼丸
+
+[allergy_seafood] 13 条疑似漏排:
+  id=5 name=川贝粉
+  id=36 name=蒸鱼豉油
+  id=69 name=牡蛎
+  id=140 name=海鲜酱
+  id=237 name=蒸鱼鼓油
+  id=799 name=蟹味菇
+  id=828 name=海鲜酱油
+  id=945 name=素蚝油
+  id=1181 name=小龙虾调料
+  id=1216 name=蒸鱼豆豉油
+  id=1533 name=贝贝南瓜
+  id=1639 name=海鲜菇
+  id=1653 name=川贝
+
+[allergy_shellfish] 5 条疑似漏排:
+  id=5 name=川贝粉
+  id=945 name=素蚝油
+  id=1279 name=淡菜干
+  id=1533 name=贝贝南瓜
+  id=1653 name=川贝
+
+[allergy_shrimp] 1 条疑似漏排:
+  id=1181 name=小龙虾调料
+
+[allergy_soy] 22 条疑似漏排:
+  id=92 name=豆豉
+  id=181 name=豆瓣酱
+  id=411 name=豆豉酱
+  id=476 name=豆豉辣椒油
+  id=553 name=郫县豆瓣
+  id=710 name=郫县豆瓣酱
+  id=753 name=红油豆瓣酱
+  id=903 name=辣豆瓣酱
+  id=1180 name=豆豉油辣椒
+  id=1215 name=素鸡
+  id=1216 name=蒸鱼豆豉油
+  id=1238 name=老干妈豆豉
+  id=1396 name=豆豉鲮鱼罐头
+  id=1537 name=风味豆豉酱
+  id=1554 name=香辣豆豉酱
+  id=1593 name=黑豆豉
+  id=1768 name=青豆瓣
+  id=1828 name=虾米豆豉酱
+  id=1853 name=蚕豆瓣
+  id=1854 name=六月鲜豆瓣酱
+  id=1865 name=大豆油
+  id=2178 name=老干妈风味豆豉
+
+[allergy_tree_nut] 6 条疑似漏排:
+  id=171 name=坚果
+  id=921 name=混合坚果
+  id=1068 name=白果仁
+  id=1253 name=白果
+  id=1686 name=杜松子
+  id=1696 name=综合坚果
+
+[allergy_wheat] 5 条疑似漏排:
+  id=919 name=全麦粉
+  id=1058 name=低筋小麦粉
+  id=1266 name=长意面
+  id=1490 name=意面
+  id=1648 name=小麦粉
