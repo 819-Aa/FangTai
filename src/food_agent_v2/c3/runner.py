@@ -1151,7 +1151,7 @@ class WorkflowRunner:
         }
 
         tool_params = {
-            "retrieve_recipes": {"query": {"type": "string", "description": "检索查询文本"}, "top_k": {"type": "integer", "description": "返回数量，默认20"}},
+            "retrieve_recipes": {"query": {"type": "string", "description": "检索查询文本"}, "top_k": {"type": "integer", "description": "返回数量，默认40（候选池需覆盖结构需求如汤/主食，勿设过小）"}},
             "get_current_menu": {},
             "get_health_constraints": {},
             "evaluate_recipe_health": {"recipe_ids": {"type": "array", "items": {"type": "integer"}, "description": "待审查的菜品ID列表"}},

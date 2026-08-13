@@ -166,7 +166,9 @@ def _retrieve_recipes(args: dict, ctx: ToolContext) -> dict:
     """
     from food_agent_v2.c1 import get_retrieval_service
     query = args.get("query", args.get("search_query", ""))
-    top_k = int(args.get("top_k", 40))
+    # 候选池下限：top_k 过小会导致结构需求（汤/主食）候选不足 → C2 no_feasible。
+    # 系统保证候选充足（健康审查前提），模型传更小值也强制抬到 40。
+    top_k = max(int(args.get("top_k", 40)), 40)
     svc = get_retrieval_service()
 
     # 多人 → 共享查询 + 每参与者口味偏好子查询
