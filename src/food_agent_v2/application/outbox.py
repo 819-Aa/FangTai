@@ -170,3 +170,12 @@ class OutboxDispatcher:
 def dispatch_request(request_id: str) -> int:
     """便捷入口：发布指定请求的 success SSE（事务提交后调用）。"""
     return OutboxDispatcher().dispatch_request(request_id)
+
+
+def dispatch_pending(request_id: str | None = None, limit: int = 100) -> int:
+    """便捷入口：发布所有 pending/dispatching 事件（ADR-0006 重启补发）。
+
+    用于 API 启动恢复：提交后进程崩溃或首次投递失败遗留的 pending 事件，
+    在下次启动时补投，避免 success SSE 永久丢失。
+    """
+    return OutboxDispatcher().dispatch_pending(request_id, limit)

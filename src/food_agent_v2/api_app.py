@@ -12,6 +12,7 @@ GET  /v1/sessions/{session_id}
 from __future__ import annotations
 
 import asyncio
+import threading
 import time
 from contextlib import asynccontextmanager
 
@@ -46,8 +47,36 @@ async def lifespan(app: FastAPI):
             print("[V2] Model warmup: done")
         except Exception as e:
             print(f"[V2] Model warmup failed (continuing): {e}")
+
+    # ADR-0006：outbox 恢复循环——启动补投崩溃遗留的 pending 事件，
+    # 后台周期扫描兜底首次投递失败；成功 SSE 不得永久丢失。
+    stop_event = threading.Event()
+
+    def _outbox_recovery_loop() -> None:
+        from food_agent_v2.application.outbox import dispatch_pending
+        # 首次立即补投
+        try:
+            n = dispatch_pending()
+            if n:
+                print(f"[V2] Outbox recovery: dispatched {n} pending events")
+        except Exception as e:  # noqa: BLE001 —— MySQL 未就绪时静默，下轮重试
+            print(f"[V2] Outbox recovery failed (retrying): {e}")
+        # 周期扫描（每 30s 兜底）
+        while not stop_event.wait(30):
+            try:
+                n = dispatch_pending()
+                if n:
+                    print(f"[V2] Outbox recovery: dispatched {n} pending events")
+            except Exception:
+                pass  # 下一轮重试
+
+    recovery_thread = threading.Thread(
+        target=_outbox_recovery_loop, daemon=True, name="outbox-recovery")
+    recovery_thread.start()
+
     yield
     # 关闭
+    stop_event.set()
     print("[V2] Shutting down")
 
 

@@ -320,8 +320,14 @@ class RecommendationAPI:
         if not req:
             return 404, {"error": "NOT_FOUND"}
 
-        # 终态（含 cancelled）不可取消 → 重复取消返回 409
-        terminal = {"completed", "failed", "no_safe_menu", "no_feasible_menu", "cancelled"}
+        # 终态（含 cancelled）不可取消 → 重复取消返回 409。
+        # 与 state.TERMINAL_STATUSES 一致：needs_clarification /
+        # strict_time_indeterminate / interrupted 也已是终态，不可改写为 cancelled。
+        terminal = {
+            "completed", "no_safe_menu", "no_feasible_menu",
+            "needs_clarification", "strict_time_indeterminate",
+            "failed", "cancelled", "interrupted",
+        }
         if req["status"] in terminal:
             return 409, {"error": "REQUEST_ALREADY_TERMINAL", "current_status": req["status"]}
 
