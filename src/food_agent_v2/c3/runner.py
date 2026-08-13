@@ -508,8 +508,11 @@ class WorkflowRunner:
                 rv: ReviewArtifact = _rv_art
                 state = reduce_workflow_state(
                     state, action="set_artifact", artifact="review", value=rv)
-                # ReviewArtifact 使用正式 status 字段（PASS/REVISION_REQUIRED）
-                state = reduce_workflow_state(state, action="unified_review", status=rv.status)
+                # ReviewArtifact 使用正式 status 字段（PASS/REVISION_REQUIRED）；
+                # REVISION_REQUIRED 时 target_node 决定回流到改回答还是改菜单（§13.2）。
+                state = reduce_workflow_state(
+                    state, action="unified_review",
+                    status=rv.status, target_node=rv.target_node)
 
             elif node == NodeType.ATOMIC_COMMIT:
                 break

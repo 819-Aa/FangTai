@@ -71,6 +71,46 @@ class TestPureReducer:
         assert new_state.status == RequestStatus.COMPLETED
         assert new_state.is_terminal()
 
+    def test_review_revision_routes_to_answer_generation(self) -> None:
+        new_state = reduce_workflow_state(
+            make_state(), action="unified_review",
+            status="REVISION_REQUIRED", target_node="answer_generation")
+        assert new_state.status == RequestStatus.REVISING
+        assert new_state.current_node == NodeType.ANSWER_GENERATION
+        assert new_state.review_revision_count == 1
+
+    def test_review_revision_routes_to_menu_decision(self) -> None:
+        new_state = reduce_workflow_state(
+            make_state(), action="unified_review",
+            status="REVISION_REQUIRED", target_node="menu_decision")
+        assert new_state.status == RequestStatus.REVISING
+        assert new_state.current_node == NodeType.MENU_DECISION
+        assert new_state.review_revision_count == 1
+
+    def test_review_revision_invalid_target_fails(self) -> None:
+        # 上游节点（health_menu_planning）→ 不进入修订，failed（§13.2）
+        new_state = reduce_workflow_state(
+            make_state(), action="unified_review",
+            status="REVISION_REQUIRED", target_node="health_menu_planning")
+        assert new_state.status == RequestStatus.FAILED
+        assert new_state.error is not None
+        assert new_state.error.error_code == "REVIEW_TARGET_INVALID"
+
+    def test_review_reevaluation_then_limit(self) -> None:
+        # 修订后仍 REVISION_REQUIRED → 复审一次 → 仍不通过 → 超限
+        state = make_state()
+        state.review_revision_count = 1
+        reeval = reduce_workflow_state(
+            state, action="unified_review",
+            status="REVISION_REQUIRED", target_node="answer_generation")
+        assert reeval.status == RequestStatus.REVISING
+        assert reeval.review_reevaluation_count == 1
+        final = reduce_workflow_state(
+            reeval, action="unified_review",
+            status="REVISION_REQUIRED", target_node="answer_generation")
+        assert final.status == RequestStatus.FAILED
+        assert final.error.error_code == "WORKFLOW_RETRY_LIMIT_EXCEEDED"
+
     def test_unknown_action_fails(self) -> None:
         import pytest
 

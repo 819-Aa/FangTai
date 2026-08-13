@@ -199,16 +199,39 @@ def reduce_workflow_state(state: WorkflowState, *, action: str, **params) -> Wor
         if status == "PASS":
             return replace(state, status=RequestStatus.COMPLETED, current_node=NodeType.ATOMIC_COMMIT)
         if status == "REVISION_REQUIRED":
-            new_count, ok = _next_counter(state, "review_revision_count", 1)
-            if ok:
+            target = params.get("target_node")
+            # 定向修订（文档 §13.2）：第一次按 target_node 路由。
+            # target_node=answer_generation → 改回答；menu_decision → 改菜单；
+            # 上游节点/证据缺失 → 不进入修订，直接 failed。
+            if state.review_revision_count == 0:
+                if target == "answer_generation":
+                    return replace(
+                        state, status=RequestStatus.REVISING,
+                        current_node=NodeType.ANSWER_GENERATION,
+                        review_revision_count=1,
+                    )
+                if target == "menu_decision":
+                    return replace(
+                        state, status=RequestStatus.REVISING,
+                        current_node=NodeType.MENU_DECISION,
+                        review_revision_count=1,
+                    )
+                return replace(
+                    state, status=RequestStatus.FAILED, current_node=NodeType.ATOMIC_COMMIT,
+                    error=WorkflowError("REVIEW_TARGET_INVALID",
+                                        f"审查要求修订到未支持的目标节点: {target}"),
+                )
+            # 复审：修订后仍 REVISION_REQUIRED，再给一次机会回到 answer_generation。
+            if state.review_reevaluation_count == 0:
                 return replace(
                     state, status=RequestStatus.REVISING,
                     current_node=NodeType.ANSWER_GENERATION,
-                    review_revision_count=new_count,
+                    review_reevaluation_count=1,
                 )
+            # 复审仍 REVISION_REQUIRED → 修订上限耗尽
             return replace(
                 state, status=RequestStatus.FAILED, current_node=NodeType.ATOMIC_COMMIT,
-                error=WorkflowError("WORKFLOW_RETRY_LIMIT_EXCEEDED", "修订已达上限"),
+                error=WorkflowError("WORKFLOW_RETRY_LIMIT_EXCEEDED", "复审仍不通过"),
             )
         return replace(state, status=RequestStatus.FAILED, current_node=NodeType.ATOMIC_COMMIT)
 

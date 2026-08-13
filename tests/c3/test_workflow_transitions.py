@@ -119,12 +119,21 @@ class TestBoundedBudgets:
         assert s.error.error_code == "WORKFLOW_RETRY_LIMIT_EXCEEDED"
 
     def test_review_revision_budget(self) -> None:
+        # 修订预算：定向修订 1 次 + 复审 1 次（文档 §13.2）
         s = make_state()
-        s = reduce_workflow_state(s, action="unified_review", status="REVISION_REQUIRED")
+        s = reduce_workflow_state(s, action="unified_review",
+                                  status="REVISION_REQUIRED", target_node="answer_generation")
         assert s.status == RequestStatus.REVISING
         assert s.current_node == NodeType.ANSWER_GENERATION
         assert s.review_revision_count == 1
-        s = reduce_workflow_state(s, action="unified_review", status="REVISION_REQUIRED")
+        # 复审：修订后仍 REVISION_REQUIRED → review_reevaluation_count=1
+        s = reduce_workflow_state(s, action="unified_review",
+                                  status="REVISION_REQUIRED", target_node="answer_generation")
+        assert s.status == RequestStatus.REVISING
+        assert s.review_reevaluation_count == 1
+        # 复审仍 REVISION_REQUIRED → 超限
+        s = reduce_workflow_state(s, action="unified_review",
+                                  status="REVISION_REQUIRED", target_node="answer_generation")
         assert s.status == RequestStatus.FAILED
         assert s.error.error_code == "WORKFLOW_RETRY_LIMIT_EXCEEDED"
 
