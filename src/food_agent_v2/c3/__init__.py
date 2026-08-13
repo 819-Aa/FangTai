@@ -25,6 +25,7 @@ from food_agent_v2.c3.state import (
 ALLOWED_TOOL_ERROR_CODES = {
     "SAFE_RECIPE_IDS_MISMATCH",
     "HEALTH_EVALUATION_REQUIRED",
+    "CANDIDATES_REQUIRED",
 }
 
 
@@ -41,6 +42,7 @@ ERROR_CODES = {
     "TOOL_EXECUTION_FAILED": "工具执行失败",
     "IDEMPOTENCY_KEY_REUSED": "幂等键冲突",
     "REQUEST_ALREADY_TERMINAL": "请求已处于终态",
+    "CANDIDATES_REQUIRED": "无候选菜品可评估（未检索或召回为空），请求无法继续",
 }
 
 # INV-012：不可信指令注入检测。
@@ -92,9 +94,9 @@ class RolePolicy:
 ROLE_POLICIES: dict[str, RolePolicy] = {
     "query_understanding": RolePolicy(
         role="query_understanding",
-        allowed_tools=[ToolSpec("retrieve_recipes", "required"), ToolSpec("get_current_menu", "optional")],
+        allowed_tools=[ToolSpec("retrieve_recipes", "optional"), ToolSpec("get_current_menu", "optional")],
         forbidden_tools=["get_health_constraints", "evaluate_recipe_health", "generate_feasible_menus", "validate_selected_menu_health", "adjust_menu_plan", "expand_retrieval"],
-        required_tool_receipts=["retrieve_recipes"],
+        required_tool_receipts=[],  # 检索自主：模型可先检索再输出，也可直接输出 QueryPlan
         output_artifact_type="QueryPlanArtifact",
         context_projection_role="query_understanding",
     ),
@@ -104,6 +106,7 @@ ROLE_POLICIES: dict[str, RolePolicy] = {
             ToolSpec("get_health_constraints", "required"),
             ToolSpec("evaluate_recipe_health", "required"),
             ToolSpec("generate_feasible_menus", "required"),
+            ToolSpec("retrieve_recipes", "optional"),
             ToolSpec("expand_retrieval", "optional"),
             ToolSpec("adjust_menu_plan", "optional"),
         ],

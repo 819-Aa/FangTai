@@ -88,22 +88,24 @@ def make_runner(responses: list[dict], raise_on_invoke: bool = False):
     return runner, llm
 
 
-def make_state(node: NodeType = NodeType.QUERY_UNDERSTANDING) -> WorkflowState:
+def make_state(node: NodeType = NodeType.HEALTH_MENU_PLANNING) -> WorkflowState:
     state = WorkflowState(request_id=str(RID), build_id=BID)
     state.current_node = node
     return state
 
 
 def make_ctx() -> ToolContext:
-    return ToolContext(request_id=str(RID), node_id="query_understanding", build_id=BID)
+    # 必需工具校验改用 health_menu_planning（检索在 query_understanding 已改可选，
+    # 但健康审查/菜单生成等安全工具仍必需，NodeValidator 覆盖它们）。
+    return ToolContext(request_id=str(RID), node_id="health_menu_planning", build_id=BID)
 
 
 def make_receipt(success: bool = True, **overrides) -> ToolReceipt:
     data = {
         "request_id": RID,
-        "node_id": "query_understanding",
+        "node_id": "health_menu_planning",
         "tool_call_id": "call-1",
-        "tool_name": "retrieve_recipes",
+        "tool_name": "evaluate_recipe_health",
         "input_hash": "a" * 64,
         "output_hash": "b" * 64,
         "build_id": UUID(BID),
@@ -115,22 +117,37 @@ def make_receipt(success: bool = True, **overrides) -> ToolReceipt:
 
 
 class TestNodeValidatorRequiredTools:
+    """用 menu_decision（唯一必需工具 validate_selected_menu_health）验证必需工具机制。"""
+
+    _RECEIPT = dict(node_id="menu_decision", tool_name="validate_selected_menu_health")
+
     def test_missing_required_tool(self) -> None:
+        # menu_decision 漏调必需安全工具（validate_selected_menu_health）→ 失败
         err = NodeValidator.post_check(
-            make_state(), ROLE_POLICIES["query_understanding"], {"ok": 1}, [])
+            make_state(NodeType.MENU_DECISION),
+            ROLE_POLICIES["menu_decision"], {"ok": 1}, [])
         assert err is not None
         assert err.error_code == "REQUIRED_TOOL_NOT_CALLED"
 
     def test_failed_required_tool(self) -> None:
-        receipt = make_receipt(success=False, error_code="TOOL_EXECUTION_FAILED")
+        receipt = make_receipt(success=False, error_code="TOOL_EXECUTION_FAILED", **self._RECEIPT)
         err = NodeValidator.post_check(
-            make_state(), ROLE_POLICIES["query_understanding"], {"ok": 1}, [receipt])
+            make_state(NodeType.MENU_DECISION),
+            ROLE_POLICIES["menu_decision"], {"ok": 1}, [receipt])
         assert err is not None
         assert err.error_code == "TOOL_EXECUTION_FAILED"
 
     def test_success_required_tool_passes(self) -> None:
         err = NodeValidator.post_check(
-            make_state(), ROLE_POLICIES["query_understanding"], {"ok": 1}, [make_receipt()])
+            make_state(NodeType.MENU_DECISION),
+            ROLE_POLICIES["menu_decision"], {"ok": 1}, [make_receipt(**self._RECEIPT)])
+        assert err is None
+
+    def test_query_understanding_retrieval_now_optional(self) -> None:
+        """检索已改可选：query_understanding 漏调 retrieve_recipes 不再失败。"""
+        err = NodeValidator.post_check(
+            make_state(NodeType.QUERY_UNDERSTANDING),
+            ROLE_POLICIES["query_understanding"], {"ok": 1}, [])
         assert err is None
 
 
@@ -138,10 +155,24 @@ class TestRealCallModelFailClosed:
     """直测真实 _call_model（FakeLLM 注入，不 override）。"""
 
     def test_missing_required_tool_no_retry(self) -> None:
-        """模型提交最终输出但缺少必需工具回执 → 立即 REQUIRED_TOOL_NOT_CALLED，不重试。"""
+        """模型提交最终输出但缺少必需安全工具回执 → 立即 REQUIRED_TOOL_NOT_CALLED，不重试。
+
+        menu_decision 仍必需 validate_selected_menu_health；补上其前置 Artifact
+        使 pre_check 通过，随后必需工具漏调 → REQUIRED_TOOL_NOT_CALLED。
+        """
+        from food_agent_v2.c3.state import reduce_workflow_state
+        state = make_state(NodeType.MENU_DECISION)
+        state = reduce_workflow_state(
+            state, action="set_artifact", artifact="health_evaluation", value={"_ok": 1})
+        state = reduce_workflow_state(
+            state, action="set_artifact", artifact="feasible_menu", value={"_ok": 1})
+
         runner, llm = make_runner([{"content": '{"intent": "new"}', "tool_calls": []}])
         new_state, _raw, _art = runner._run_model_node(
-            make_state(), _FakeC4(), make_ctx(), "query_understanding", "hi")
+            state,
+            _FakeC4(),
+            ToolContext(request_id=str(RID), node_id="menu_decision", build_id=BID),
+            "menu_decision", "hi")
         assert new_state.status == RequestStatus.FAILED
         assert new_state.error is not None
         assert new_state.error.error_code == "REQUIRED_TOOL_NOT_CALLED"
@@ -254,10 +285,34 @@ class TestRealCallModelFailClosed:
         assert continuation[2]["tool_call_id"] == "call-current-menu"
 
     def test_required_receipts_are_declared_as_completion_contract(self) -> None:
-        """策略门槛应显式进入提示，但 Runner 不应代模型执行工具。"""
+        """策略门槛应显式进入提示，但 Runner 不应代模型执行工具。
+
+        menu_decision 仍必需 validate_selected_menu_health → prompt 含节点完成契约；
+        query_understanding 检索已改可选 → 无必需工具，prompt 不再追加完成契约。
+        """
         runner, llm = make_runner([
-            {"content": '{"intent": "new"}', "tool_calls": []},
+            {"content": '{"plan_id": "p1"}', "tool_calls": []},
         ])
+        ctx = ToolContext(request_id=str(RID), node_id="menu_decision", build_id=BID)
+        state = WorkflowState(request_id=str(RID), build_id=BID)
+        state.current_node = NodeType.MENU_DECISION
+
+        runner._call_model(
+            "menu_decision",
+            ROLE_POLICIES["menu_decision"],
+            _FakeC4().project_model_context("menu_decision", None, "x"),
+            "hi",
+            ctx,
+        )
+        prompt = llm.system_prompts[0]
+        assert "节点完成契约" in prompt
+        assert "validate_selected_menu_health" in prompt
+        assert "由你决定何时发起" in prompt
+        assert ctx.tool_receipts == []
+
+    def test_query_understanding_no_required_contract(self) -> None:
+        """检索可选后，query_understanding prompt 不再附加节点完成契约。"""
+        runner, llm = make_runner([{"content": '{"intent": "new"}', "tool_calls": []}])
         ctx = make_ctx()
 
         runner._call_model(
@@ -267,9 +322,5 @@ class TestRealCallModelFailClosed:
             "hi",
             ctx,
         )
-
         prompt = llm.system_prompts[0]
-        assert "节点完成契约" in prompt
-        assert "retrieve_recipes" in prompt
-        assert "由你决定何时发起" in prompt
-        assert ctx.tool_receipts == []
+        assert "节点完成契约" not in prompt

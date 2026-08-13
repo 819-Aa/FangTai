@@ -239,7 +239,10 @@ def _evaluate_recipe_health(args: dict, ctx: ToolContext) -> dict:
 
     recipe_ids = args.get("recipe_ids", [])
     if not recipe_ids:
-        return {"error": "recipe_ids required", "safe_recipe_ids": [], "excluded_recipe_ids": []}
+        # 无候选可评估：模型未检索/召回为空/未提供候选。
+        # 业务归因（诚实）：不把责任归于"漏调工具"，而是"候选缺失"。
+        return {"error": "CANDIDATES_REQUIRED", "safe_recipe_ids": [],
+                "excluded_recipe_ids": [], "missing_reason": "no_candidates"}
 
     # 从 B3 获取真实食材视图
     builder = get_view_builder()

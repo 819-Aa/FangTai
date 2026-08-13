@@ -338,10 +338,22 @@ class WorkflowRunner:
             elif node == NodeType.HEALTH_MENU_PLANNING:
                 # MC-01-R2 P0-1：节点入口清除旧健康回执，禁止复用前一轮/前一节点回执
                 tool_ctx.previous_results.pop("health_evaluation", None)
+                # 候选就绪门：规划阶段重读检索候选——模型可能在 query_understanding
+                # 跳过检索、在规划阶段自主补检索，runner 必须感知最新候选。
+                _retrieval_now = tool_ctx.previous_results.get("retrieval")
+                if _retrieval_now:
+                    retrieved_ids = [c.recipe_id for c in _retrieval_now.candidates]
+                candidate_hint = ""
+                if not retrieved_ids:
+                    candidate_hint = (
+                        "\n\n## 候选提示\n当前没有候选菜品。你必须调用 retrieve_recipes "
+                        "获得候选后，才能执行健康审查。若确实无法召回，说明原因。")
                 hm_input = {
                     "query_plan": state.query_plan_artifact,
                     "retrieved_candidate_recipe_ids": retrieved_ids,
                 }
+                if candidate_hint:
+                    hm_input["candidate_hint"] = candidate_hint.strip()
                 state, _hm_raw, _hm_art = self._run_model_node(
                     state, c4, tool_ctx, "health_menu_planning",
                     user_message=json.dumps(hm_input, ensure_ascii=False, default=str),
@@ -1105,7 +1117,7 @@ class WorkflowRunner:
             return None
 
         tool_descriptions = {
-            "retrieve_recipes": "从菜品知识库中检索候选菜品。参数query为自然语言查询文本。返回匹配的菜品列表及基础信息。当你需要获取候选菜品时必须调用此工具。",
+            "retrieve_recipes": "从菜品知识库中检索候选菜品。参数query为自然语言查询文本。返回匹配的菜品列表及基础信息。当你需要候选菜品时可调用；若后续健康审查没有候选会以 CANDIDATES_REQUIRED 失败。",
             "get_current_menu": "获取当前会话已有的菜单方案（用于替换/恢复场景）。无需参数。",
             "get_health_constraints": "获取当前参与者的有效健康约束集（硬约束+软目标）。这是健康审查的前置步骤——必须先知道约束才能审查菜品。无需参数。",
             "evaluate_recipe_health": "对指定菜品执行逐参与者、逐菜品的健康审查。传入recipe_ids列表，返回safe_recipe_ids和excluded_recipe_ids。审查基于B4健康引擎的约束-食材关系表。",
