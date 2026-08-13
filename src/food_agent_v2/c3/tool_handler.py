@@ -369,7 +369,25 @@ def _generate_feasible_menus(args: dict, ctx: ToolContext) -> dict:
     ctx.previous_results["feasible_menus"] = plans
 
     if not plans:
-        # 权威 safe 非空但 C2 无法生成满足硬约束的方案 → no_feasible_menu（不回退）
+        # 权威 safe 非空但 C2 无法生成满足硬约束的方案。
+        # 有严格时限时区分：B5 对安全候选无法高权威判定时间 → strict_time_indeterminate；
+        # 否则是其他硬约束（菜数/槽位/时间 false）不满足 → no_feasible_menu（INV-021）。
+        if hard.strict_time_limit is not None:
+            try:
+                from food_agent_v2.b5 import get_time_service
+                time_svc = get_time_service()
+                sched = time_svc.compute_menu_schedule(
+                    sorted(safe_ids), hard.strict_time_limit)
+                if sched.strict_time_feasible == "unknown":
+                    return {"plans": [], "count": 0,
+                            "note": "strict_time_indeterminate",
+                            "safe_count": len(safe_ids),
+                            "authority": sched.authority,
+                            "missing_facts": list(sched.missing_facts)}
+            except Exception:
+                # 时间服务不可用不伪装通过；按 no_feasible_menu 失败关闭
+                pass
+        # 无严格时限或非时间原因无方案 → no_feasible_menu（不回退）
         return {"plans": [], "count": 0, "note": "no_feasible_menu", "safe_count": len(safe_ids)}
 
     return {

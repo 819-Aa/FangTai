@@ -488,3 +488,58 @@ def _clean_global_d1():
     d1_api._events.clear()
     d1_api._event_cursors.clear()
     d1_api._idempotency.clear()
+
+
+class TestStrictTimeIndeterminate:
+    """严格时限 + B5 无法高权威判定 → strict_time_indeterminate（INV-021）。"""
+
+    def test_strict_time_unknown_returns_indeterminate(self) -> None:
+        ctx = _ctx()
+        ctx.previous_results["health_evaluation"] = _receipt([1, 2, 3])
+        ctx.time_limit_minutes = 10  # 查询理解提取的严格时间约束
+
+        from food_agent_v2.c2 import MenuPlanner
+        from food_agent_v2.c3.tool_handler import _generate_feasible_menus
+
+        class _FakeB5:
+            def compute_menu_schedule(self, recipe_ids, time_limit_minutes):
+                from types import SimpleNamespace
+                return SimpleNamespace(
+                    strict_time_feasible="unknown",
+                    authority="deterministic_partial",
+                    missing_facts=("recipe:1/step:2",),
+                )
+
+        with patch.object(MenuPlanner, "plan", return_value=[]), \
+             patch("food_agent_v2.b5.get_time_service",
+                   return_value=_FakeB5()):
+            result = _generate_feasible_menus(
+                {"safe_recipe_ids": [1, 2, 3], "dish_count": 3}, ctx)
+        assert result["note"] == "strict_time_indeterminate"
+        assert result["plans"] == []
+        assert result["safe_count"] == 3
+
+    def test_strict_time_false_returns_no_feasible(self) -> None:
+        """B5 明确 false（不是 unknown）→ 仍按 no_feasible_menu（时间确定不可行）。"""
+        ctx = _ctx()
+        ctx.previous_results["health_evaluation"] = _receipt([1, 2, 3])
+        ctx.time_limit_minutes = 10
+
+        from food_agent_v2.c2 import MenuPlanner
+        from food_agent_v2.c3.tool_handler import _generate_feasible_menus
+
+        class _FakeB5:
+            def compute_menu_schedule(self, recipe_ids, time_limit_minutes):
+                from types import SimpleNamespace
+                return SimpleNamespace(
+                    strict_time_feasible=False,
+                    authority="deterministic_high",
+                    missing_facts=(),
+                )
+
+        with patch.object(MenuPlanner, "plan", return_value=[]), \
+             patch("food_agent_v2.b5.get_time_service",
+                   return_value=_FakeB5()):
+            result = _generate_feasible_menus(
+                {"safe_recipe_ids": [1, 2, 3], "dish_count": 3}, ctx)
+        assert result["note"] == "no_feasible_menu"

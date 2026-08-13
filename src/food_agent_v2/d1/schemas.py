@@ -17,6 +17,7 @@ class RequestStatus(StrEnum):
     NEEDS_CLARIFICATION = "needs_clarification"
     NO_SAFE_MENU = "no_safe_menu"
     NO_FEASIBLE_MENU = "no_feasible_menu"
+    STRICT_TIME_INDETERMINATE = "strict_time_indeterminate"
     FAILED = "failed"
     CANCELLED = "cancelled"
     INTERRUPTED = "interrupted"

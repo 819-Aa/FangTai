@@ -1044,7 +1044,8 @@ class WorkflowRunner:
                     # 等工具绝不执行；已执行回执仍进入统一校验。
                     if name == "generate_feasible_menus" and isinstance(result, dict):
                         note = result.get("note")
-                        if note in ("no_safe_menu", "no_feasible_menu"):
+                        if note in ("no_safe_menu", "no_feasible_menu",
+                                    "strict_time_indeterminate"):
                             terminal = note
                             tool_results.append({
                                 "tool": name, "tool_call_id": call_id, "result": result,

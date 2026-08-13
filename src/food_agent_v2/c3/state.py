@@ -150,6 +150,9 @@ def reduce_workflow_state(state: WorkflowState, *, action: str, **params) -> Wor
             return replace(state, status=RequestStatus.NO_SAFE_MENU, current_node=NodeType.ATOMIC_COMMIT)
         if result == "no_feasible_menu":
             return replace(state, status=RequestStatus.NO_FEASIBLE_MENU, current_node=NodeType.ATOMIC_COMMIT)
+        if result == "strict_time_indeterminate":
+            return replace(state, status=RequestStatus.STRICT_TIME_INDETERMINATE,
+                           current_node=NodeType.ATOMIC_COMMIT)
         if result == "needs_expansion":
             new_count, ok = _next_counter(state, "retrieval_expansion_count", 1)
             if ok:
