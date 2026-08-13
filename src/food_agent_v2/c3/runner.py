@@ -313,6 +313,13 @@ class WorkflowRunner:
                     break
                 # 查询理解输出必须为合法 QueryPlanArtifact（无澄清绕过；不满足即 fail-closed）
                 state = reduce_workflow_state(state, action="query_understanding", success=True)
+                # R-002：消费 health_exclusions 建立临时健康约束闭环；
+                # 任一信号无法封闭映射 → needs_clarification（fail-closed）。
+                if q_artifact is not None and getattr(q_artifact, "health_exclusions", ()):
+                    state = self._handle_query_plan_exclusions(
+                        state, q_artifact, session_id, c4, user_id_mapping)
+                    if state.is_terminal():
+                        break
                 state = reduce_workflow_state(
                     state, action="set_artifact", artifact="query_plan", value=q_artifact)
                 # 供后续工具执行 QueryPlan 已确认的硬约束；模型仍决定是否调用工具，
@@ -648,6 +655,71 @@ class WorkflowRunner:
         # 供 B4 最终校验引用 FeasibleMenuArtifact.id
         tool_ctx.previous_results["feasible_menu_artifact"] = feasible_artifact
         return state, feasible_artifact
+
+    def _handle_query_plan_exclusions(
+        self,
+        state: WorkflowState,
+        artifact: QueryPlanArtifact,
+        session_id: str,
+        c4: ContextService,
+        user_id_mapping: dict[str, int],
+    ) -> WorkflowState | None:
+        """R-002：消费 QueryPlanArtifact.health_exclusions，建立临时健康约束闭环。
+
+        每个排除项：parse → b2.validate_temporary_signal（fail-closed）→
+        c4.store_temporary_constraint。任一无法封闭映射（HEALTH_SIGNAL_AMBIGUOUS）
+        → 返回 needs_clarification 状态；全部成功返回 None（继续主流程）。
+        """
+        from food_agent_v2.b2 import HealthProfileError, UserHealthProfileService
+
+        exclusions = getattr(artifact, "health_exclusions", ()) or ()
+        if not exclusions:
+            return None
+
+        b2 = UserHealthProfileService()
+        b2.load(expected_build_id=state.build_id)
+        # B3 食材解析器（禁忌信号绑定标准 ingredient_id）
+        resolver = _ingredient_resolver()
+
+        for raw in exclusions:
+            try:
+                parsed = _parse_health_exclusion(raw)
+            except ValueError:
+                return self._needs_clarification(
+                    state, "HEALTH_SIGNAL_AMBIGUOUS", f"无法解析健康排除项: {raw!r}")
+            ref = parsed["participant_ref"]
+            # 归属校验：排除项参与者必须在本请求参与者内
+            if ref not in user_id_mapping:
+                return self._needs_clarification(
+                    state, "HEALTH_SIGNAL_AMBIGUOUS", f"排除项参与者不在请求内: {ref}")
+            try:
+                temp = b2.validate_temporary_signal(
+                    {"type": parsed["type"], "value": parsed["value"]},
+                    ref,
+                    ingredient_resolver=resolver,
+                )
+            except HealthProfileError as e:
+                return self._needs_clarification(state, e.code, str(e))
+            c4.store_temporary_constraint(session_id, {
+                "constraint_code": temp.constraint_code,
+                "taboo_ingredient_name": temp.taboo_ingredient_name,
+                "taboo_ingredient_id": temp.taboo_ingredient_id,
+                "participant_ref": temp.participant_ref,
+                "source_refs": list(temp.source_refs or []),
+                "scope": temp.scope.value,
+            })
+        return None
+
+    @staticmethod
+    def _needs_clarification(
+        state: WorkflowState, code: str, message: str,
+    ) -> WorkflowState:
+        """基于当前 state 构造 needs_clarification 终态（query_understanding 分支）。"""
+        from food_agent_v2.c3.state import WorkflowError, reduce_workflow_state
+        new_state = reduce_workflow_state(
+            state, action="query_understanding", needs_clarification=True)
+        new_state.error = WorkflowError(code, message)
+        return new_state
 
     def _run_model_node(self, state: WorkflowState, c4: ContextService,
                         tool_ctx: ToolContext, role: str, user_message: str,
@@ -1354,3 +1426,40 @@ class WorkflowRunner:
                 commit_c4(request_id, effective_status, token=lock_token)
             else:
                 commit_c4(request_id, effective_status)
+
+
+def _ingredient_resolver():
+    """构造 B3 标准食材解析器（绑定 ready build）。
+
+    用于临时禁忌信号 → 标准 ingredient_id。MySQL/Qdrant 不可用时返回 None，
+    B2.validate_temporary_signal 会因无法解析而抛 HEALTH_SIGNAL_AMBIGUOUS
+    → runner 进入 needs_clarification（fail-closed，不静默丢弃）。
+    """
+    try:
+        from food_agent_v2.b3.identity_resolver import IngredientIdentityResolver
+        return IngredientIdentityResolver()
+    except Exception:
+        return None
+
+
+def _parse_health_exclusion(raw: str) -> dict:
+    """解析 QueryPlanArtifact.health_exclusions 字符串（三前缀格式）。
+
+    约定格式： "参与者N:过敏:值" | "参与者N:禁忌:值" | "参与者N:疾病:值"
+    - 参与者前缀必须是 participant_ref（如 p1 / p2），否则无法归属 → 拒绝
+    - 类型必须是 过敏/禁忌/疾病 之一
+    - 值非空
+    返回 {"type": ..., "value": ..., "participant_ref": ...}；
+    任一不满足抛 ValueError（调用方转 needs_clarification）。
+    """
+    parts = raw.split(":", 2)
+    if len(parts) != 3:
+        raise ValueError(f"health_exclusion 格式应为 参与者N:类型:值: {raw!r}")
+    participant_ref, type_text, value = parts
+    if not participant_ref.startswith("p") or not value.strip():
+        raise ValueError(f"health_exclusion 参与者或值无效: {raw!r}")
+    type_map = {"过敏": "allergy", "禁忌": "taboo", "疾病": "disease"}
+    signal_type = type_map.get(type_text)
+    if signal_type is None:
+        raise ValueError(f"health_exclusion 类型未知: {raw!r}")
+    return {"type": signal_type, "value": value.strip(), "participant_ref": participant_ref}

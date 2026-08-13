@@ -255,11 +255,20 @@ def _evaluate_recipe_health(args: dict, ctx: ToolContext) -> dict:
     b2 = UserHealthProfileService()
     b2.load(expected_build_id=ctx.build_id)
 
-    # 构建所有参与者的约束集
+    # 构建所有参与者的约束集：B2 永久约束 + C4 会话/本轮临时约束（R-002 闭环）
     all_constraints = {}
     for ref, uid in ctx.participant_user_mapping.items():
         cs = b2.derive_constraints(uid, ref)
-        all_constraints[ref] = cs.hard_constraints
+        hard = list(cs.hard_constraints)
+        # 合并本会话临时健康约束（经 B2 验证后由 runner 写入 C4）
+        if ctx.context_service is not None and ctx.session_id:
+            try:
+                temp = ctx.context_service.to_b4_constraints(ctx.session_id)
+                hard.extend(c for c in temp if c.participant_ref == ref)
+            except Exception:
+                # 临时约束转换失败不阻塞评估，但永久约束仍完整评估
+                pass
+        all_constraints[ref] = hard
 
     batch = engine.evaluate_batch(recipe_ids, ing_map, all_constraints)
     # MC-01-R2 P0-1：绑定回执到当前请求，供 generate 校验新鲜度（禁止跨请求复用）

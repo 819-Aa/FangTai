@@ -57,6 +57,7 @@ class EffectiveConstraint:
     scope: ConstraintScope
     effect: str = "hard_exclude"
     constraint_id: str = ""
+    taboo_ingredient_id: int | None = None
 
 
 def constraint_identity(c: EffectiveConstraint) -> str:
@@ -117,6 +118,7 @@ class B2PermanentConstraintLoader:
                 out.append(EffectiveConstraint(
                     constraint_code=getattr(c, "constraint_code", None),
                     taboo_ingredient_name=getattr(c, "taboo_ingredient_name", None),
+                    taboo_ingredient_id=getattr(c, "taboo_ingredient_id", None),
                     participant_ref=ref,
                     source_refs=list(getattr(c, "source_refs", []) or []),
                     scope=ConstraintScope.PERMANENT,
@@ -470,6 +472,7 @@ class ContextService:
                             constraints.append(EffectiveConstraint(
                                 constraint_code=c.get("constraint_code"),
                                 taboo_ingredient_name=c.get("taboo_ingredient_name"),
+                                taboo_ingredient_id=c.get("taboo_ingredient_id"),
                                 participant_ref=c.get("participant_ref", ""),
                                 source_refs=c.get("source_refs", []),
                                 scope=ConstraintScope(c.get("scope", "session")),
@@ -856,6 +859,7 @@ class ContextService:
                 derived.append(EffectiveConstraint(
                     constraint_code=getattr(c, "constraint_code", None),
                     taboo_ingredient_name=getattr(c, "taboo_ingredient_name", None),
+                    taboo_ingredient_id=getattr(c, "taboo_ingredient_id", None),
                     participant_ref=ref,
                     source_refs=list(getattr(c, "source_refs", []) or []),
                     scope=ConstraintScope.PERMANENT,
@@ -881,6 +885,7 @@ class ContextService:
             ctx.effective_constraints.append(EffectiveConstraint(
                 constraint_code=constraint.get("constraint_code"),
                 taboo_ingredient_name=constraint.get("taboo_ingredient_name"),
+                taboo_ingredient_id=constraint.get("taboo_ingredient_id"),
                 participant_ref=constraint.get("participant_ref", ""),
                 source_refs=constraint.get("source_refs", []),
                 scope=ConstraintScope(constraint.get("scope", "session")),
@@ -910,6 +915,43 @@ class ContextService:
         if session_id in self._sessions:
             return self._sessions[session_id].effective_constraints
         return []
+
+    def to_b4_constraints(
+        self, session_id: str,
+    ) -> list[Any]:
+        """把会话有效约束转换为 B4 可评估的强类型约束对象。
+
+        永久/会话编码约束 → CodedHealthConstraint；明确食材禁忌 →
+        ExplicitFoodTabooConstraint（必须携带 taboo_ingredient_id）。
+        无法转换（缺 ingredient_id 的禁忌）时返回空，由 B4 侧 fail-closed 兜底。
+        """
+        from food_agent_v2.b2.schemas import (
+            CodedHealthConstraint,
+            ExplicitFoodTabooConstraint,
+        )
+        out: list[Any] = []
+        if session_id not in self._sessions:
+            return out
+        for c in self._sessions[session_id].effective_constraints:
+            if c.constraint_code:
+                out.append(CodedHealthConstraint(
+                    constraint_code=c.constraint_code,
+                    participant_ref=c.participant_ref,
+                    source_refs=list(c.source_refs or []),
+                    scope=c.scope,
+                ))
+            elif c.taboo_ingredient_name is not None:
+                if c.taboo_ingredient_id is None:
+                    # 明确禁忌缺少标准 ingredient_id → 不生成约束，B4 侧不评估该禁忌
+                    continue
+                out.append(ExplicitFoodTabooConstraint(
+                    taboo_ingredient_id=c.taboo_ingredient_id,
+                    taboo_ingredient_name=c.taboo_ingredient_name,
+                    participant_ref=c.participant_ref,
+                    source_refs=list(c.source_refs or []),
+                    scope=c.scope,
+                ))
+        return out
 
     def check_permanent_constraint_override(
         self, constraint_code: str, action: str,
