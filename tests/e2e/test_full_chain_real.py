@@ -73,16 +73,24 @@ def _redis_events(request_id: str) -> list[dict]:
 
 
 def _qdrant_has_recipe(recipe_id: int) -> int:
-    """Qdrant 是否含该 recipe_id 点。返回命中数。"""
+    """Qdrant 是否含该 recipe_id 点。返回命中数。
+
+    Qdrant 点的 id 就是 recipe_id（index_builder 以 int(recipe_id) 为 PointStruct.id），
+    payload 无 recipe_id 字段（只有 document_id="recipe_XXXX"）。因此按点 id 存在性
+    检查，而非 payload filter（旧实现 filter recipe_id 永远 0 命中 → 误报缺菜）。
+    """
     cfg = load_config().qdrant
-    body = json.dumps({"filter": {"must": [{"key": "recipe_id",
-                                            "match": {"value": recipe_id}}]},
-                       "exact": True}).encode()
-    req = urllib.request.Request(
-        f"http://{cfg.host}:{cfg.rest_port}/collections/{cfg.collection}/points/count",
-        data=body, headers={"Content-Type": "application/json"}, method="POST")
-    with urllib.request.urlopen(req, timeout=15) as resp:
-        return int(json.loads(resp.read())["result"]["count"])
+    try:
+        req = urllib.request.Request(
+            f"http://{cfg.host}:{cfg.rest_port}/collections/{cfg.collection}/points/{recipe_id}")
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read())
+            return 1 if data.get("result") else 0
+    except urllib.error.HTTPError as e:
+        # Qdrant 对不存在的点返回 404；其他错误照常抛出
+        if e.code == 404:
+            return 0
+        raise
 
 
 @pytest.fixture(scope="module")
