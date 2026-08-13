@@ -158,10 +158,15 @@ def _coerce_uuid(value: Any) -> UUID | None:
 # ---- 真实工具实现 ----
 
 def _retrieve_recipes(args: dict, ctx: ToolContext) -> dict:
-    """C1 混合检索。多人场景自动使用多路合并（文档 07 §8.4）。"""
+    """C1 混合检索。多人场景自动使用多路合并（文档 07 §8.4）。
+
+    召回广度：混合检索先广召回再健康筛选（文档 07 §7）。语义向量对"三菜一汤"
+    等结构需求偏向汤类——top_k=20 时 main（主菜）候选常被截断，导致 C2 无法
+    凑满菜数（no_feasible_menu）。默认 top_k 提到 40，保证各类型候选充足。
+    """
     from food_agent_v2.c1 import get_retrieval_service
     query = args.get("query", args.get("search_query", ""))
-    top_k = args.get("top_k", 20)
+    top_k = int(args.get("top_k", 40))
     svc = get_retrieval_service()
 
     # 多人 → 共享查询 + 每参与者口味偏好子查询
