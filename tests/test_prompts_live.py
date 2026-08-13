@@ -78,10 +78,23 @@ def test_query_understanding_meal_plan(client, runner):
 
 
 def test_query_understanding_health_signal(client, runner):
-    """健康信号记录但不判断；合法 QueryPlanArtifact"""
+    """健康信号按 R-002 三前缀格式记录（参与者N:类型:值），且不自行诊断。
+
+    用户明确表达"我有高血压"是本轮新增健康信号（user1 永久档案只有海鲜过敏），
+    必须进入 health_exclusions 供 B2 验证闭环；同时不得把"清淡"等软偏好误判为健康排除。
+    """
+    from food_agent_v2.c3.runner import _parse_health_exclusion
     artifact = _invoke_artifact(client, runner, "query_understanding", _CTX + "## 输入\n我有高血压，推荐清淡的晚餐")
-    assert artifact.health_exclusions == ()  # 不自行诊断
-    print("\n  [OK] 查询理解-健康信号: 未自行诊断")
+    exclusions = list(artifact.health_exclusions or ())
+    assert exclusions, f"用户明确表达的高血压信号应进入 health_exclusions，实际空: {artifact.health_exclusions!r}"
+    # 每个排除项必须是合法三前缀格式，且能被 R-002 解析闭环
+    parsed_types = []
+    for raw in exclusions:
+        parsed = _parse_health_exclusion(raw)
+        parsed_types.append(parsed["type"])
+        assert parsed["participant_ref"] in ("p1",), f"排除项参与者归属错误: {raw!r}"
+    assert "disease" in parsed_types, f"应有疾病类信号，实际: {parsed_types}"
+    print(f"\n  [OK] 查询理解-健康信号: health_exclusions={list(exclusions)} 格式合法且含疾病信号")
 
 
 def test_query_understanding_replace(client, runner):
