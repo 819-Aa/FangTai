@@ -136,11 +136,33 @@ class TestB4HealthEngine:
 class TestB4Invariants:
     """D3 §8: 不变量验证"""
 
-    def test_inv003_no_pending_relations(self, b4_engine):
-        """INV-003: 未审核关系不参与硬排除"""
-        # 关系表由 B1 离线构建，运行时只读
-        # 所有已加载的关系 review_status=approved
-        pass
+    def test_inv003_no_pending_relations(self):
+        """INV-003: 未审核关系（review_status != approved）不参与硬排除。"""
+        from food_agent_v2.b4.repository import HealthDataRepository
+
+        class _FakeSource:
+            def ready_build_id(self) -> str:
+                return "build-x"
+
+            def records(self, artifact_name: str, build_id: str) -> list[dict]:
+                return [
+                    {"constraint_code": "allergy_peanut", "ingredient_id": 277,
+                     "decision": "hard_exclude", "review_status": "approved"},
+                    {"constraint_code": "allergy_peanut", "ingredient_id": 999,
+                     "decision": "hard_exclude", "review_status": "pending"},
+                    {"constraint_code": "allergy_peanut", "ingredient_id": 888,
+                     "decision": "hard_exclude", "review_status": "rejected"},
+                    {"constraint_code": "allergy_peanut", "ingredient_id": 777,
+                     "decision": "no_hard_relation", "review_status": "approved"},
+                ]
+
+        repo = HealthDataRepository(source=_FakeSource())
+        rels = repo.relations("build-x")
+        # 只有 approved hard_exclude 进入硬排除集合
+        assert rels["allergy_peanut"] == {277}
+        assert 999 not in rels["allergy_peanut"]  # pending 排除
+        assert 888 not in rels["allergy_peanut"]  # rejected 排除
+        assert 777 not in rels["allergy_peanut"]  # no_hard_relation 排除
 
     def test_nutrition_not_in_b4_input(self):
         """INV-015: 营养值不进入 B4 输入"""

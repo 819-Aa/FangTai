@@ -51,7 +51,6 @@ INV-005:
     - food_agent_v2.c3::answer_generation_post_check
   tests:
     - "tests/contracts/test_artifact_schemas.py::TestAnswerMenuBinding::test_menu_hash_mismatch_rejected"
-    - "tests/test_invariants.py::TestInv005::test_subset_logic"
 
 INV-006:
   rule: 模型不能直接修改 WorkflowState

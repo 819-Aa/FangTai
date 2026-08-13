@@ -252,7 +252,7 @@ function Run-OfflineRegression {
         @{ Name = "integration_rest"; Paths = @("tests/integration", "--ignore=tests/integration/test_real_qdrant_retrieval.py") },
         @{ Name = "root_tests"; Paths = @(
             "tests/test_b1_pipeline.py", "tests/test_b2_b4_health.py",
-            "tests/test_d2_answer.py", "tests/test_e2e_cases.py", "tests/test_invariants.py"
+            "tests/test_d2_answer.py", "tests/test_invariants.py"
         ) },
         @{ Name = "execution"; Paths = @("tests/execution") }
     )

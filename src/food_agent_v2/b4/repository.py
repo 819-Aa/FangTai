@@ -30,11 +30,16 @@ class HealthDataRepository:
         return self._build_id
 
     def relations(self, build_id: str) -> dict[str, set[int]]:
-        """constraint_code → 硬排除食材 id 集合（仅 approved hard_exclude 决定）。"""
+        """constraint_code → 硬排除食材 id 集合（仅 approved hard_exclude 决定）。
+
+        INV-003：只有 review_status=approved 的 hard_exclude 关系才能触发硬排除；
+        pending/rejected 关系绝不进入硬排除集合。
+        """
         decisions = self._source.records("health_relation_decisions", build_id)
         relations: dict[str, set[int]] = {}
         for decision in decisions:
-            if decision.get("decision") == "hard_exclude":
+            if (decision.get("decision") == "hard_exclude"
+                    and decision.get("review_status") == "approved"):
                 relations.setdefault(decision["constraint_code"], set()).add(
                     int(decision["ingredient_id"])
                 )
