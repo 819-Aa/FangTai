@@ -762,7 +762,10 @@ class WorkflowRunner:
                                   response_format=self._artifact_response_format(policy, role))
 
         if result.get("status") == "failed":
-            err = WorkflowError("MODEL_CALL_FAILED",
+            # error_code 优先：越权（TOOL_PERMISSION_DENIED）等诊断失败保留精确错误码，
+            # 其余模型调用失败统一 MODEL_CALL_FAILED。
+            code = result.get("error_code") or "MODEL_CALL_FAILED"
+            err = WorkflowError(code,
                                 result.get("error") or "模型调用失败",
                                 failed_node=state.current_node)
             return reduce_workflow_state(state, action="fail", error=err), result, None
@@ -1040,11 +1043,12 @@ class WorkflowRunner:
                         },
                     })
                     if name not in allowed_names:
-                        tool_results.append({
-                            "tool": name, "tool_call_id": call_id,
-                            "error": "TOOL_PERMISSION_DENIED",
-                        })
-                        continue
+                        # 越权调用禁用工具 → 立即终止节点（契约 §17.2/§20.2），
+                        # 不继续循环、不追加反馈让模型"改口"。
+                        return {"status": "failed",
+                                "error_code": "TOOL_PERMISSION_DENIED",
+                                "error": f"模型越权调用禁用工具: {name}",
+                                "content": ""}
                     if name in used_tools:
                         tool_results.append({
                             "tool": name, "tool_call_id": call_id,

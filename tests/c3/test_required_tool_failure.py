@@ -324,3 +324,23 @@ class TestRealCallModelFailClosed:
         )
         prompt = llm.system_prompts[0]
         assert "节点完成契约" not in prompt
+
+    def test_forbidden_tool_terminates_node(self) -> None:
+        """越权调用禁用工具 → 立即 TOOL_PERMISSION_DENIED 终止节点，不继续循环。"""
+        from food_agent_v2.c3.state import reduce_workflow_state
+        runner, llm = make_runner([
+            {"content": "", "tool_calls": [
+                {"id": "call-forbidden", "name": "validate_selected_menu_health",
+                 "arguments": {}},
+            ]},
+        ])
+        # health_menu_planning 的 pre_check 需要 QueryPlanArtifact 前置
+        state = reduce_workflow_state(
+            make_state(), action="set_artifact", artifact="query_plan", value={"_ok": 1})
+        # health_menu_planning 的 forbidden_tools 含 validate_selected_menu_health
+        new_state, _raw, _art = runner._run_model_node(
+            state, _FakeC4(), make_ctx(), "health_menu_planning", "hi")
+        assert new_state.status == RequestStatus.FAILED
+        assert new_state.error is not None
+        assert new_state.error.error_code == "TOOL_PERMISSION_DENIED"
+        assert len(llm.calls) == 1  # 越权立即终止，不进入下一轮循环
