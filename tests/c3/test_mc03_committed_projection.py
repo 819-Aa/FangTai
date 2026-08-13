@@ -174,3 +174,42 @@ def test_commit_failure_has_no_success_projection() -> None:
     assert status["error"]["code"] == "AUDIT_COMMIT_FAILED"
     assert status["result_summary"] == {"status": "failed"}
     dispatch.assert_not_called()
+
+
+def test_current_menu_updated_only_on_commit() -> None:
+    """current_menu 只在原子提交成功时更新（失败不留幻影菜单，C4-02 闭环）。"""
+    from types import SimpleNamespace
+    _seed_request()
+    state = _completed_state()
+
+    class _C4WithSessions:
+        def __init__(self):
+            self._sessions = {
+                SID: SimpleNamespace(
+                    current_menu=SimpleNamespace(plan_id="", recipe_ids=[]),
+                    context_manifest=None,
+                )
+            }
+
+        def commit_session_state(self, request_id, status, **kwargs):
+            return None
+
+        def _recompute_manifest(self, ctx):
+            return None
+
+        def _persist_session(self, ctx, token=None):
+            return None
+
+    c4 = _C4WithSessions()
+    runner = WorkflowRunner(build_id="7" * 32, llm=object(), c4=c4)
+
+    with patch.object(d1_api, "_persist_request", lambda request_id: None), \
+            patch("food_agent_v2.application.commit_request_result",
+                  return_value={"committed": True}), \
+            patch("food_agent_v2.application.menu_projection.build_public_menu",
+                  return_value=[]):
+        runner._finalize(state, RID, c4, lock_token="1")
+
+    # 提交成功后 current_menu 更新为 fva 的 plan_id/recipe_ids
+    assert c4._sessions[SID].current_menu.plan_id == PLAN
+    assert c4._sessions[SID].current_menu.recipe_ids == [101, 202]

@@ -467,13 +467,8 @@ class WorkflowRunner:
                 state = reduce_workflow_state(
                     state, action="set_artifact", artifact="final_validation", value=fv)
 
-                c4_ctx = c4._sessions.get(state.shared_context_ref or "")
-                if c4_ctx:
-                    c4_ctx.current_menu.plan_id = plan_id
-                    c4_ctx.current_menu.recipe_ids = recipe_ids
-                    # 核心块（current_menu）变更后同步 manifest，否则投影前完整性校验失败
-                    c4._recompute_manifest(c4_ctx)
-                    c4._persist_session(c4_ctx)
+                # current_menu 不在此写入：菜单只有在原子提交成功后才成为"当前菜单"，
+                # 失败/取消不留幻影（由 _finalize 在 commit 成功后更新）。
                 d1_api.publish_analysis_event(request_id, "menu_decision",
                                               "菜单方案已选定", [])
 
@@ -1423,6 +1418,14 @@ class WorkflowRunner:
                 )
                 # 到这里 Application 的原子事务已经提交，业务结果正式 completed。
                 # D1 只保存同一提交事实的公开投影，供 SSE 中断后的轮询/刷新恢复。
+                # 提交成功后才更新 current_menu：失败/取消绝不遗留幻影菜单（C4-02 闭环）。
+                c4_sessions = getattr(c4, "_sessions", None)
+                c4_ctx = c4_sessions.get(state.shared_context_ref or "") if c4_sessions else None
+                if c4_ctx is not None and isinstance(fva, FinalValidationArtifact):
+                    c4_ctx.current_menu.plan_id = fva.plan_id
+                    c4_ctx.current_menu.recipe_ids = list(fva.recipe_ids)
+                    c4._recompute_manifest(c4_ctx)
+                    c4._persist_session(c4_ctx)
                 if (isinstance(fva, FinalValidationArtifact)
                         and isinstance(ans, AnswerArtifact)):
                     result_summary = self._committed_result_summary(
