@@ -34,7 +34,12 @@ from food_agent_v2.c3.state import (
     reduce_workflow_state,
 )
 from food_agent_v2.c3.tool_handler import ToolContext, ToolHandler
-from food_agent_v2.c4 import ContextService, PermanentConstraintLoadFailed
+from food_agent_v2.c4 import (
+    ContextBudgetExceeded,
+    ContextIntegrityFailed,
+    ContextService,
+    PermanentConstraintLoadFailed,
+)
 from food_agent_v2.contracts.artifacts import (
     AnswerArtifact,
     ArtifactIntegrityError,
@@ -274,6 +279,11 @@ class WorkflowRunner:
             state = self._fail(state, "PERMANENT_CONSTRAINT_LOAD_FAILED", str(exc))
             self._finalize(state, request_id, c4, lock_token)
             return
+        except ContextBudgetExceeded as exc:
+            # 上下文超预算 → 明确失败，不静默删除核心块继续（INV-009 / §9.4）
+            state = self._fail(state, "CONTEXT_BUDGET_EXCEEDED", str(exc))
+            self._finalize(state, request_id, c4, lock_token)
+            return
         state = reduce_workflow_state(
             state, action="set_context_ref", shared_context_ref=ctx.session_id)
 
@@ -461,6 +471,8 @@ class WorkflowRunner:
                 if c4_ctx:
                     c4_ctx.current_menu.plan_id = plan_id
                     c4_ctx.current_menu.recipe_ids = recipe_ids
+                    # 核心块（current_menu）变更后同步 manifest，否则投影前完整性校验失败
+                    c4._recompute_manifest(c4_ctx)
                     c4._persist_session(c4_ctx)
                 d1_api.publish_analysis_event(request_id, "menu_decision",
                                               "菜单方案已选定", [])
@@ -758,7 +770,12 @@ class WorkflowRunner:
         if pre_err:
             return reduce_workflow_state(state, action="fail", error=pre_err), {}, None
 
-        model_ctx = c4.project_model_context(role, handoff, state.shared_context_ref or "")
+        try:
+            model_ctx = c4.project_model_context(role, handoff, state.shared_context_ref or "")
+        except ContextIntegrityFailed as exc:
+            # INV-009：投影前完整性校验失败 → 明确失败，不带着不一致上下文调模型
+            return reduce_workflow_state(state, action="fail", error=WorkflowError(
+                "CONTEXT_INTEGRITY_FAILED", str(exc), failed_node=state.current_node)), {}, None
         pre_count = len(tool_ctx.tool_receipts)
 
         result = self._call_model(role, policy, model_ctx, user_message, tool_ctx,

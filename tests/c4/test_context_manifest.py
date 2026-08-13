@@ -10,6 +10,8 @@ import pytest
 
 from food_agent_v2.c4 import (
     ConstraintScope,
+    ContextBudgetExceeded,
+    ContextIntegrityFailed,
     ContextService,
     ConversationEvent,
     CurrentMenu,
@@ -116,6 +118,34 @@ class TestCompressionCoreHash:
         assert ctx.context_manifest.manifest_hash == core_before
         assert svc.validate_context_integrity(sid)["valid"] is True
 
+    def test_compression_budget_exceeded_raises(self) -> None:
+        """压缩后仍超预算 → 抛 ContextBudgetExceeded，不静默删核心块。"""
+        svc = make_service()
+        sid = uniq("budget")
+        ctx, _manifest = svc.build_shared_context(
+            sid, ["p1"], {"raw_text": "hi"}, {"p1": 1}, request_id="r1")
+        # 大量高 token 事件，使压缩后（摘要 + 最近 20 条）仍超小预算
+        for i in range(250):
+            ctx.conversation_events.append(ConversationEvent(
+                event_id=f"e{i}", session_id=sid, request_id="r1",
+                event_type=EventType.USER_MESSAGE,
+                event_summary=f"第{i}轮" * 20,
+                token_count_estimate=200))
+        ctx.context_manifest.total_token_estimate = 250 * 200
+        with pytest.raises(ContextBudgetExceeded):
+            svc._compress_context(ctx, budget_tokens=100)
+
+    def test_projection_integrity_failed_raises(self) -> None:
+        """投影前完整性校验失败（核心块改动未同步 manifest）→ 抛 ContextIntegrityFailed。"""
+        svc = make_service()
+        sid = uniq("integrity")
+        ctx, _manifest = svc.build_shared_context(
+            sid, ["p1"], {"raw_text": "hi"}, {"p1": 1}, request_id="r1")
+        # 直接改核心块（current_menu）但不同步 manifest → 投影时完整性失败
+        ctx.current_menu = CurrentMenu(plan_id="plan-X", recipe_ids=[9, 9])
+        with pytest.raises(ContextIntegrityFailed):
+            svc.project_model_context("query_understanding", None, sid)
+
 
 class TestFailedRequestNoMemory:
     def test_failed_request_does_not_commit_menu(self) -> None:
@@ -144,6 +174,7 @@ class TestFailedRequestNoMemory:
         ctx, _manifest = svc.build_shared_context(
             sid, ["p1"], {"raw_text": "hi"}, {"p1": 1}, request_id="rp1")
         ctx.current_menu = CurrentMenu(plan_id="plan-C", recipe_ids=[5, 6])
+        svc._recompute_manifest(ctx)  # 核心块变更后同步 manifest
 
         projected = svc.project_model_context("query_understanding", None, sid)
 

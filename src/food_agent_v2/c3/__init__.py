@@ -38,6 +38,7 @@ ERROR_CODES = {
     "FINAL_HEALTH_VALIDATION_FAILED": "最终健康校验未通过",
     "WORKFLOW_RETRY_LIMIT_EXCEEDED": "循环上限耗尽",
     "CONTEXT_INTEGRITY_FAILED": "上下文完整性校验失败",
+    "CONTEXT_BUDGET_EXCEEDED": "上下文压缩后仍超出预算",
     "SENSITIVE_DATA_EXPOSURE": "响应中发现禁止字段",
     "TOOL_EXECUTION_FAILED": "工具执行失败",
     "IDEMPOTENCY_KEY_REUSED": "幂等键冲突",

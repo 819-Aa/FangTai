@@ -138,6 +138,14 @@ class SessionLockLost(Exception):
     """会话锁已失效（过期/被覆盖）；失锁后工具持久化与最终提交必须 fail-closed。"""
 
 
+class ContextBudgetExceeded(Exception):
+    """上下文压缩后仍超出预算（INV-009 / §9.4）：不得静默删除核心块继续。"""
+
+
+class ContextIntegrityFailed(Exception):
+    """角色投影前上下文完整性校验失败（INV-009：核心块哈希/Manifest 不一致）。"""
+
+
 # ---- SharedWorkflowContext ----
 
 @dataclass
@@ -641,6 +649,11 @@ class ContextService:
             manifest.compression_count += 1
             manifest.total_token_estimate = sum(
                 e.token_count_estimate for e in ctx.conversation_events[-30:])
+            # 压缩后仍超预算 → 不得静默删除核心块继续（INV-009 / §9.4）
+            if manifest.total_token_estimate > budget_tokens:
+                ctx.conversation_events = original_events
+                raise ContextBudgetExceeded(
+                    f"上下文压缩后仍超出预算: {manifest.total_token_estimate} > {budget_tokens}")
         return True
 
     @staticmethod
@@ -675,6 +688,12 @@ class ContextService:
         ctx = self._sessions.get(shared_context_ref)
         if not ctx:
             raise ValueError(f"Unknown shared_context_ref: {shared_context_ref}")
+
+        # INV-009：每个角色投影前强制校验上下文完整性（核心块哈希/Manifest 一致）
+        integrity = self.validate_context_integrity(shared_context_ref)
+        if not integrity.get("valid", False):
+            raise ContextIntegrityFailed(
+                f"投影前上下文完整性校验失败: {integrity.get('reason', 'core mismatch')}")
 
         rules = ROLE_PROJECTION_RULES.get(role, ROLE_PROJECTION_RULES["query_understanding"])
 
