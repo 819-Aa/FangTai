@@ -354,14 +354,18 @@ class TestExtendedFailureMatrix:
             raise AssertionError("答案改菜必须被拒绝（INV-005）")
 
     def test_model_missing_required_tools_fails_closed(self) -> None:
-        """模型漏调必需工具 → post_check 拒绝，不发成功事件。"""
+        """模型漏调必需工具 → post_check 拒绝，不发成功事件。
+
+        用 menu_decision（必需 validate_selected_menu_health）验证：检索已改可选，
+        query_understanding 无必需工具，安全工具的必需性由 menu_decision 覆盖。
+        """
 
         from food_agent_v2.c3 import ROLE_POLICIES, NodeValidator
         from food_agent_v2.c3.state import WorkflowState
-        policy = ROLE_POLICIES["query_understanding"]
+        policy = ROLE_POLICIES["menu_decision"]
         state = WorkflowState(request_id=str(uuid.uuid4()),
-                              build_id="2" * 32, current_node="query_understanding")
-        # 空回执：必需工具（retrieve_recipes）缺失 → TOOL_EXECUTION_FAILED
+                              build_id="2" * 32, current_node="menu_decision")
+        # 空回执：必需工具（validate_selected_menu_health）缺失 → REQUIRED_TOOL_NOT_CALLED
         err = NodeValidator.post_check(state, policy, {}, [])
         assert err is not None
         assert err.error_code == "REQUIRED_TOOL_NOT_CALLED"
