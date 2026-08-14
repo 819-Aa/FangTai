@@ -26,6 +26,7 @@ class RequestStatus(StrEnum):
 class SSEEventType(StrEnum):
     HEARTBEAT = "heartbeat"
     REQUEST_ACCEPTED = "request_accepted"
+    ANSWER_STARTED = "answer_started"
     ANALYSIS_READY = "analysis_ready"
     ANSWER_READY = "answer_ready"
     CLARIFICATION_NEEDED = "clarification_needed"

@@ -69,3 +69,26 @@ class PerfTrace:
 
     def log_line(self) -> str:
         return f"[V2][perf] {json.dumps(self.to_dict(), ensure_ascii=False)}"
+
+
+class PerformanceBudget:
+    """请求级单调时钟预算（L2）：限制外部调用与可选增强，不耗尽主链预算。
+
+    用单调时钟（perf_counter）记录剩余时间；require 用于必需阶段，allow_optional
+    用于可选增强（如 NarrativePolisher 需 ≥2.5s 剩余才启用）。
+    """
+
+    def __init__(self, total_seconds: float) -> None:
+        self._start = time.perf_counter()
+        self._total = float(total_seconds)
+
+    def remaining_seconds(self) -> float:
+        return max(0.0, self._total - (time.perf_counter() - self._start))
+
+    def require(self, stage: str) -> bool:
+        """必需阶段是否还有剩余预算；超限返回 False。"""
+        return self.remaining_seconds() > 0
+
+    def allow_optional(self, seconds: float) -> bool:
+        """可选增强是否有足够剩余预算（如润色需 ≥2.5s）。"""
+        return self.remaining_seconds() >= float(seconds)

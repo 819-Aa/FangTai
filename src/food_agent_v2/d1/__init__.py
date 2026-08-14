@@ -403,6 +403,15 @@ class RecommendationAPI:
             return
         self._emit_event(request_id, SSEEventType.CLARIFICATION_NEEDED, payload)
 
+    def publish_answer_started(self, request_id: str) -> None:
+        """发布 answer_started（不承诺菜单的开场，用于首 Token 计时）。
+
+        只代表请求已开始处理，不代表菜单已生成或校验通过。
+        """
+        self._emit_event(request_id, SSEEventType.ANSWER_STARTED, {
+            "request_id": request_id,
+        })
+
     def publish_analysis_event(self, request_id: str, stage: str,
                                summary: str, evidence_refs: list[str]) -> None:
         """C3 通过此接口发布阶段分析事件（payload 为原始 stage/summary/evidence_refs）。"""

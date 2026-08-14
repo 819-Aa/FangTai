@@ -161,6 +161,8 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
 
         d1_api.publish_analysis_event(request_id, "context_ready",
                                       f"已理解{len(participant_refs)}位参与者的需求", [])
+        # answer_started：尽早发送不承诺菜单的开场（首 Token 计时，L2）
+        d1_api.publish_answer_started(request_id)
         state = reduce_workflow_state(state, action="context_building", manifest_valid=True)
         self._trace.mark_node_end(NodeType.CONTEXT_BUILDING.value)
         return state, True

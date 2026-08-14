@@ -61,6 +61,38 @@ def load_cases(path: str) -> list[dict]:
         return json.load(f)
 
 
+def measure_turn(event_stream):
+    """消费 SSE 事件流（(event_name, elapsed_ms) 序列），返回双 TTFT。
+
+    visible_ttft_ms = 首个 answer_started；authoritative_ttft_ms = 首个 answer_ready。
+    """
+    visible_ttft_ms = None
+    authoritative_ttft_ms = None
+    for name, ts_ms in event_stream:
+        if name == "answer_started" and visible_ttft_ms is None:
+            visible_ttft_ms = ts_ms
+        if name == "answer_ready" and authoritative_ttft_ms is None:
+            authoritative_ttft_ms = ts_ms
+    return {"visible_ttft_ms": visible_ttft_ms,
+            "authoritative_ttft_ms": authoritative_ttft_ms}
+
+
+def evaluate_turn(status, visible_ttft_ms, authoritative_ttft_ms, e2e_ms):
+    """判定单轮性能是否通过；业务失败不计通过。"""
+    return {
+        "passed": status == "completed",
+        "status": status,
+        "visible_ttft_ms": visible_ttft_ms,
+        "authoritative_ttft_ms": authoritative_ttft_ms,
+        "e2e_ms": e2e_ms,
+    }
+
+
+def multi_turn_average(turn_times):
+    """同一测试会话各轮 e2e 的算术平均。"""
+    return sum(turn_times) / len(turn_times) if turn_times else 0.0
+
+
 def participants_for(messages: list[str]) -> list[dict]:
     """从用例文本粗判参与人数（P1 基线；精确多人映射留到 P7 正式验收）。
 
