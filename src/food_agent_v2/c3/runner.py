@@ -1322,13 +1322,9 @@ class WorkflowRunner:
         """检查 D1 cancel 是否设置了 Redis 取消标记（文档 §15：节点边界检查）。"""
         try:
             from food_agent_v2.c4.redis_store import RedisSessionStore
-            store = RedisSessionStore()
-            store._connect()
-            if store._client:
-                return bool(store._client.get(f"v2:cancel:{request_id}"))
+            return RedisSessionStore().is_request_cancelled(request_id)
         except Exception:
-            pass
-        return False
+            return False
 
     def _finalize(self, state: WorkflowState, request_id: str,
                   c4: ContextService, lock_token: str | None = None) -> None:

@@ -97,6 +97,19 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
         )
         return qp.model_copy(update={"content_hash": self._content_hash(qp)})
 
+    def _guard_active(self, state, c4, session_id, lock_token, lost):
+        """取消/失锁统一门卫：返回终态 state（若触发）或 None（继续）。
+
+        在确定性链路的每个阶段边界与原子提交前调用；取消后不得再调用成功工具
+        或提交菜单/回答，失锁（fencing token 过期）返回精确 SESSION_LOCK_LOST。
+        """
+        if self._is_cancelled(state.request_id):
+            return reduce_workflow_state(
+                state, action="set_status", status=RequestStatus.CANCELLED)
+        if lost.is_set() or not self._session_lock_held(c4, session_id, lock_token):
+            return self._fail(state, "SESSION_LOCK_LOST", "会话锁已失效")
+        return None
+
     # ---- context_building（首次推荐与约束追加共用）----
 
     def _build_context(self, state, tool_ctx, message, participant_refs,
@@ -137,7 +150,7 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
     # ---- 公共：从已生成的 feasible_menus 到终态 state ----
 
     def _select_validate_answer(self, state, tool_ctx, plans, request_id,
-                                participant_refs):
+                                participant_refs, c4, session_id, lock_token, lost):
         """选优 → 最终校验 → MenuDecision → 确定性回答 → 回执 → 终态 state。"""
         handler = ToolHandler(tool_ctx)
 
@@ -148,6 +161,9 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
         self._trace.mark_node_end(NodeType.HEALTH_MENU_PLANNING.value)
 
         # 确定性选优 + 最终校验
+        guard = self._guard_active(state, c4, session_id, lock_token, lost)
+        if guard is not None:
+            return guard
         self._trace.mark_node_start(NodeType.MENU_DECISION.value)
         tool_ctx.node_id = self._NODE_DECISION
         best = max(plans, key=lambda p: getattr(p, "total_score", 0.0))
@@ -200,6 +216,10 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
             state, action="record_receipts",
             receipts=self._as_authoritative_receipts(tool_ctx.tool_receipts))
         state = reduce_workflow_state(state, action="unified_review", status="PASS")
+        # 提交前最后门卫：取消/失锁后不得提交菜单或回答
+        guard = self._guard_active(state, c4, session_id, lock_token, lost)
+        if guard is not None:
+            return guard
         state = reduce_workflow_state(state, action="atomic_commit")
         return state
 
@@ -225,7 +245,7 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
         # 约束追加（P5）：已有前文菜单 → 确定性 delta（最小修改）。
         if self._has_current_menu(c4, session_id):
             self._run_add_constraint_delta(request_id, session_id, message,
-                                           participants, config, c4, lock_token)
+                                           participants, config, c4, lock_token, lost)
             return
 
         # 首次推荐（P4）。
@@ -248,11 +268,12 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
 
         state = self._deterministic_chain(
             state, tool_ctx, intent, request_id, session_id, participant_refs,
-            user_id_mapping, c4)
+            user_id_mapping, c4, lock_token, lost)
         self._finalize(state, request_id, c4, lock_token)
 
     def _deterministic_chain(self, state, tool_ctx, intent, request_id,
-                             session_id, participant_refs, user_id_mapping, c4):
+                             session_id, participant_refs, user_id_mapping, c4,
+                             lock_token, lost):
         handler = ToolHandler(tool_ctx)
 
         # 1. QueryPlanArtifact（确定性意图 → 结构化查询计划）
@@ -273,6 +294,9 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
         self._trace.mark_node_end(NodeType.QUERY_UNDERSTANDING.value)
 
         # 2. 检索
+        guard = self._guard_active(state, c4, session_id, lock_token, lost)
+        if guard is not None:
+            return guard
         tool_ctx.node_id = self._NODE_RETRIEVE
         handler.execute("retrieve_recipes", {"query": intent.query, "top_k": 40})
         retrieval = tool_ctx.previous_results.get("retrieval")
@@ -281,6 +305,9 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
             return self._fail(state, "CANDIDATES_REQUIRED", "检索无候选")
 
         # 3. 健康审查
+        guard = self._guard_active(state, c4, session_id, lock_token, lost)
+        if guard is not None:
+            return guard
         self._trace.mark_node_start(NodeType.HEALTH_MENU_PLANNING.value)
         tool_ctx.node_id = self._NODE_HEALTH
         eval_result = handler.execute("evaluate_recipe_health", {"recipe_ids": candidate_ids})
@@ -299,6 +326,9 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
                                       "健康审查完成", [])
 
         # 4. 生成可行菜单
+        guard = self._guard_active(state, c4, session_id, lock_token, lost)
+        if guard is not None:
+            return guard
         gen = handler.execute("generate_feasible_menus",
                               {"safe_recipe_ids": safe_ids,
                                "dish_count": qp.dish_count_requested})
@@ -315,12 +345,13 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
 
         # 5. 选优 + 校验 + 回答 + 提交（公共 helper）
         return self._select_validate_answer(
-            state, tool_ctx, plans, request_id, participant_refs)
+            state, tool_ctx, plans, request_id, participant_refs,
+            c4, session_id, lock_token, lost)
 
     # ---- P5：约束追加（在已有菜单上最小修改）----
 
     def _run_add_constraint_delta(self, request_id, session_id, message,
-                                  participants, config, c4, lock_token):
+                                  participants, config, c4, lock_token, lost):
         build_id = self._resolve_build_id()
         participant_refs = [p["participant_ref"] for p in participants]
         user_id_mapping = {p["participant_ref"]: int(p["user_id"]) for p in participants}
@@ -360,13 +391,17 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
             # 无前文菜单（理论上不会，因 _has_current_menu 已判断）→ 降级首次推荐
             state = self._deterministic_chain(
                 state, tool_ctx, intent, request_id, session_id, participant_refs,
-                user_id_mapping, c4)
+                user_id_mapping, c4, lock_token, lost)
             self._finalize(state, request_id, c4, lock_token)
             return
 
         handler = ToolHandler(tool_ctx)
 
         # 3. 检索补充候选（替换违规菜的来源）
+        guard = self._guard_active(state, c4, session_id, lock_token, lost)
+        if guard is not None:
+            self._finalize(guard, request_id, c4, lock_token)
+            return
         tool_ctx.node_id = self._NODE_RETRIEVE
         handler.execute("retrieve_recipes", {"query": intent.query, "top_k": 40})
         retrieval = tool_ctx.previous_results.get("retrieval")
@@ -375,6 +410,10 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
                                                     if r not in current_ids]))
 
         # 4. 一次性审查（当前菜 + 补充候选），用追加后的约束
+        guard = self._guard_active(state, c4, session_id, lock_token, lost)
+        if guard is not None:
+            self._finalize(guard, request_id, c4, lock_token)
+            return
         self._trace.mark_node_start(NodeType.HEALTH_MENU_PLANNING.value)
         tool_ctx.node_id = self._NODE_HEALTH
         eval_result = handler.execute("evaluate_recipe_health", {"recipe_ids": all_ids})
@@ -400,6 +439,10 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
                                       "健康审查完成", [])
 
         # 6. 生成新菜单（锁定安全当前菜，补足/替换违规菜）
+        guard = self._guard_active(state, c4, session_id, lock_token, lost)
+        if guard is not None:
+            self._finalize(guard, request_id, c4, lock_token)
+            return
         gen = handler.execute("generate_feasible_menus", {
             "safe_recipe_ids": safe_ids,
             "dish_count": len(current_ids),
@@ -420,5 +463,6 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
 
         # 7. 选优 + 校验 + 回答 + 提交（公共 helper）
         state = self._select_validate_answer(
-            state, tool_ctx, plans, request_id, participant_refs)
+            state, tool_ctx, plans, request_id, participant_refs,
+            c4, session_id, lock_token, lost)
         self._finalize(state, request_id, c4, lock_token)

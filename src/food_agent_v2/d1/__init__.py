@@ -354,10 +354,7 @@ class RecommendationAPI:
         # 取消标记：工作流在节点边界检查（TTL 1h）
         try:
             from food_agent_v2.c4.redis_store import RedisSessionStore
-            store = RedisSessionStore()
-            store._connect()
-            if store._client:
-                store._client.set(f"v2:cancel:{request_id}", "1", ex=3600)
+            RedisSessionStore().mark_request_cancelled(request_id)
         except Exception:
             pass
 

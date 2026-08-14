@@ -254,3 +254,18 @@ class RedisSessionStore:
             return False  # 无 Redis → 视为未持有（不得放行提交）
         current = self._client.get(key)
         return current is not None and str(current) == str(token)
+
+    # ---- 请求取消标记 ----
+
+    def mark_request_cancelled(self, request_id: str, ttl_seconds: int = 3600) -> None:
+        """设置请求取消标记（TTL 默认 1h）；Redis 不可用时静默（内存仍走取消终态）。"""
+        self._connect()
+        if self._client is not None:
+            self._client.set(self._key("cancel", request_id), "1", ex=ttl_seconds)
+
+    def is_request_cancelled(self, request_id: str) -> bool:
+        """读取请求取消标记；Redis 不可用返回 False（不阻止推进，交由上层决定）。"""
+        self._connect()
+        if self._client is not None:
+            return bool(self._client.get(self._key("cancel", request_id)))
+        return False
