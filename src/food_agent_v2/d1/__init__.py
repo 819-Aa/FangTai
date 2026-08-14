@@ -515,9 +515,9 @@ class RecommendationAPI:
                 req = self._requests.get(request_id)
                 if not req:
                     return
-                # WORKFLOW_MODE=fast_path → 确定性主编排；默认 legacy 五模型主链。
-                # 快速路径通过完整验收后才切默认（设计文档 §11 迁移回滚）。
-                if os.environ.get("WORKFLOW_MODE", "legacy") == "fast_path":
+                # WORKFLOW_MODE=fast_path → 确定性主编排（默认）；legacy 为回滚开关。
+                # 快速路径已通过 L0-L3 功能与性能门禁（reports/2026-08-14-*.md）。
+                if os.environ.get("WORKFLOW_MODE", "fast_path") == "fast_path":
                     from food_agent_v2.c3.orchestrator import (
                         DeterministicRecommendationOrchestrator,
                     )
