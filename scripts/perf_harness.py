@@ -117,6 +117,47 @@ def participants_for(messages: list[str]) -> list[dict]:
     return [{"participant_ref": "p1"}]
 
 
+def run_turn(api: str, payload: dict, max_wait: int) -> dict:
+    """POST 后订阅 SSE 记录双 TTFT，同时轮询终态（真实消费 SSE，非仅轮询）。"""
+    import threading
+
+    t0 = time.perf_counter()
+    resp = _post(api, payload)
+    rid = resp["request_id"]
+    ttft = {"visible": None, "authoritative": None}
+
+    def _consume_sse():
+        req = urllib.request.Request(
+            f"{api}/v1/recommendation-requests/{rid}/events",
+            headers={"Accept": "text/event-stream"})
+        try:
+            with urllib.request.urlopen(req, timeout=max_wait) as stream:
+                for raw in stream:
+                    line = raw.decode(errors="ignore").strip()
+                    if line.startswith("event:"):
+                        name = line.split(":", 1)[1].strip()
+                        ts_ms = round((time.perf_counter() - t0) * 1000, 1)
+                        if name == "answer_started" and ttft["visible"] is None:
+                            ttft["visible"] = ts_ms
+                        elif name == "answer_ready" and ttft["authoritative"] is None:
+                            ttft["authoritative"] = ts_ms
+        except Exception:
+            pass
+
+    thread = threading.Thread(target=_consume_sse, daemon=True)
+    thread.start()
+    result = _wait_terminal(api, rid, max_wait)
+    e2e_ms = round((time.perf_counter() - t0) * 1000, 1)
+    return {
+        "request_id": rid,
+        "status": result.get("status"),
+        "e2e_ms": e2e_ms,
+        "visible_ttft_ms": ttft["visible"],
+        "authoritative_ttft_ms": ttft["authoritative"],
+        "session_id": result.get("session_id", ""),
+    }
+
+
 def run_case(api: str, case: dict, max_wait: int) -> dict:
     turns = []
     session_id = None
@@ -130,17 +171,9 @@ def run_case(api: str, case: dict, max_wait: int) -> dict:
         }
         if session_id:
             payload["session_id"] = session_id
-        t0 = time.perf_counter()
-        resp = _post(api, payload)
-        rid = resp["request_id"]
-        result = _wait_terminal(api, rid, max_wait)
-        e2e_ms = round((time.perf_counter() - t0) * 1000, 1)
-        session_id = result.get("session_id", session_id)
-        turns.append({
-            "request_id": rid,
-            "status": result.get("status"),
-            "e2e_ms": e2e_ms,
-        })
+        turn = run_turn(api, payload, max_wait)
+        session_id = turn.get("session_id") or session_id
+        turns.append(turn)
     return {"case_id": case["id"], "turn_count": case["turn_count"], "turns": turns}
 
 
