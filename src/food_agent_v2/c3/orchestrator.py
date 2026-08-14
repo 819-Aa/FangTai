@@ -184,7 +184,9 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
             return guard
         self._trace.mark_node_start(NodeType.MENU_DECISION.value)
         tool_ctx.node_id = self._NODE_DECISION
-        best = max(plans, key=lambda p: getattr(p, "total_score", 0.0))
+        best = sorted(
+            plans, key=lambda p: (-getattr(p, "total_score", 0.0),
+                                  getattr(p, "plan_id", "")))[0]
         handler.execute("validate_selected_menu_health",
                         {"plan_id": best.plan_id, "recipe_ids": list(best.recipe_ids)})
         fv = tool_ctx.previous_results.get("final_validation")
@@ -369,6 +371,9 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
         gen = handler.execute("generate_feasible_menus",
                               {"safe_recipe_ids": safe_ids,
                                "dish_count": qp.dish_count_requested})
+        if isinstance(gen, dict) and "error" in gen:
+            return self._fail(state, "TOOL_EXECUTION_FAILED",
+                              f"菜单生成失败: {gen['error']}")
         plans = tool_ctx.previous_results.get("feasible_menus", [])
         if not plans:
             note = gen.get("note") if isinstance(gen, dict) else None
@@ -493,6 +498,11 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
             "locked_recipe_ids": locked,
             "rejected_recipe_ids": rejected,
         })
+        if isinstance(gen, dict) and "error" in gen:
+            self._finalize(self._fail(state, "TOOL_EXECUTION_FAILED",
+                                      f"菜单生成失败: {gen['error']}"),
+                           request_id, c4, lock_token)
+            return
         plans = tool_ctx.previous_results.get("feasible_menus", [])
         if not plans:
             note = gen.get("note") if isinstance(gen, dict) else None

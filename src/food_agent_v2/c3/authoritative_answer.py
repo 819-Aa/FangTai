@@ -26,6 +26,15 @@ def _content_hash(answer: AnswerArtifact) -> str:
     return canonical_json_hash(payload)
 
 
+def compute_changes(previous, current):
+    """计算菜单变更的精确 recipe_id 差异，返回 (removed, added)。"""
+    prev = set(int(r) for r in (previous or ()))
+    curr = set(int(r) for r in (current or ()))
+    removed = tuple(sorted(prev - curr))
+    added = tuple(sorted(curr - prev))
+    return removed, added
+
+
 class AuthoritativeAnswerBuilder:
     """确定性回答构建器：直接消费已通过最终校验的菜单身份。"""
 
@@ -35,6 +44,7 @@ class AuthoritativeAnswerBuilder:
         final: FinalValidationArtifact,
         build_id: str,
         time_note: str = "",
+        previous_recipe_ids: tuple[int, ...] | None = None,
     ) -> AnswerArtifact:
         menu_items = build_public_menu(list(final.recipe_ids), build_id)
         names = [it["name"] for it in menu_items]
@@ -44,6 +54,16 @@ class AuthoritativeAnswerBuilder:
         reasoning_summary = (
             "菜品已结合当前参与者的饮食约束与健康审查结果筛选，"
             "并兼顾口味与菜式多样化。")
+        if previous_recipe_ids is not None:
+            removed, added = compute_changes(previous_recipe_ids, final.recipe_ids)
+            if removed or added:
+                parts = []
+                if removed:
+                    parts.append(f"移除 {len(removed)} 道不再满足约束的菜")
+                if added:
+                    parts.append(f"新增 {len(added)} 道符合约束的菜")
+                reasoning_summary = (
+                    "已按新增约束最小调整：" + "，".join(parts) + "，其余保持不变。")
         content = AnswerContent(
             conclusion=conclusion,
             menu_summary=menu_summary,
