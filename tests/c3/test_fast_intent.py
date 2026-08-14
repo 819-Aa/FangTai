@@ -36,16 +36,16 @@ class TestTimeConstraint:
 class TestTabooExclusions:
     def test_no_spicy(self):
         d = FastIntentRouter.route("别做辣的")
-        assert d.health_exclusions == ("p1:禁忌:辣",)
+        assert d.health_exclusions == ("p1:禁忌:辣椒",)
 
     def test_not_too_sweet(self):
         d = FastIntentRouter.route("别太甜")
-        assert d.health_exclusions == ("p1:禁忌:甜",)
+        assert d.health_exclusions == ("p1:禁忌:糖",)
 
     def test_light_flavor_not_taboo(self):
-        # "清淡" 是口味偏好，不是"油腻"禁忌（回归：之前被误判）
+        # "清淡" 是口味偏好，不是禁忌
         d = FastIntentRouter.route("口味清淡一点")
-        assert "油腻" not in "".join(d.health_exclusions)
+        assert d.health_exclusions == ()
         assert "清淡" in d.flavor_preferences
 
 

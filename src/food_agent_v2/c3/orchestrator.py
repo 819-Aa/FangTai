@@ -1,14 +1,16 @@
-"""C3 确定性主编排器（P4）—— 直接连接 C1/B2/B4/C2，替代五模型在线主链。
+"""C3 确定性主编排器（P4/P5）—— 直接连接 C1/B2/B4/C2，替代五模型在线主链。
 
-继承 WorkflowRunner 复用：会话锁接线、context_building、_finalize 提交、
-_build_dual_artifacts、R-002 临时约束闭环与 P1 性能观测。仅 override
-``_run_locked``，把五模型 while 循环替换为确定性链路：
+继承 WorkflowRunner 复用：会话锁接线、_finalize 提交、_build_dual_artifacts、
+R-002 临时约束闭环与 P1 性能观测。仅 override ``_run_locked``：
 
-    FastIntentRouter → retrieve → evaluate_recipe_health → generate_feasible_menus
-    → 确定性选优 → validate_selected_menu_health → AuthoritativeAnswerBuilder
+首次推荐（无前文菜单）：
+    FastIntentRouter → retrieve → evaluate → generate → 选优 → validate → answer
 
-健康与菜单校验完整保留，但不再由模型决定是否执行。多轮 delta（replace/reject）
-在 P5 落地前 fallback 到 legacy 五模型链路（super()._run_locked）。
+约束追加（有前文菜单，P5）：
+    FastIntentRouter → store 临时约束 → retrieve 补充 → evaluate(当前+补充)
+    → generate(locked=安全当前菜) → 选优 → validate → answer
+
+replace/reject 在 P5 第一版仍 fallback legacy（公开用例 0 次）。
 """
 
 from __future__ import annotations
@@ -53,7 +55,7 @@ _GENERATE_TERMINAL = {
 
 
 class DeterministicRecommendationOrchestrator(WorkflowRunner):
-    """确定性主编排器：单轮首次推荐走确定性链路，多轮 delta fallback legacy。"""
+    """确定性主编排器：首次推荐 + 约束追加走确定性链路，replace/reject fallback。"""
 
     #: 确定性链路中各工具调用的语义节点（回执 node_id，非空即可，供审计信封）。
     _NODE_RETRIEVE = NodeType.QUERY_UNDERSTANDING.value
@@ -95,51 +97,18 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
         )
         return qp.model_copy(update={"content_hash": self._content_hash(qp)})
 
-    def _run_locked(self, request_id: str, session_id: str,
-                    message: str, participants: list[dict],
-                    config: dict | None, c4: ContextService,
-                    lock_token: str, lost: Any) -> None:
-        if self._trace is None:
-            self._trace = PerfTrace(request_id=request_id)
+    # ---- context_building（首次推荐与约束追加共用）----
 
-        participant_refs = [p["participant_ref"] for p in participants]
-
-        # 多轮（session 已有前文已提交菜单）或 replace/reject 意图，在 P5 落地前
-        # fallback legacy 五模型主链——确定性链路不保留前文菜单，不能安全处理追加。
-        intent = FastIntentRouter.route(
-            message, participant_refs[0] if participant_refs else "p1")
-        if intent.intent in ("replace", "reject_plan") or self._has_current_menu(c4, session_id):
-            super()._run_locked(request_id, session_id, message, participants,
-                                config, c4, lock_token, lost)
-            return
-
-        build_id = self._resolve_build_id()
-        user_id_mapping = {p["participant_ref"]: int(p["user_id"]) for p in participants}
-
-        state = WorkflowState(
-            request_id=request_id,
-            build_id=build_id,
-            status=RequestStatus.RUNNING,
-            participant_refs=participant_refs,
-        )
-        tool_ctx = ToolContext(
-            request_id=request_id,
-            build_id=build_id,
-            participant_user_mapping=user_id_mapping,
-            session_id=session_id,
-            context_service=c4,
-        )
-
-        # === context_building（复用 legacy 逻辑）===
+    def _build_context(self, state, tool_ctx, message, participant_refs,
+                       user_id_mapping, request_id, session_id, build_id, c4):
+        """返回 (state, ok)；ok=False 时 state 已终态，调用方 finalize。"""
         state = self._enter_node(state, tool_ctx, NodeType.CONTEXT_BUILDING)
         self._trace.mark_node_start(NodeType.CONTEXT_BUILDING.value)
 
         _injection = detect_untrusted_instruction(message)
         if _injection:
-            state = self._fail(state, "UNTRUSTED_INSTRUCTION_DETECTED",
-                               f"检测到指令注入: {_injection}")
-            self._finalize(state, request_id, c4, lock_token)
-            return
+            return self._fail(state, "UNTRUSTED_INSTRUCTION_DETECTED",
+                              f"检测到指令注入: {_injection}"), False
 
         try:
             ctx, _manifest = c4.build_shared_context(
@@ -148,29 +117,135 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
                 user_id_mapping, request_id=request_id, build_id=build_id,
             )
         except PermanentConstraintLoadFailed as exc:
-            state = self._fail(state, "PERMANENT_CONSTRAINT_LOAD_FAILED", str(exc))
-            self._finalize(state, request_id, c4, lock_token)
-            return
+            return self._fail(state, "PERMANENT_CONSTRAINT_LOAD_FAILED", str(exc)), False
         except ContextBudgetExceeded as exc:
-            state = self._fail(state, "CONTEXT_BUDGET_EXCEEDED", str(exc))
-            self._finalize(state, request_id, c4, lock_token)
-            return
+            return self._fail(state, "CONTEXT_BUDGET_EXCEEDED", str(exc)), False
         state = reduce_workflow_state(
             state, action="set_context_ref", shared_context_ref=ctx.session_id)
 
         integrity = c4.validate_context_integrity(state.shared_context_ref)
         if not integrity.get("valid", False):
-            state = self._fail(state, "CONTEXT_INTEGRITY_FAILED",
-                               f"上下文完整性校验失败: {integrity.get('reason', 'core mismatch')}")
+            return self._fail(state, "CONTEXT_INTEGRITY_FAILED",
+                              f"上下文完整性校验失败: {integrity.get('reason', 'core mismatch')}"), False
+
+        d1_api.publish_analysis_event(request_id, "context_ready",
+                                      f"已理解{len(participant_refs)}位参与者的需求", [])
+        state = reduce_workflow_state(state, action="context_building", manifest_valid=True)
+        self._trace.mark_node_end(NodeType.CONTEXT_BUILDING.value)
+        return state, True
+
+    # ---- 公共：从已生成的 feasible_menus 到终态 state ----
+
+    def _select_validate_answer(self, state, tool_ctx, plans, request_id,
+                                participant_refs):
+        """选优 → 最终校验 → MenuDecision → 确定性回答 → 回执 → 终态 state。"""
+        handler = ToolHandler(tool_ctx)
+
+        # 构建双 Artifact（HealthEvaluationArtifact + FeasibleMenuArtifact）
+        state, feasible_artifact = self._build_dual_artifacts(state, tool_ctx)
+        if state.is_terminal():
+            return state
+        self._trace.mark_node_end(NodeType.HEALTH_MENU_PLANNING.value)
+
+        # 确定性选优 + 最终校验
+        self._trace.mark_node_start(NodeType.MENU_DECISION.value)
+        tool_ctx.node_id = self._NODE_DECISION
+        best = max(plans, key=lambda p: getattr(p, "total_score", 0.0))
+        handler.execute("validate_selected_menu_health",
+                        {"plan_id": best.plan_id, "recipe_ids": list(best.recipe_ids)})
+        fv = tool_ctx.previous_results.get("final_validation")
+        if not isinstance(fv, FinalValidationArtifact):
+            return self._fail(state, "FINAL_HEALTH_VALIDATION_FAILED",
+                              "缺少 B4 最终健康校验结果")
+        if fv.status != "PASS":
+            return self._fail(state, "FINAL_HEALTH_VALIDATION_FAILED",
+                              f"最终校验 verdict: {fv.status}")
+
+        # MenuDecisionArtifact（确定性选优，绑定可行方案与最终校验）
+        md = MenuDecisionArtifact(
+            artifact_id=uuid.uuid4(),
+            request_id=UUID(request_id),
+            plan_id=fv.plan_id,
+            recipe_ids=tuple(fv.recipe_ids),
+            menu_hash=fv.menu_hash,
+            feasible_menu_artifact_ref=str(feasible_artifact.artifact_id),
+            final_validation_ref=str(fv.artifact_id),
+            participant_refs=tuple(participant_refs),
+            content_hash="0" * 64,
+        )
+        md = md.model_copy(update={"content_hash": self._content_hash(md)})
+        self._trace.mark_node_end(NodeType.MENU_DECISION.value)
+
+        # 确定性回答 + ReviewArtifact(PASS)
+        self._trace.mark_node_start(NodeType.ANSWER_GENERATION.value)
+        answer = AuthoritativeAnswerBuilder.build(md, fv, state.build_id)
+        self._trace.mark_node_end(NodeType.ANSWER_GENERATION.value)
+        rv = ReviewArtifact(
+            artifact_id=uuid.uuid4(),
+            request_id=UUID(request_id),
+            status="PASS",
+            content_hash="0" * 64,
+        )
+
+        state = reduce_workflow_state(
+            state, action="set_artifact", artifact="menu_decision", value=md)
+        state = reduce_workflow_state(
+            state, action="set_artifact", artifact="final_validation", value=fv)
+        state = reduce_workflow_state(
+            state, action="set_artifact", artifact="answer", value=answer)
+        state = reduce_workflow_state(
+            state, action="set_artifact", artifact="review", value=rv)
+        # 记录工具回执（审计信封要求 tool_receipt_refs 与 tool_input_output_hashes 非空对应）
+        state = reduce_workflow_state(
+            state, action="record_receipts",
+            receipts=self._as_authoritative_receipts(tool_ctx.tool_receipts))
+        state = reduce_workflow_state(state, action="unified_review", status="PASS")
+        state = reduce_workflow_state(state, action="atomic_commit")
+        return state
+
+    # ---- 入口 ----
+
+    def _run_locked(self, request_id: str, session_id: str,
+                    message: str, participants: list[dict],
+                    config: dict | None, c4: ContextService,
+                    lock_token: str, lost: Any) -> None:
+        if self._trace is None:
+            self._trace = PerfTrace(request_id=request_id)
+
+        participant_refs = [p["participant_ref"] for p in participants]
+        intent = FastIntentRouter.route(
+            message, participant_refs[0] if participant_refs else "p1")
+
+        # replace/reject 在 P5 第一版仍 fallback legacy（公开用例 0 次）。
+        if intent.intent in ("replace", "reject_plan"):
+            super()._run_locked(request_id, session_id, message, participants,
+                                config, c4, lock_token, lost)
+            return
+
+        # 约束追加（P5）：已有前文菜单 → 确定性 delta（最小修改）。
+        if self._has_current_menu(c4, session_id):
+            self._run_add_constraint_delta(request_id, session_id, message,
+                                           participants, config, c4, lock_token)
+            return
+
+        # 首次推荐（P4）。
+        build_id = self._resolve_build_id()
+        user_id_mapping = {p["participant_ref"]: int(p["user_id"]) for p in participants}
+        state = WorkflowState(
+            request_id=request_id, build_id=build_id,
+            status=RequestStatus.RUNNING, participant_refs=participant_refs)
+        tool_ctx = ToolContext(
+            request_id=request_id, build_id=build_id,
+            participant_user_mapping=user_id_mapping,
+            session_id=session_id, context_service=c4)
+
+        state, ok = self._build_context(state, tool_ctx, message, participant_refs,
+                                        user_id_mapping, request_id, session_id,
+                                        build_id, c4)
+        if not ok:
             self._finalize(state, request_id, c4, lock_token)
             return
 
-        d1_api.publish_analysis_event(request_id, "context_ready",
-                                      f"已理解{len(participants)}位参与者的需求", [])
-        state = reduce_workflow_state(state, action="context_building", manifest_valid=True)
-        self._trace.mark_node_end(NodeType.CONTEXT_BUILDING.value)
-
-        # === 确定性链路（失败点返回终态 state，统一在此 finalize）===
         state = self._deterministic_chain(
             state, tool_ctx, intent, request_id, session_id, participant_refs,
             user_id_mapping, c4)
@@ -210,7 +285,6 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
         tool_ctx.node_id = self._NODE_HEALTH
         eval_result = handler.execute("evaluate_recipe_health", {"recipe_ids": candidate_ids})
         if isinstance(eval_result, dict) and "error" in eval_result:
-            # 食材集合不完整等系统错误 → fail-closed，不得误报 no_safe_menu
             self._trace.mark_node_end(NodeType.HEALTH_MENU_PLANNING.value)
             return self._fail(state, "TOOL_EXECUTION_FAILED",
                               f"健康审查失败: {eval_result.get('error')}")
@@ -224,7 +298,7 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
         d1_api.publish_analysis_event(request_id, "health_evaluation",
                                       "健康审查完成", [])
 
-        # 4. 生成可行菜单（业务终态由工具返回值 note 判定）
+        # 4. 生成可行菜单
         gen = handler.execute("generate_feasible_menus",
                               {"safe_recipe_ids": safe_ids,
                                "dish_count": qp.dish_count_requested})
@@ -239,64 +313,112 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
         d1_api.publish_analysis_event(request_id, "menu_planning",
                                       "菜单方案生成完成", [])
 
-        # 5. 构建双 Artifact（HealthEvaluationArtifact + FeasibleMenuArtifact）
-        state, feasible_artifact = self._build_dual_artifacts(state, tool_ctx)
-        if state.is_terminal():
-            return state
-        self._trace.mark_node_end(NodeType.HEALTH_MENU_PLANNING.value)
+        # 5. 选优 + 校验 + 回答 + 提交（公共 helper）
+        return self._select_validate_answer(
+            state, tool_ctx, plans, request_id, participant_refs)
 
-        # 6. 确定性选优 + 最终校验
-        self._trace.mark_node_start(NodeType.MENU_DECISION.value)
-        tool_ctx.node_id = self._NODE_DECISION
-        best = max(plans, key=lambda p: getattr(p, "total_score", 0.0))
-        handler.execute("validate_selected_menu_health",
-                        {"plan_id": best.plan_id, "recipe_ids": list(best.recipe_ids)})
-        fv = tool_ctx.previous_results.get("final_validation")
-        if not isinstance(fv, FinalValidationArtifact):
-            return self._fail(state, "FINAL_HEALTH_VALIDATION_FAILED",
-                              "缺少 B4 最终健康校验结果")
-        if fv.status != "PASS":
-            return self._fail(state, "FINAL_HEALTH_VALIDATION_FAILED",
-                              f"最终校验 verdict: {fv.status}")
+    # ---- P5：约束追加（在已有菜单上最小修改）----
 
-        # 7. MenuDecisionArtifact（确定性选优，绑定可行方案与最终校验）
-        md = MenuDecisionArtifact(
-            artifact_id=uuid.uuid4(),
-            request_id=UUID(request_id),
-            plan_id=fv.plan_id,
-            recipe_ids=tuple(fv.recipe_ids),
-            menu_hash=fv.menu_hash,
-            feasible_menu_artifact_ref=str(feasible_artifact.artifact_id),
-            final_validation_ref=str(fv.artifact_id),
-            participant_refs=tuple(participant_refs),
-            content_hash="0" * 64,
-        )
-        md = md.model_copy(update={"content_hash": self._content_hash(md)})
-        self._trace.mark_node_end(NodeType.MENU_DECISION.value)
+    def _run_add_constraint_delta(self, request_id, session_id, message,
+                                  participants, config, c4, lock_token):
+        build_id = self._resolve_build_id()
+        participant_refs = [p["participant_ref"] for p in participants]
+        user_id_mapping = {p["participant_ref"]: int(p["user_id"]) for p in participants}
+        state = WorkflowState(
+            request_id=request_id, build_id=build_id,
+            status=RequestStatus.RUNNING, participant_refs=participant_refs)
+        tool_ctx = ToolContext(
+            request_id=request_id, build_id=build_id,
+            participant_user_mapping=user_id_mapping,
+            session_id=session_id, context_service=c4)
 
-        # 8. 确定性回答 + ReviewArtifact(PASS)
-        self._trace.mark_node_start(NodeType.ANSWER_GENERATION.value)
-        answer = AuthoritativeAnswerBuilder.build(md, fv, state.build_id)
-        self._trace.mark_node_end(NodeType.ANSWER_GENERATION.value)
-        rv = ReviewArtifact(
-            artifact_id=uuid.uuid4(),
-            request_id=UUID(request_id),
-            status="PASS",
-            content_hash="0" * 64,
-        )
+        state, ok = self._build_context(state, tool_ctx, message, participant_refs,
+                                        user_id_mapping, request_id, session_id,
+                                        build_id, c4)
+        if not ok:
+            self._finalize(state, request_id, c4, lock_token)
+            return
 
+        # 1. 解析追加约束并写入临时约束（R-002 闭环）
+        intent = FastIntentRouter.route(
+            message, participant_refs[0] if participant_refs else "p1")
+        qp = self._build_query_plan(intent, request_id, participant_refs)
         state = reduce_workflow_state(
-            state, action="set_artifact", artifact="menu_decision", value=md)
-        state = reduce_workflow_state(
-            state, action="set_artifact", artifact="final_validation", value=fv)
-        state = reduce_workflow_state(
-            state, action="set_artifact", artifact="answer", value=answer)
-        state = reduce_workflow_state(
-            state, action="set_artifact", artifact="review", value=rv)
-        # 记录工具回执（审计信封要求 tool_receipt_refs 与 tool_input_output_hashes 非空对应）
-        state = reduce_workflow_state(
-            state, action="record_receipts",
-            receipts=self._as_authoritative_receipts(tool_ctx.tool_receipts))
-        state = reduce_workflow_state(state, action="unified_review", status="PASS")
-        state = reduce_workflow_state(state, action="atomic_commit")
-        return state
+            state, action="set_artifact", artifact="query_plan", value=qp)
+        tool_ctx.previous_results["query_plan"] = qp
+        if getattr(qp, "health_exclusions", ()):
+            state = self._handle_query_plan_exclusions(
+                state, qp, session_id, c4, user_id_mapping)
+            if state.is_terminal():
+                self._finalize(state, request_id, c4, lock_token)
+                return
+
+        # 2. 加载当前菜单
+        current = (c4.get_session_state(session_id) or {}).get("current_menu") or {}
+        current_ids = list(current.get("recipe_ids", []))
+        if not current_ids:
+            # 无前文菜单（理论上不会，因 _has_current_menu 已判断）→ 降级首次推荐
+            state = self._deterministic_chain(
+                state, tool_ctx, intent, request_id, session_id, participant_refs,
+                user_id_mapping, c4)
+            self._finalize(state, request_id, c4, lock_token)
+            return
+
+        handler = ToolHandler(tool_ctx)
+
+        # 3. 检索补充候选（替换违规菜的来源）
+        tool_ctx.node_id = self._NODE_RETRIEVE
+        handler.execute("retrieve_recipes", {"query": intent.query, "top_k": 40})
+        retrieval = tool_ctx.previous_results.get("retrieval")
+        candidate_ids = [c.recipe_id for c in getattr(retrieval, "candidates", []) or []]
+        all_ids = list(dict.fromkeys(current_ids + [r for r in candidate_ids
+                                                    if r not in current_ids]))
+
+        # 4. 一次性审查（当前菜 + 补充候选），用追加后的约束
+        self._trace.mark_node_start(NodeType.HEALTH_MENU_PLANNING.value)
+        tool_ctx.node_id = self._NODE_HEALTH
+        eval_result = handler.execute("evaluate_recipe_health", {"recipe_ids": all_ids})
+        if isinstance(eval_result, dict) and "error" in eval_result:
+            self._trace.mark_node_end(NodeType.HEALTH_MENU_PLANNING.value)
+            self._finalize(self._fail(state, "TOOL_EXECUTION_FAILED",
+                                      f"健康审查失败: {eval_result.get('error')}"),
+                           request_id, c4, lock_token)
+            return
+        health = tool_ctx.previous_results.get("health_evaluation")
+        safe_ids = list(getattr(health, "safe_recipe_ids", []) or [])
+
+        # 5. 锁定仍安全的当前菜（最小修改原则：不无故推翻已确认方案）
+        locked = [rid for rid in current_ids if rid in safe_ids]
+        if not safe_ids:
+            d1_api.publish_analysis_event(request_id, "health_evaluation",
+                                          "健康审查完成（无安全候选）", [])
+            self._finalize(reduce_workflow_state(
+                state, action="health_menu_planning", result="no_safe_menu"),
+                request_id, c4, lock_token)
+            return
+        d1_api.publish_analysis_event(request_id, "health_evaluation",
+                                      "健康审查完成", [])
+
+        # 6. 生成新菜单（锁定安全当前菜，补足/替换违规菜）
+        gen = handler.execute("generate_feasible_menus", {
+            "safe_recipe_ids": safe_ids,
+            "dish_count": len(current_ids),
+            "locked_recipe_ids": locked,
+        })
+        plans = tool_ctx.previous_results.get("feasible_menus", [])
+        if not plans:
+            note = gen.get("note") if isinstance(gen, dict) else None
+            result = _GENERATE_TERMINAL.get(note, "no_feasible_menu")
+            d1_api.publish_analysis_event(request_id, "menu_planning",
+                                          f"菜单方案生成终态: {result}", [])
+            self._finalize(reduce_workflow_state(
+                state, action="health_menu_planning", result=result),
+                request_id, c4, lock_token)
+            return
+        d1_api.publish_analysis_event(request_id, "menu_planning",
+                                      "菜单方案生成完成", [])
+
+        # 7. 选优 + 校验 + 回答 + 提交（公共 helper）
+        state = self._select_validate_answer(
+            state, tool_ctx, plans, request_id, participant_refs)
+        self._finalize(state, request_id, c4, lock_token)

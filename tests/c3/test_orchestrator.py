@@ -73,7 +73,8 @@ class _FakeC4:
 
     def get_session_state(self, session_id):
         if self._has_current_menu:
-            return {"session_id": session_id, "current_menu": {"plan_id": "p1"}}
+            return {"session_id": session_id,
+                    "current_menu": {"plan_id": "p1", "recipe_ids": [1, 2, 3]}}
         return None
 
     def store_temporary_constraint(self, session_id, constraint):
@@ -122,8 +123,8 @@ class TestDeterministicChain:
         status = d1_api.get_request_status(rid)[1]["status"]
         assert status == "completed"
 
-    def test_multi_turn_falls_back_legacy(self) -> None:
-        """有前文菜单（多轮）→ fallback legacy（不覆盖前文菜单，走五模型）。"""
+    def test_replace_falls_back_legacy(self) -> None:
+        """replace 意图（P5 第一版未覆盖）→ fallback legacy 五模型。"""
         rid = _fresh_rid()
         _reset_d1(rid)
         # legacy 需要 FakeLLM；此处只验证 fallback 分支被触发（不因确定性链崩溃）
@@ -133,3 +134,13 @@ class TestDeterministicChain:
         status = d1_api.get_request_status(rid)[1]["status"]
         # fallback legacy：无 LLM 配置 → failed（而非确定性链 completed）
         assert status != "completed"
+
+    def test_add_constraint_delta(self) -> None:
+        """约束追加（有前文菜单）→ 确定性 delta 链路走通（最小修改，不 fallback）。"""
+        rid = _fresh_rid()
+        _reset_d1(rid)
+        runner = _make_orchestrator(has_current_menu=True)
+        runner.run(rid, "sess_add", "别做辣的", [{"participant_ref": "p1", "user_id": "1"}])
+        status = d1_api.get_request_status(rid)[1]["status"]
+        # FakeC4 不真实存储临时约束，当前菜单（1/2/3）仍安全 → 菜单不变但 completed
+        assert status == "completed", f"约束追加 delta 未 completed: {status}"
