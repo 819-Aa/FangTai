@@ -150,27 +150,22 @@ async def stream_events(request_id: str, request: Request):
     initial_last_event_id = request.headers.get("Last-Event-ID")
 
     def _subscribe_notifications():
-        """订阅该 request 的即时事件通知（Redis Pub/Sub）；Redis 不可用返回 None。"""
+        """订阅该 request 的即时事件通知（经 C4 公共接口，不碰 Redis 私有成员）。"""
         try:
-            from food_agent_v2.c4.redis_store import RedisSessionStore
-            store = RedisSessionStore()
-            store._connect()
-            if store._client is not None:
-                pubsub = store._client.pubsub(ignore_subscribe_messages=True)
-                pubsub.subscribe(store._key("sse", request_id))
-                return pubsub
+            from food_agent_v2.c4.event_notifier import get_event_notifier
+            return get_event_notifier().subscribe(request_id)
         except Exception:
-            pass
-        return None
+            return None
 
     async def event_generator():
         # 局部绑定，修复 UnboundLocalError；稳定字符串 event_id 精确续传（不 int() 比较）
         last_event_id = initial_last_event_id
-        pubsub = _subscribe_notifications()
+        subscription = _subscribe_notifications()
         loop = asyncio.get_running_loop()
         try:
             while True:
-                events = api.subscribe_events(request_id, last_event_id)
+                # refresh=True：通知后从持久事件源刷新，跨 worker 也不丢事件
+                events = api.subscribe_events(request_id, last_event_id, refresh=True)
                 yielded_any = False
                 for event in events:
                     eid = event.get("id", "")
@@ -181,16 +176,16 @@ async def stream_events(request_id: str, request: Request):
                 if not yielded_any:
                     # 无新事件时发送心跳
                     yield ": heartbeat\n\n"
-                # P2：等待事件通知（阻塞在 executor 线程，不占事件循环）；
+                # 等待事件通知（阻塞在 executor 线程，不占事件循环）；
                 # 15s 仅作为无事件 heartbeat 兜底，不再是新事件轮询周期。
-                if pubsub is not None:
-                    await loop.run_in_executor(None, pubsub.get_message, 15)
+                if subscription is not None:
+                    await loop.run_in_executor(None, subscription.wait, 15.0)
                 else:
                     await asyncio.sleep(15)
         finally:
-            if pubsub is not None:
+            if subscription is not None:
                 try:
-                    pubsub.close()
+                    subscription.close()
                 except Exception:
                     pass
 

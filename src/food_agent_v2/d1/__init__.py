@@ -263,14 +263,21 @@ class RecommendationAPI:
 
     # ---- GET /v1/recommendation-requests/{request_id}/events ----
 
-    def subscribe_events(self, request_id: str, last_event_id: str | None = None) -> list[dict]:
+    def subscribe_events(self, request_id: str, last_event_id: str | None = None,
+                         *, refresh: bool = False) -> list[dict]:
         """获取 SSE 事件（自 last_event_id 精确 id 之后）。
 
         稳定 SSE event_id 为字符串（如 ev_answer_xxx）；续传按持久化事件列表中的
         精确 event_id 定位并返回其后的事件，绝不强制转换为整数。未知 last_event_id
         返回全部事件（客户端按 event_id 去重）。
+
+        refresh=True 时先从 Redis 重新加载持久事件并合并（跨 worker：其他 worker
+        写入的事件不在本 worker 内存，须按稳定 event_id 合并）。
         """
-        self._restore_request(request_id)
+        if refresh:
+            self._refresh_events(request_id)
+        else:
+            self._restore_request(request_id)
         all_events = self._events.get(request_id, [])
         if not last_event_id:
             return all_events
@@ -278,6 +285,26 @@ class RecommendationAPI:
             if event.get("id") == last_event_id:
                 return all_events[idx + 1:]
         return all_events
+
+    def _refresh_events(self, request_id: str) -> None:
+        """从 Redis 重新加载持久事件，按稳定 event_id 合并到内存（不覆盖本地已有）。"""
+        try:
+            from food_agent_v2.c4.redis_store import RedisSessionStore
+            blob = RedisSessionStore().load_request(request_id)
+        except Exception:
+            return
+        if not blob:
+            return
+        persisted = blob.get("events", []) or []
+        current = self._events.get(request_id, [])
+        seen = {e.get("id") for e in current if e.get("id")}
+        merged = list(current)
+        for e in persisted:
+            eid = e.get("id")
+            if eid and eid not in seen:
+                merged.append(e)
+                seen.add(eid)
+        self._events[request_id] = merged
 
     def _emit_event(self, request_id: str, event_type: SSEEventType, payload: dict,
                     event_id: str | None = None) -> None:
@@ -314,16 +341,10 @@ class RecommendationAPI:
         self._notify_sse(request_id)
 
     def _notify_sse(self, request_id: str) -> None:
-        """向该 request 的 SSE 订阅者发布即时通知（Redis Pub/Sub）。
-
-        单进程与多进程共用同一 Redis 通道；Redis 不可用时静默（SSE 回退 15s 轮询）。
-        """
+        """向该 request 的 SSE 订阅者发布即时通知（经 C4 公共接口，不碰 Redis 私有成员）。"""
         try:
-            from food_agent_v2.c4.redis_store import RedisSessionStore
-            store = RedisSessionStore()
-            store._connect()
-            if store._client is not None:
-                store._client.publish(store._key("sse", request_id), "1")
+            from food_agent_v2.c4.event_notifier import get_event_notifier
+            get_event_notifier().publish(request_id)
         except Exception:
             pass
 
