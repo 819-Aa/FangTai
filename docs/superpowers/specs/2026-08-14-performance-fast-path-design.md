@@ -396,20 +396,84 @@ terminal_at
 7. 性能测试环境无历史 pending outbox 干扰；
 8. 测试报告给出逐用例数据，不只给汇总平均值。
 
-## 11. 迁移与回滚
+## 11. 审查后修复与后续任务层级
 
-实施分为以下独立阶段，每阶段有测试和单独提交：
+2026-08-14 对提交 `1c2b755..121204f` 的代码审查表明：P1–P5 已形成可回滚的快速路径原型，但尚未达到可启用状态。当前 `WORKFLOW_MODE` 必须继续默认 `legacy`。详细逐步计划见 `docs/superpowers/plans/2026-08-14-performance-fast-path-remediation.md`。
 
-1. **P1：性能观测基线。** 增加阶段计时、调用计数和独立性能 harness，不改变行为；
-2. **P2：传输与连接。** 复用 LLM/SiliconFlow 客户端，SSE 改为事件即时通知，增加 Qdrant warmup；
-3. **P3：快速意图与权威回答。** 新增 `FastIntentRouter`、`AuthoritativeAnswerBuilder` 和确定性澄清；
-4. **P4：确定性主编排。** 新增 `DeterministicRecommendationOrchestrator`，直接连接 C1/B2/B4/C2；
-5. **P5：多轮 delta。** 实现替换、追加、否定、恢复及最小修改路径；
-6. **P6：限时润色。** 引入受控 `NarrativePolisher`，验证失败回退；
-7. **P7：正式性能验收。** 跑完整 20 组用例并更新交付报告和模块文档；
-8. **P8：移除旧模型编排。** 只有快速路径通过功能与性能门禁后，才删除旧的五模型在线主链。
+任务按依赖关系分为四层，上一层门禁未通过时不得启动下一层：
 
-迁移期使用显式 `WORKFLOW_MODE=legacy|fast_path` 切换。默认值只在快速路径通过完整验收后改为 `fast_path`。切换不改变固定数据、数据库 Schema 或 ready build 身份；出现回归时可回滚代码和模式，不回滚或重建数据。
+```text
+L0 上线阻断修复
+├─ L0.1 SSE 等待/通知与多进程事件刷新
+├─ L0.2 SiliconFlow 线程安全连接池与真实超时
+├─ L0.3 临时健康语义 fail-closed
+└─ L0.4 取消、失锁与提交前检查
+        ↓ 全部通过并完成独立审查
+L1 Agent 决策与多轮完整性
+├─ L1.1 类型化 IntentDelta 与确定性澄清/冲突
+├─ L1.2 单次 QueryNormalizer 模型兜底
+├─ L1.3 追加/替换/否定/恢复 delta 与最小修改
+└─ L1.4 工具错误分类、稳定选优和回答绑定
+        ↓ 功能/安全/多轮契约通过
+L2 性能证据与合格线
+├─ L2.1 visible/authoritative TTFT 与阶段预算
+├─ L2.2 SSE 驱动的性能 harness
+└─ L2.3 20 组真实 API 对话逐轮验收
+        ↓ 所有竞赛合格线通过
+L3 灰度与交付
+├─ L3.1 fast_path 灰度与 legacy 回滚演练
+├─ L3.2 默认切换 fast_path
+└─ L3.3 更新交付报告和系统文档
+```
+
+### 11.1 L0：上线阻断修复
+
+1. 用 C4 公共事件通知接口替代 `api_app.py`、D1 对 Redis 私有成员的直接访问；`wait(timeout_seconds=15)` 必须真正阻塞，持久事件必须先写后通知，多进程订阅者收到通知后强制刷新持久事件；
+2. 用线程安全 HTTP 连接池替换模块级单一 `http.client.HTTPConnection`，嵌入与重排继续固定走 SiliconFlow API，并执行并发、超时和连接恢复测试；
+3. `FastIntentRouter` 发现过敏、疾病、指标或参与者归属不明确的健康语义时不得继续普通推荐，只能形成可由 B2 严格验证的信号、进入一次模型归一化或返回澄清；
+4. 确定性编排在每个外部/领域步骤前后以及原子提交前检查取消标记和 fencing token，取消后不得写菜单、回答或成功 outbox。
+
+**修复理由：** 这四项分别会造成 SSE 热循环、并发检索随机失败、硬健康约束漏排以及取消后仍提交，均可能直接破坏系统正确性或可用性，优先级高于新增 Agent 能力和性能调优。
+
+**层级门禁：** 并发 API、无事件 SSE、跨 worker SSE、临时健康信号、取消竞争和失锁测试全部通过；快路径仍不设为默认。
+
+### 11.2 L1：Agent 决策与多轮完整性
+
+1. 将意图输出收敛为类型化集合：`new_recommendation/add_constraint/replace/reject_plan/restore/conflict/needs_clarification/model_fallback`；已有菜单不能自动等同于追加约束；
+2. 只有确定性路由无法唯一解析时调用一次无工具的 `QueryNormalizer`，3 秒硬预算，失败转澄清；
+3. 追加约束显式保留当前菜数；局部替换只改变目标槽位；方案否定保留仍有效约束；恢复只绑定已提交菜单版本；所有新菜单重新执行全量 B4 最终复核；
+4. 每个必需工具结果先区分基础设施/Schema 错误和合法业务终态，禁止把工具错误伪装为 `no_feasible_menu`；选优使用稳定 tie-break，回答执行现有菜单绑定校验并生成真实变更摘要。
+
+**修复理由：** 当前实现是确定性工作流骨架，但缺少 Agent 所需的歧义处理、状态决策和重规划能力；补齐本层后才可称为“Agent 决策 + 确定性执行”的混合式 Agent。
+
+**层级门禁：** 公开 20 组功能用例以及替换、否定、澄清、冲突、恢复的合成回归用例通过；硬约束零违反；最小修改逐 `recipe_id` 验证；常见路径主模型调用为 0，复杂路径最多 1 次 QueryNormalizer。
+
+### 11.3 L2：性能证据与合格线
+
+1. 完整记录 `accepted_at/first_visible_token_at/first_authoritative_token_at/committed_at/terminal_at` 和各外部调用耗时、输入规模、超时类型；
+2. 性能 harness 改为消费 SSE，业务成功后才计入性能通过，分别计算逐轮 E2E、每组多轮平均、p50/p95/max；
+3. 在独立命名空间、warmup 后、`WORKFLOW_MODE=fast_path` 下运行 20 组真实 API 对话，不运行本地嵌入/重排模型，不将失败或快速澄清计为性能通过。
+
+**修复理由：** 当前观测只有服务端节点计时和一秒轮询 E2E，无法证明首 Token、权威答案延迟和多轮平均满足竞赛门槛。
+
+**层级门禁：** 成功请求 `visible_ttft_ms < 5000`、单轮 `e2e_ms < 15000`、每组多轮平均 `< 12000`，并逐例披露 `authoritative_ttft_ms`；功能、安全和真实性先于性能判定。
+
+### 11.4 L3：灰度、回滚与后续方向
+
+1. 先在隔离环境显式设置 `WORKFLOW_MODE=fast_path`，验证重启、取消、并发、Redis 暂时不可用和外部 API 超时；
+2. 完成一次 `fast_path → legacy → fast_path` 回滚演练，确认不重建、不覆盖固定数据和 ready build；
+3. 只有 L0–L2 全部门禁通过后才把默认模式改为 `fast_path`，竞赛交付期继续保留 `legacy` 回滚开关；
+4. `NarrativePolisher` 仍为默认关闭的后续增强，只能在权威路径已经达到优秀线且存在剩余预算时单独实施；
+5. 按人营养摄入计算继续作为独立范围外项目，不并入本修复计划；CPU/GPU 或本地嵌入/重排模型切换不在后续任务中。
+
+### 11.5 当前状态定义
+
+- 已完成：性能瓶颈定位、特性开关、确定性执行骨架、权威回答骨架和部分追加约束路径；
+- 尚未完成：L0 阻断修复、完整 Agent 决策、完整多轮 delta、性能合格证据、默认模式切换；
+- 当前可接受用途：默认关闭的开发原型；
+- 当前不可接受用途：标记“全部完成”、切换生产默认或作为最终竞赛交付版本。
+
+迁移期继续使用显式 `WORKFLOW_MODE=legacy|fast_path`。切换不改变固定数据、数据库 Schema 或 ready build 身份；出现回归时只回滚代码和模式，不回滚或重建数据。
 
 ## 12. 预计代码与文档边界
 
