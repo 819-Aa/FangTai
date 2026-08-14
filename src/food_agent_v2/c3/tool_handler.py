@@ -370,8 +370,10 @@ def _generate_feasible_menus(args: dict, ctx: ToolContext) -> dict:
         dish_count=requested_count or MenuHardConstraints().dish_count,
         # 模型没传时间限制时，自动使用查询理解提取的严格时间约束
         strict_time_limit=args.get("time_limit_minutes") or ctx.time_limit_minutes,
-        # P5：锁定菜（约束追加的最小修改——保留不违规的当前菜，仅补足/替换违规菜）
+        # P5/L1.3：锁定菜（最小修改——保留不违规的当前菜，仅补足/替换违规菜）
         locked_recipe_ids=set(int(r) for r in (args.get("locked_recipe_ids") or [])),
+        # L1.3：拒绝菜（替换/否定场景，从候选排除）
+        rejected_recipe_ids=set(int(r) for r in (args.get("rejected_recipe_ids") or [])),
         require_soup=_requests("汤", "汤品", "soup"),
         require_staple=_requests("主食", "staple"),
         require_drink=_requests("饮品", "饮料", "drink"),

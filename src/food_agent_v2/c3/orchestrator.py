@@ -22,7 +22,8 @@ from uuid import UUID
 
 from food_agent_v2.c3 import detect_untrusted_instruction
 from food_agent_v2.c3.authoritative_answer import AuthoritativeAnswerBuilder
-from food_agent_v2.c3.fast_intent import FastIntentRouter
+from food_agent_v2.c3.delta_planner import DeltaPlanner
+from food_agent_v2.c3.fast_intent import FastIntentRouter, IntentDelta
 from food_agent_v2.c3.perf import PerfTrace
 from food_agent_v2.c3.query_normalizer import QueryNormalizer
 from food_agent_v2.c3.runner import WorkflowRunner
@@ -266,10 +267,16 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
                                          c4, lock_token, intent)
             return
 
-        # replace/reject/restore 在 Task 6 落地前仍 fallback legacy
-        if intent.intent in ("replace", "reject_plan", "restore"):
+        # replace/restore 需 target 解析 / menu_history 绑定，仍 fallback legacy
+        if intent.intent in ("replace", "restore"):
             super()._run_locked(request_id, session_id, message, participants,
                                 config, c4, lock_token, lost)
+            return
+
+        # reject_plan / 有前文菜单的 new_recommendation → 确定性 delta（最小修改）
+        if intent.intent == "reject_plan" or self._has_current_menu(c4, session_id):
+            self._run_delta(request_id, session_id, message, participants,
+                            config, c4, lock_token, lost, intent)
             return
 
         # 约束追加（P5）：已有前文菜单 → 确定性 delta（最小修改）。
@@ -378,10 +385,10 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
             state, tool_ctx, plans, request_id, participant_refs,
             c4, session_id, lock_token, lost)
 
-    # ---- P5：约束追加（在已有菜单上最小修改）----
+    # ---- L1.3：多轮 delta（约束追加/方案否定，在已有菜单上最小修改）----
 
-    def _run_add_constraint_delta(self, request_id, session_id, message,
-                                  participants, config, c4, lock_token, lost):
+    def _run_delta(self, request_id, session_id, message,
+                   participants, config, c4, lock_token, lost, intent):
         build_id = self._resolve_build_id()
         participant_refs = [p["participant_ref"] for p in participants]
         user_id_mapping = {p["participant_ref"]: int(p["user_id"]) for p in participants}
@@ -400,8 +407,7 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
             self._finalize(state, request_id, c4, lock_token)
             return
 
-        # 1. 解析追加约束并写入临时约束（R-002 闭环）
-        intent = FastIntentRouter.route(message, tuple(participant_refs))
+        # 1. 用已路由的 intent 构建查询计划并写入临时约束（R-002 闭环）
         qp = self._build_query_plan(intent, request_id, participant_refs)
         state = reduce_workflow_state(
             state, action="set_artifact", artifact="query_plan", value=qp)
@@ -423,6 +429,12 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
                 user_id_mapping, c4, lock_token, lost)
             self._finalize(state, request_id, c4, lock_token)
             return
+
+        # 约束追加/否定保持当前菜数（作为 query_plan 权威，覆盖 None 菜数）
+        qp = qp.model_copy(update={"dish_count_requested": len(current_ids)})
+        tool_ctx.previous_results["query_plan"] = qp
+        state = reduce_workflow_state(
+            state, action="set_artifact", artifact="query_plan", value=qp)
 
         handler = ToolHandler(tool_ctx)
 
@@ -455,8 +467,12 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
         health = tool_ctx.previous_results.get("health_evaluation")
         safe_ids = list(getattr(health, "safe_recipe_ids", []) or [])
 
-        # 5. 锁定仍安全的当前菜（最小修改原则：不无故推翻已确认方案）
-        locked = [rid for rid in current_ids if rid in safe_ids]
+        # 5. DeltaPlanner 计算最小修改（锁定安全当前菜 / 拒绝否定菜）
+        delta_intent = "reject_plan" if intent.intent == "reject_plan" else "add_constraint"
+        delta = DeltaPlanner().plan(
+            current_ids, IntentDelta(intent=delta_intent), safe_ids)
+        locked = list(delta.locked_recipe_ids)
+        rejected = list(delta.rejected_recipe_ids)
         if not safe_ids:
             d1_api.publish_analysis_event(request_id, "health_evaluation",
                                           "健康审查完成（无安全候选）", [])
@@ -474,8 +490,8 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
             return
         gen = handler.execute("generate_feasible_menus", {
             "safe_recipe_ids": safe_ids,
-            "dish_count": len(current_ids),
             "locked_recipe_ids": locked,
+            "rejected_recipe_ids": rejected,
         })
         plans = tool_ctx.previous_results.get("feasible_menus", [])
         if not plans:
