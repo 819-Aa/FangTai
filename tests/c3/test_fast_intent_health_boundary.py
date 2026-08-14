@@ -36,10 +36,18 @@ def test_relative_multi_person_conflict_requires_clarification():
 
 
 def test_relative_person_role_requires_clarification():
-    # "小孩/老人" 相对称谓归属不唯一，不得错误绑定 p1
+    # "小孩/老人" 相对称谓，参与者不足 → 澄清（不得错误绑定 p1）
     result = FastIntentRouter.route(
         "小孩不吃辣，老人牙口不好", participant_refs=("p1",))
     assert result.intent == "needs_clarification"
+
+
+def test_relative_person_with_enough_participants_assigns_roles():
+    # 参与者足够 → 按角色归属（小孩的"辣"禁忌 → p2）
+    result = FastIntentRouter.route(
+        "小孩不吃辣，老人牙口不好", participant_refs=("p1", "p2", "p3"))
+    assert result.intent == "add_constraint"  # "不吃"是追加指示
+    assert "p2:禁忌:辣椒" in result.health_exclusions
 
 
 def test_replace_reject_restore_intents():

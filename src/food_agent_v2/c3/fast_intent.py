@@ -151,12 +151,37 @@ def _has_relative_person(message: str) -> bool:
     return any(h in message for h in _RELATIVE_PERSON_HINTS)
 
 
-def _taboo_exclusions(message: str, participant_ref: str) -> tuple[str, ...]:
-    """明确食材禁忌 → B2 临时信号格式（`参与者N:禁忌:值`），由 B2 严格解析闭合。"""
+def _required_participants(message: str) -> int:
+    """相对称谓角色所需的参与者数（默认成人 + 小孩/老人各一槽位）。"""
+    n = 1
+    if any(k in message for k in ("小孩", "孩子", "宝宝", "小朋友")):
+        n += 1
+    if any(k in message for k in ("老人", "长辈")):
+        n += 1
+    return n
+
+
+def _taboo_owner(message: str, hint: str, participant_refs: tuple[str, ...]) -> str:
+    """判断禁忌片段属于哪个参与者（小孩→第2个、老人→第3个、默认→第1个）。"""
+    idx = message.find(hint)
+    if idx >= 0:
+        before = message[:idx]
+        if any(k in before for k in ("小孩", "孩子", "宝宝", "小朋友")) and len(participant_refs) > 1:
+            return participant_refs[1]
+        if any(k in before for k in ("老人", "长辈")) and len(participant_refs) > 2:
+            return participant_refs[2]
+    return participant_refs[0]
+
+
+def _taboo_exclusions(message: str, participant_refs: tuple[str, ...]) -> tuple[str, ...]:
+    """明确食材禁忌 → B2 临时信号格式（`参与者N:禁忌:值`），按相对称谓归属参与者。"""
     out: list[str] = []
     for taboo, hints in _TABOO_MAP.items():
-        if any(h in message for h in hints):
-            out.append(f"{participant_ref}:禁忌:{taboo}")
+        for h in hints:
+            if h in message:
+                ref = _taboo_owner(message, h, participant_refs)
+                out.append(f"{ref}:禁忌:{taboo}")
+                break
     return tuple(out)
 
 
@@ -191,7 +216,6 @@ class FastIntentRouter:
     @staticmethod
     def route(message: str, participant_refs: tuple[str, ...] = ("p1",)) -> IntentDelta:
         text = (message or "").strip()
-        first_ref = participant_refs[0] if participant_refs else "p1"
 
         # 1. 健康语言（过敏/疾病/指标/不能吃）→ model_fallback（不普通推荐）
         health = _detect_health_language(text)
@@ -205,8 +229,8 @@ class FastIntentRouter:
                 intent="conflict", query=text,
                 clarification_reason="多人约束互相矛盾，需要澄清")
 
-        # 2.5 相对称谓多人角色（小孩/老人等）→ needs_clarification（归属不唯一）
-        if _has_relative_person(text):
+        # 2.5 相对称谓多人角色（小孩/老人等）→ 参与者不足则澄清；足够则按角色归属
+        if _has_relative_person(text) and len(participant_refs) < _required_participants(text):
             return IntentDelta(
                 intent="needs_clarification", query=text,
                 clarification_reason="多人相对称谓需澄清参与者归属")
@@ -229,7 +253,7 @@ class FastIntentRouter:
             dish_count_requested=_dish_count(text),
             flavor_preferences=_flavor_preferences(text),
             dish_types=_dish_types(text),
-            health_exclusions=_taboo_exclusions(text, first_ref),
+            health_exclusions=_taboo_exclusions(text, participant_refs),
             preference_exclusions=_preference_exclusions(text),
             time_constraint_seconds=_time_constraint(text)[0],
             time_constraint_policy=_time_constraint(text)[1],

@@ -96,7 +96,8 @@ def multi_turn_average(turn_times):
 def participants_for(messages: list[str]) -> list[dict]:
     """从用例文本粗判参与人数（P1 基线；精确多人映射留到 P7 正式验收）。
 
-    仅按显式人数词推断；无法判定时默认单人 p1。健康档案内部映射 pN → user_id N。
+    仅按显式人数词与相对称谓角色推断；无法判定时默认单人 p1。
+    健康档案内部映射 pN → user_id N。
     """
     joined = " ".join(messages)
     if "六个人" in joined or "六人" in joined:
@@ -105,6 +106,14 @@ def participants_for(messages: list[str]) -> list[dict]:
         return [{"participant_ref": f"p{i}"} for i in range(1, 5)]
     if "两个人" in joined or "两人" in joined:
         return [{"participant_ref": "p1"}, {"participant_ref": "p2"}]
+    # 相对称谓角色（小孩/老人）→ 各占一个参与者槽位
+    n = 1
+    if any(k in joined for k in ("小孩", "孩子", "宝宝", "小朋友")):
+        n += 1
+    if any(k in joined for k in ("老人", "长辈")):
+        n += 1
+    if n > 1:
+        return [{"participant_ref": f"p{i}"} for i in range(1, n + 1)]
     return [{"participant_ref": "p1"}]
 
 
