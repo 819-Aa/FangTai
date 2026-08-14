@@ -26,6 +26,7 @@ from pydantic import BaseModel, ValidationError
 from food_agent_v2.c2.schemas import menu_hash_for
 from food_agent_v2.c3 import ROLE_POLICIES, NodeValidator, WorkflowError
 from food_agent_v2.c3.llm_client import LLMClient, get_llm_client
+from food_agent_v2.c3.perf import PerfTrace
 from food_agent_v2.c3.prompts import get_prompt
 from food_agent_v2.c3.state import (
     NodeType,
@@ -96,6 +97,7 @@ class WorkflowRunner:
         self._build_id = build_id
         self._build_provider = build_provider
         self._c4 = c4
+        self._trace: PerfTrace | None = None
 
     def _get_c4(self) -> ContextService:
         if self._c4 is None:
@@ -210,6 +212,7 @@ class WorkflowRunner:
             message: str, participants: list[dict],
             config: dict | None = None) -> None:
         """执行完整有界状态机（会话锁覆盖同一 session 的读取/运行/提交）。"""
+        self._trace = PerfTrace(request_id=request_id)
         c4 = self._get_c4()
         lock_token = self._acquire_session_lock(c4, session_id)
         if lock_token is None:
@@ -235,6 +238,8 @@ class WorkflowRunner:
                     config: dict | None, c4: ContextService,
                     lock_token: str, lost: threading.Event) -> None:
         """会话锁保护下的完整有界状态机体。"""
+        if self._trace is None:
+            self._trace = PerfTrace(request_id=request_id)
         build_id = self._resolve_build_id()
         participant_refs = [p["participant_ref"] for p in participants]
         user_id_mapping = {p["participant_ref"]: int(p["user_id"]) for p in participants}
@@ -255,6 +260,7 @@ class WorkflowRunner:
 
         # === 节点1: context_building ===
         state = self._enter_node(state, tool_ctx, NodeType.CONTEXT_BUILDING)
+        self._trace.mark_node_start(NodeType.CONTEXT_BUILDING.value)
 
         from food_agent_v2.c3 import detect_untrusted_instruction
 
@@ -297,6 +303,7 @@ class WorkflowRunner:
         d1_api.publish_analysis_event(request_id, "context_ready",
                                       f"已理解{len(participants)}位参与者的需求", [])
         state = reduce_workflow_state(state, action="context_building", manifest_valid=True)
+        self._trace.mark_node_end(NodeType.CONTEXT_BUILDING.value)
 
         # === 有界状态机主循环 ===
         plan_id = ""
@@ -306,6 +313,7 @@ class WorkflowRunner:
         md_artifact: MenuDecisionArtifact | None = None
         final_artifact: FinalValidationArtifact | None = None
         feasible_artifact: FeasibleMenuArtifact | None = None
+        _prev_node: str | None = None
 
         while state.current_node is not None and not state.is_terminal():
             # heartbeat 失锁标记：单节点执行超 TTL 也可能失锁 → fail
@@ -315,6 +323,10 @@ class WorkflowRunner:
                 break
             node = state.current_node
             tool_ctx.node_id = node.value  # 每个节点入口注入真实 node_id
+            if _prev_node is not None:
+                self._trace.mark_node_end(_prev_node)
+            self._trace.mark_node_start(node.value)
+            _prev_node = node.value
 
             if node == NodeType.QUERY_UNDERSTANDING:
                 state, q_raw, q_artifact = self._run_model_node(
@@ -527,6 +539,9 @@ class WorkflowRunner:
             else:
                 state = self._fail(state, "UNKNOWN_NODE", f"未知节点: {node}")
                 break
+
+        if _prev_node is not None:
+            self._trace.mark_node_end(_prev_node)
 
         # 终态兜底：非终态不得以成功提交
         if not state.is_terminal():
@@ -1037,6 +1052,12 @@ class WorkflowRunner:
             if response.get("_mock"):
                 return {"status": "failed", "error": "MODEL_MOCK_RESPONSE", "content": ""}
 
+            usage = response.get("usage") or {}
+            if usage.get("elapsed_ms"):
+                trace = getattr(self, "_trace", None)
+                if trace is not None:
+                    trace.add_model_call(role, usage.get("model", ""), usage["elapsed_ms"])
+
             tool_calls = response.get("tool_calls", [])
             content = response.get("content", "")
 
@@ -1471,6 +1492,12 @@ class WorkflowRunner:
                 commit_c4(request_id, effective_status, token=lock_token)
             else:
                 commit_c4(request_id, effective_status)
+
+        # P1：性能观测基线——终态后输出结构化耗时日志（纯观测，不改变行为）。
+        trace = getattr(self, "_trace", None)
+        if trace is not None:
+            trace.terminal_at = time.perf_counter()
+            print(trace.log_line())
 
 
 def _ingredient_resolver():
