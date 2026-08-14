@@ -78,6 +78,8 @@ class IntentDelta:
 
     intent: IntentKind = "new_recommendation"
     query: str = ""
+    meal_type: str | None = None
+    scenario: str | None = None
     dish_count_requested: int | None = None
     flavor_preferences: tuple[str, ...] = ()
     dish_types: tuple[str, ...] = ()
@@ -210,6 +212,25 @@ def _dish_types(message: str) -> tuple[str, ...]:
     return ()
 
 
+def _is_open_query(message: str) -> bool:
+    """开放/语义问句：无明确结构化信息（菜数/硬时间/明确禁忌），需 LLM 归一化语义。
+
+    含 meal_type（早餐/晚餐）、scenario（清爽/暖胃/补气血）但无结构化信息的，
+    也走 LLM——这些语义 FastIntentRouter 的关键词无法可靠提取，直接交给
+    QueryNormalizer 归一化成 meal_type/scenario 再检索。
+    """
+    if _dish_count(message) is not None:
+        return False
+    if _time_constraint(message)[1] == "hard":
+        return False
+    if any(any(h in message for h in hints) for hints in _TABOO_MAP.values()):
+        return False
+    if _preference_exclusions(message):
+        # 明确口味偏好（"别太甜"/"口味清淡"）→ 确定性提取，不算开放
+        return False
+    return True
+
+
 class FastIntentRouter:
     """确定性意图路由器：无外部网络依赖，只解析明确表达的语义。"""
 
@@ -244,7 +265,11 @@ class FastIntentRouter:
         if any(h in text for h in _RESTORE_HINTS):
             return IntentDelta(intent="restore", query=text)
 
-        # 4. 约束追加（含禁忌/偏好追加词）或首次推荐
+        # 4. 开放/语义问句 → model_fallback（LLM 归一化 meal_type/scenario）
+        if _is_open_query(text):
+            return IntentDelta(intent="model_fallback", query=text)
+
+        # 5. 约束追加（含禁忌/偏好追加词）或首次推荐
         intent_kind = "add_constraint" if any(h in text for h in _ADD_HINTS) \
             else "new_recommendation"
         return IntentDelta(

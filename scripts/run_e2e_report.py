@@ -29,12 +29,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from perf_harness import TERMINAL, load_cases, participants_for  # noqa: E402
 
-TERMINAL = {
-    "completed", "failed", "no_safe_menu", "no_feasible_menu",
-    "needs_clarification", "cancelled", "interrupted",
-    "strict_time_indeterminate",
-}
-
 
 def _post(api: str, payload: dict) -> dict:
     data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -97,6 +91,10 @@ def run_turn(api: str, payload: dict, max_wait: int) -> dict:
         elif name == "answer_ready" and authoritative is None:
             authoritative = ts
 
+    rs = result.get("result_summary") or {}
+    menu = rs.get("menu_summary") or {}
+    menu_items = [it.get("name", "") for it in (menu.get("items") or [])]
+
     return {
         "request_id": rid,
         "session_id": session_id,
@@ -105,6 +103,7 @@ def run_turn(api: str, payload: dict, max_wait: int) -> dict:
         "visible_ttft_ms": visible,
         "authoritative_ttft_ms": authoritative,
         "sse_events": events,
+        "menu_items": menu_items,
         "error": (result.get("error") or {}).get("code"),
     }
 
@@ -154,6 +153,7 @@ def generate_html(cases, turns, perf_map, output_path: str) -> None:
           <td>{_html_escape(t['user_ids'])}</td>
           <td class="msg">{_html_escape(t['message'])}</td>
           <td>{_html_escape(t['status'])}</td>
+          <td class="menu">{_html_escape('、'.join(t.get('menu_items') or []))}</td>
           <td>{t['e2e_ms']}</td>
           <td>{t['visible_ttft_ms'] if t['visible_ttft_ms'] is not None else '—'}</td>
           <td>{t['authoritative_ttft_ms'] if t['authoritative_ttft_ms'] is not None else '—'}</td>
@@ -221,7 +221,8 @@ def generate_html(cases, turns, perf_map, output_path: str) -> None:
 <table>
   <tr>
     <th>用例</th><th>轮次</th><th>参与者</th><th>用户档案 ID</th><th>消息</th>
-    <th>终态</th><th>e2e(ms)</th><th>可见TTFT(ms)</th><th>权威TTFT(ms)</th>
+    <th>终态</th><th>推荐菜名</th>
+    <th>e2e(ms)</th><th>可见TTFT(ms)</th><th>权威TTFT(ms)</th>
     <th>服务端总耗时(ms)</th><th>节点耗时</th><th>模型调用数</th><th>模型耗时(ms)</th><th>SSE 事件序列</th>
   </tr>
   {''.join(rows)}

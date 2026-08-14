@@ -58,8 +58,9 @@ class TestTabooExclusions:
 
 
 class TestIntent:
-    def test_new_recommendation_default(self):
-        assert FastIntentRouter.route("今晚吃啥").intent == "new_recommendation"
+    def test_open_query_goes_model_fallback(self):
+        # 开放问句（无菜数/时间/禁忌/偏好）→ model_fallback（LLM 归一化语义）
+        assert FastIntentRouter.route("今晚吃啥").intent == "model_fallback"
 
     def test_replace(self):
         assert FastIntentRouter.route("把红烧肉换成清蒸鱼").intent == "replace"

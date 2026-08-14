@@ -101,6 +101,23 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
         )
         return qp.model_copy(update={"content_hash": self._content_hash(qp)})
 
+    @staticmethod
+    def _retrieval_query(intent) -> str:
+        """用归一化语义构造检索 query（meal_type/scenario/flavor 拼接）。
+
+        LLM 归一化出的"早餐/清爽/补气血"等语义词，拼成检索 query，比口语原文
+        更能命中对应菜谱；无语义时回退原文。
+        """
+        parts = []
+        if getattr(intent, "meal_type", None):
+            parts.append(intent.meal_type)
+        if getattr(intent, "scenario", None):
+            parts.append(intent.scenario)
+        parts.extend(getattr(intent, "flavor_preferences", ()) or ())
+        if parts:
+            return " ".join(parts)
+        return intent.query
+
     def _guard_active(self, state, c4, session_id, lock_token, lost):
         """取消/失锁统一门卫：返回终态 state（若触发）或 None（继续）。
 
@@ -342,7 +359,8 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
             return guard
         self._trace.mark_node_start("retrieval")
         tool_ctx.node_id = self._NODE_RETRIEVE
-        handler.execute("retrieve_recipes", {"query": intent.query, "top_k": 40})
+        handler.execute("retrieve_recipes",
+                        {"query": self._retrieval_query(intent), "top_k": 40})
         self._trace.mark_node_end("retrieval")
         retrieval = tool_ctx.previous_results.get("retrieval")
         candidate_ids = [c.recipe_id for c in getattr(retrieval, "candidates", []) or []]
@@ -455,7 +473,8 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
             self._finalize(guard, request_id, c4, lock_token)
             return
         tool_ctx.node_id = self._NODE_RETRIEVE
-        handler.execute("retrieve_recipes", {"query": intent.query, "top_k": 40})
+        handler.execute("retrieve_recipes",
+                        {"query": self._retrieval_query(intent), "top_k": 40})
         retrieval = tool_ctx.previous_results.get("retrieval")
         candidate_ids = [c.recipe_id for c in getattr(retrieval, "candidates", []) or []]
         all_ids = list(dict.fromkeys(current_ids + [r for r in candidate_ids

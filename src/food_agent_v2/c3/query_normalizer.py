@@ -18,6 +18,8 @@ _SYSTEM_PROMPT = (
     "归一化为结构化意图。只输出一个 JSON 对象，字段如下：\n"
     '  "intent": 字符串，取值 new_recommendation / add_constraint / replace / '
     'reject_plan / restore / conflict / needs_clarification\n'
+    '  "meal_type": 字符串或 null（早餐/午餐/晚餐/夜宵/加餐）\n'
+    '  "scenario": 字符串或 null（家常/清爽/暖胃/补气血/减脂/正式/下饭等）\n'
     '  "dish_count_requested": 整数或 null（菜数）\n'
     '  "flavor_preferences": 字符串数组（口味偏好）\n'
     '  "health_exclusions": 字符串数组（健康排除，格式"参与者N:禁忌:食材"，'
@@ -67,6 +69,8 @@ def _to_intent_delta(data: dict, message: str) -> IntentDelta:
     return IntentDelta(
         intent=intent,  # 运行时 Literal 只是类型标注，直接传字符串
         query=message,
+        meal_type=data.get("meal_type"),
+        scenario=data.get("scenario"),
         dish_count_requested=data.get("dish_count_requested"),
         flavor_preferences=tuple(data.get("flavor_preferences") or ()),
         health_exclusions=tuple(data.get("health_exclusions") or ()),
