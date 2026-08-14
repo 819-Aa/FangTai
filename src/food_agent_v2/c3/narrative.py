@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import json
 import os
+import re
 
 from food_agent_v2.c3.llm_client import get_llm_client
 from food_agent_v2.contracts.artifacts import AnswerContent
+from food_agent_v2.contracts.build import canonical_json_hash
 
 _POLISH_SYSTEM_PROMPT = (
     "你是膳食推荐的回答润色器。润色下面的回答，使其更自然、更有解释力。"
@@ -36,6 +38,35 @@ def _parse_json(content):
         return data if isinstance(data, dict) else None
     except (json.JSONDecodeError, TypeError):
         return None
+
+
+def _validate_polish_fields(original, data) -> bool:
+    """输出审计：三个字段必须字符串、无医学结论、菜名原样保留。违反返回 False。"""
+    from food_agent_v2.c3.fast_intent import _detect_health_language
+
+    keys = ("conclusion", "menu_summary", "reasoning_summary")
+    # 1. 类型：只接受字符串（异常类型会令 AnswerContent 抛 ValidationError）
+    for key in keys:
+        val = data.get(key)
+        if val is not None and not isinstance(val, str):
+            return False
+    # 2. 禁止医学结论（疾病/指标/过敏词，不得出现在润色文本）
+    for key in keys:
+        val = data.get(key)
+        if isinstance(val, str) and _detect_health_language(val) is not None:
+            return False
+    # 3. 菜名原样保留（最终合并后的文本必须含原菜单每个菜名，模型不得改菜名）
+    original_names = [n.strip() for n in
+                      re.split(r"[、,，]", original.content.menu_summary or "") if n.strip()]
+    final_summary = data.get("menu_summary") or original.content.menu_summary
+    final_conclusion = data.get("conclusion") or original.content.conclusion
+    new_text = (final_summary or "") + (final_conclusion or "")
+    return all(name in new_text for name in original_names)
+
+
+def _content_hash(answer) -> str:
+    payload = answer.model_dump(exclude={"content_hash", "artifact_id", "request_id"})
+    return canonical_json_hash(payload)
 
 
 class NarrativePolisher:
@@ -66,6 +97,10 @@ class NarrativePolisher:
         if data is None:
             return answer
 
+        # 输出审计：类型/禁止字段/菜名不变，任一违反回退原回答
+        if not _validate_polish_fields(answer, data):
+            return answer
+
         # 只允许三个文字字段；health_note/time_note 保持权威值不变
         content = AnswerContent(
             conclusion=data.get("conclusion") or answer.content.conclusion,
@@ -74,4 +109,6 @@ class NarrativePolisher:
             health_note=answer.content.health_note,
             time_note=answer.content.time_note,
         )
-        return answer.model_copy(update={"content": content})
+        polished = answer.model_copy(update={"content": content})
+        # 正文已变，重算 content_hash（保持一致性）
+        return polished.model_copy(update={"content_hash": _content_hash(polished)})

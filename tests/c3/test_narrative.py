@@ -69,3 +69,38 @@ def test_polish_preserves_health_and_time_notes():
     assert polished.content.health_note == ""
     assert polished.content.time_note == ""
     assert polished.content.menu_summary == "菜A、菜B、菜C"
+
+
+def test_polish_rejects_changed_dish_names():
+    # 模型改了菜名 → 回退原回答
+    llm = _FakeLLM(content=json.dumps({
+        "conclusion": "为您推荐三道菜",
+        "menu_summary": "完全不同的菜、菜B、菜C",
+        "reasoning_summary": "搭配合理",
+    }))
+    a = _answer()
+    assert NarrativePolisher(llm).polish(a) is a
+
+
+def test_polish_rejects_medical_conclusion():
+    # 模型写了医学结论（疾病词）→ 回退
+    llm = _FakeLLM(content=json.dumps({
+        "conclusion": "适合糖尿病患者",
+        "menu_summary": "菜A、菜B、菜C",
+        "reasoning_summary": "搭配合理",
+    }))
+    a = _answer()
+    assert NarrativePolisher(llm).polish(a) is a
+
+
+def test_polish_rejects_non_string_fields():
+    # 异常字段类型（整数）→ 回退，不抛 ValidationError
+    llm = _FakeLLM(content=json.dumps({"conclusion": 123}))
+    a = _answer()
+    assert NarrativePolisher(llm).polish(a) is a
+
+
+def test_polish_recomputes_content_hash():
+    llm = _FakeLLM(content=json.dumps({"conclusion": "新结论"}))
+    polished = NarrativePolisher(llm).polish(_answer())
+    assert polished.content_hash != "0" * 64
