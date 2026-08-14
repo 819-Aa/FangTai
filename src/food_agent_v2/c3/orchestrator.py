@@ -340,8 +340,10 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
         guard = self._guard_active(state, c4, session_id, lock_token, lost)
         if guard is not None:
             return guard
+        self._trace.mark_node_start("retrieval")
         tool_ctx.node_id = self._NODE_RETRIEVE
         handler.execute("retrieve_recipes", {"query": intent.query, "top_k": 40})
+        self._trace.mark_node_end("retrieval")
         retrieval = tool_ctx.previous_results.get("retrieval")
         candidate_ids = [c.recipe_id for c in getattr(retrieval, "candidates", []) or []]
         if not candidate_ids:
