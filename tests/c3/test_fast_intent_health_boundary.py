@@ -49,7 +49,8 @@ def test_replace_reject_restore_intents():
 
 
 def test_explicit_taboo_still_resolves():
-    # 明确食材禁忌（无"不能/过敏"健康语言）仍走 health_exclusions
+    # 明确食材禁忌（无"不能/过敏"健康语言）仍走 health_exclusions；
+    # "别做"是追加约束指示 → add_constraint
     result = FastIntentRouter.route("别做辣的", participant_refs=("p1",))
-    assert result.intent == "new_recommendation"
+    assert result.intent == "add_constraint"
     assert result.health_exclusions == ("p1:禁忌:辣椒",)

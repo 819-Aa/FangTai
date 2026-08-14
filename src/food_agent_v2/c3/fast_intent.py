@@ -32,6 +32,18 @@ _CN_NUM = {
     "六": 6, "七": 7, "八": 8, "九": 9, "十": 10,
 }
 
+
+def _cn_num_to_int(text: str) -> int | None:
+    """中文数字 → 整数（"十"→10、"十五"→15、"二十"→20、"三"→3）。"""
+    if text in _CN_NUM:
+        return _CN_NUM[text]
+    if "十" in text:
+        parts = text.split("十")
+        tens = _CN_NUM.get(parts[0], 1) if parts[0] else 1
+        ones = _CN_NUM.get(parts[1], 0) if len(parts) > 1 and parts[1] else 0
+        return tens * 10 + ones
+    return None
+
 #: 健康语言（过敏/疾病/指标/不能吃）——命中即 model_fallback，不得普通推荐。
 _HEALTH_LANGUAGE = (
     "过敏", "不能吃", "忌口", "忌", "不耐受",
@@ -56,6 +68,8 @@ _TABOO_MAP = {
 _REPLACE_HINTS = ("换掉", "换成", "改成", "替换", "不要这道", "去掉")
 _REJECT_HINTS = ("重新推荐", "换一批", "再来", "重来", "不要这个方案", "推翻")
 _RESTORE_HINTS = ("上一版", "刚才的", "之前那个", "恢复", "回到之前", "原来那版")
+#: 约束追加指示（含禁忌/偏好追加词，非全新推荐）。
+_ADD_HINTS = ("别做", "不吃", "别太", "清淡一点", "减脂", "少放", "少油", "少盐", "少糖", "别放")
 
 
 @dataclass(frozen=True)
@@ -93,12 +107,19 @@ def _dish_count(message: str) -> int | None:
 
 
 def _time_constraint(message: str) -> tuple[int | None, str]:
-    """提取时间约束。半小时/N分钟 → hard；"尽量快/快一点" → flexible 软偏好。"""
+    """提取时间约束。半小时/N分钟/中文数字分钟 → hard；"尽量快" → flexible。"""
     if "半小时" in message:
         return 1800, "hard"
+    if "一刻钟" in message:
+        return 900, "hard"
     m = re.search(r"(\d+)\s*分钟", message)
     if m:
         return int(m.group(1)) * 60, "hard"
+    m = re.search(r"([一二两三四五六七八九十]+)\s*分钟", message)
+    if m:
+        minutes = _cn_num_to_int(m.group(1))
+        if minutes is not None:
+            return minutes * 60, "hard"
     if any(k in message for k in ("尽量快", "快一点", "快点", "尽快", "时间短")):
         return None, "flexible"
     return None, "flexible"
@@ -199,9 +220,11 @@ class FastIntentRouter:
         if any(h in text for h in _RESTORE_HINTS):
             return IntentDelta(intent="restore", query=text)
 
-        # 4. 默认首次推荐/约束追加（追加由编排器依据前文菜单判定）
+        # 4. 约束追加（含禁忌/偏好追加词）或首次推荐
+        intent_kind = "add_constraint" if any(h in text for h in _ADD_HINTS) \
+            else "new_recommendation"
         return IntentDelta(
-            intent="new_recommendation",
+            intent=intent_kind,
             query=text,
             dish_count_requested=_dish_count(text),
             flavor_preferences=_flavor_preferences(text),

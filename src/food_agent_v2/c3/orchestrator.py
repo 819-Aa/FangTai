@@ -283,11 +283,12 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
                                 config, c4, lock_token, lost)
             return
 
-        # reject_plan / 有前文菜单的 new_recommendation → 确定性 delta（最小修改）
-        if intent.intent == "reject_plan" or self._has_current_menu(c4, session_id):
+        # add_constraint / reject_plan 且已有前文菜单 → 确定性 delta（最小修改）
+        if intent.intent in ("add_constraint", "reject_plan") and self._has_current_menu(c4, session_id):
             self._run_delta(request_id, session_id, message, participants,
                             config, c4, lock_token, lost, intent)
             return
+        # new_recommendation（或 add_constraint/reject 但无前文菜单）→ 全新首次推荐
 
         # 约束追加（P5）：已有前文菜单 → 确定性 delta（最小修改）。
         if self._has_current_menu(c4, session_id):

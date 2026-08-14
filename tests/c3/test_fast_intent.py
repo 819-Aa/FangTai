@@ -32,6 +32,12 @@ class TestTimeConstraint:
         d = FastIntentRouter.route("尽量快一点")
         assert d.time_constraint_policy == "flexible"
 
+    def test_cn_ten_minutes_hard(self):
+        # 中文数字分钟（"十分钟"）也应解析为 hard 时间约束
+        d = FastIntentRouter.route("最好十分钟左右就能弄好")
+        assert d.time_constraint_seconds == 600
+        assert d.time_constraint_policy == "hard"
+
 
 class TestTabooExclusions:
     def test_no_spicy(self):
