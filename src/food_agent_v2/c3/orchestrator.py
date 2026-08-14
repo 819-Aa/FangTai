@@ -291,12 +291,6 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
             return
         # new_recommendation（或 add_constraint/reject 但无前文菜单）→ 全新首次推荐
 
-        # 约束追加（P5）：已有前文菜单 → 确定性 delta（最小修改）。
-        if self._has_current_menu(c4, session_id):
-            self._run_add_constraint_delta(request_id, session_id, message,
-                                           participants, config, c4, lock_token, lost)
-            return
-
         # 首次推荐（P4）。
         build_id = self._resolve_build_id()
         user_id_mapping = {p["participant_ref"]: int(p["user_id"]) for p in participants}
