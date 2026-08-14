@@ -271,13 +271,16 @@ def _evaluate_recipe_health(args: dict, ctx: ToolContext) -> dict:
         cs = b2.derive_constraints(uid, ref)
         hard = list(cs.hard_constraints)
         # 合并本会话临时健康约束（经 B2 验证后由 runner 写入 C4）
-        if ctx.context_service is not None and ctx.session_id:
+        to_b4 = getattr(ctx.context_service, "to_b4_constraints", None) \
+            if ctx.context_service is not None else None
+        if to_b4 is not None and ctx.session_id:
             try:
-                temp = ctx.context_service.to_b4_constraints(ctx.session_id)
+                temp = to_b4(ctx.session_id)
                 hard.extend(c for c in temp if c.participant_ref == ref)
-            except Exception:
-                # 临时约束转换失败不阻塞评估，但永久约束仍完整评估
-                pass
+            except Exception as e:
+                # 临时约束转换失败 → fail-closed（不能静默丢本轮临时禁忌）
+                return {"error": f"TEMPORARY_CONSTRAINT_LOAD_FAILED: {e}",
+                        "safe_recipe_ids": [], "excluded_recipe_ids": []}
         all_constraints[ref] = hard
 
     batch = engine.evaluate_batch(recipe_ids, ing_map, all_constraints)
@@ -458,7 +461,19 @@ def _validate_selected_menu_health(args: dict, ctx: ToolContext) -> dict:
     all_constraints = {}
     for ref, uid in ctx.participant_user_mapping.items():
         cs = b2.derive_constraints(uid, ref)
-        all_constraints[ref] = cs.hard_constraints
+        hard = list(cs.hard_constraints)
+        # R-002 闭环：最终复核也必须合并本会话临时约束（与候选审查一致），
+        # 否则最终 PASS 不能证明满足本轮临时禁忌。转换失败 → fail-closed。
+        to_b4 = getattr(ctx.context_service, "to_b4_constraints", None) \
+            if ctx.context_service is not None else None
+        if to_b4 is not None and ctx.session_id:
+            try:
+                temp = to_b4(ctx.session_id)
+                hard.extend(c for c in temp if c.participant_ref == ref)
+            except Exception as e:
+                return {"error": f"TEMPORARY_CONSTRAINT_LOAD_FAILED: {e}",
+                        "verdict": None, "plan_id": plan_id}
+        all_constraints[ref] = hard
 
     result = engine.validate_selected_menu(
         recipe_ids, ing_map, all_constraints, plan_id, menu_hash
