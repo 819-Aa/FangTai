@@ -2,11 +2,9 @@
 
 `program_v2`是健康菜品推荐系统的新一代模块化实现，与旧项目`../program`并列存在。
 
-当前仓库已包含后端、前端、数据库和测试的候选实现，但 2026-08-09 审查确认它尚未满足 V2 准则，也未打通真实基础设施的前后端全链路。旧项目在 V2 通过最终验收前保持独立可运行，不修改、移动或删除。
+当前仓库已包含后端、前端、数据库和测试的完整实现。2026-08-14 已通过 20 组竞赛对话用例的功能与性能验收（单轮 e2e 7–11s、多轮平均 <12s、零意外失败），默认走确定性快速路径（`WORKFLOW_MODE=fast_path`），legacy 五模型链作为回滚开关保留。
 
-已批准的整改准则从[文档索引](docs/README.md)进入；实现问题见[代码审查报告](reports/2026-08-09-v2-code-review.md)，DeepSeek 的执行边界见[执行契约](docs/contracts/deepseek-execution-contract.md)，逐任务方案见[全链路整改计划](docs/superpowers/plans/2026-08-09-v2-full-chain-remediation.md)。在计划最终阶段通过前，不得把当前实现标记为 production-ready。
-
-交给 DeepSeek V4 Flash 时只使用根目录的 [DEEPSEEK_START_HERE.md](DEEPSEEK_START_HERE.md) 作为启动入口，并在 `remediation/deepseek-v4-flash` 分支执行。
+验收报告见 [reports/2026-08-14-fast-path-performance-acceptance.md](reports/2026-08-14-fast-path-performance-acceptance.md)；性能快速路径设计见 [设计文档](docs/superpowers/specs/2026-08-14-performance-fast-path-design.md)，整改计划见 [整改计划](docs/superpowers/plans/2026-08-14-performance-fast-path-remediation.md)。
 
 ## 建设原则
 
