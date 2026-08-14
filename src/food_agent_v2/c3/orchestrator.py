@@ -222,7 +222,8 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
         if narrative_polish_enabled() and self._trace is not None:
             elapsed = time.perf_counter() - self._trace.processing_started_at
             if elapsed < 5.5:  # 8s 总预算 − 2.5s 润色余量
-                answer = NarrativePolisher().polish(answer, timeout_seconds=2.0)
+                answer = NarrativePolisher().polish(
+                    answer, timeout_seconds=2.0, trace=self._trace)
         self._trace.mark_node_end(NodeType.ANSWER_GENERATION.value)
         rv = ReviewArtifact(
             artifact_id=uuid.uuid4(),

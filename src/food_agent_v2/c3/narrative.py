@@ -75,8 +75,12 @@ class NarrativePolisher:
     def __init__(self, llm=None) -> None:
         self._llm = llm or get_llm_client()
 
-    def polish(self, answer, timeout_seconds: float = 2.0):
-        """润色回答；失败/超时/非 JSON 回退原回答（不改变请求成功状态）。"""
+    def polish(self, answer, timeout_seconds: float = 2.0, trace=None):
+        """润色回答；失败/超时/非 JSON 回退原回答（不改变请求成功状态）。
+
+        trace（可选 PerfTrace）在真实调用模型时记录一次模型调用，避免
+        性能报告漏记润色模型。
+        """
         draft = {
             "conclusion": answer.content.conclusion,
             "menu_summary": answer.content.menu_summary,
@@ -90,6 +94,10 @@ class NarrativePolisher:
                 response_format={"type": "json_object"},
                 timeout_seconds=timeout_seconds,
             )
+            if trace is not None:
+                usage = response.get("usage") or {}
+                trace.add_model_call("answer_generation", usage.get("model", "polish"),
+                                     usage.get("elapsed_ms", 0))
         except Exception:
             return answer
 
