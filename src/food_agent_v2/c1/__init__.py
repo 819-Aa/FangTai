@@ -328,18 +328,27 @@ class RecipeRetrievalService:
         for c in shared.candidates:
             c.source_paths = ["shared"]
             merged[c.recipe_id] = c
-        for i, prefs in enumerate(per_participant_prefs):
-            if not prefs:
-                continue
-            sub_query = f"{shared_query} {' '.join(prefs[:3])}".strip()
-            sub = self.retrieve(sub_query, top_k=min(top_k, 20))
-            for c in sub.candidates:
-                if c.recipe_id in merged:
-                    if f"participant_{i + 1}" not in merged[c.recipe_id].source_paths:
-                        merged[c.recipe_id].source_paths.append(f"participant_{i + 1}")
-                else:
-                    c.source_paths = [f"participant_{i + 1}"]
-                    merged[c.recipe_id] = c
+        # 并行执行每参与者的子查询（L3：多人查询并行，缩短多路检索延迟）。
+        # retrieve 内部只读 BM25/Qdrant + 线程安全 SiliconFlow httpx 连接池，可并发。
+        tasks = [(i, prefs) for i, prefs in enumerate(per_participant_prefs) if prefs]
+        if tasks:
+            from concurrent.futures import ThreadPoolExecutor
+
+            def _sub(task):
+                i, prefs = task
+                sub_query = f"{shared_query} {' '.join(prefs[:3])}".strip()
+                return i, self.retrieve(sub_query, top_k=min(top_k, 20))
+
+            with ThreadPoolExecutor(max_workers=min(len(tasks), 8)) as pool:
+                sub_results = pool.map(_sub, tasks)
+            for i, sub in sub_results:
+                for c in sub.candidates:
+                    if c.recipe_id in merged:
+                        if f"participant_{i + 1}" not in merged[c.recipe_id].source_paths:
+                            merged[c.recipe_id].source_paths.append(f"participant_{i + 1}")
+                    else:
+                        c.source_paths = [f"participant_{i + 1}"]
+                        merged[c.recipe_id] = c
         cands = sorted(merged.values(), key=lambda c: -c.score)[:top_k]
         return RetrievalResult(
             retrieval_id=f"multi_{len(cands)}",
