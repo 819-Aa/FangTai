@@ -38,9 +38,11 @@ class TestTabooExclusions:
         d = FastIntentRouter.route("别做辣的")
         assert d.health_exclusions == ("p1:禁忌:辣椒",)
 
-    def test_not_too_sweet(self):
+    def test_not_too_sweet_is_soft_preference(self):
+        # "别太甜" 是口味偏好，不是健康禁忌
         d = FastIntentRouter.route("别太甜")
-        assert d.health_exclusions == ("p1:禁忌:糖",)
+        assert d.health_exclusions == ()
+        assert "甜" in d.preference_exclusions
 
     def test_light_flavor_not_taboo(self):
         # "清淡" 是口味偏好，不是禁忌

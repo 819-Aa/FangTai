@@ -233,11 +233,12 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
             self._trace = PerfTrace(request_id=request_id)
 
         participant_refs = [p["participant_ref"] for p in participants]
-        intent = FastIntentRouter.route(
-            message, participant_refs[0] if participant_refs else "p1")
+        intent = FastIntentRouter.route(message, tuple(participant_refs))
 
-        # replace/reject 在 P5 第一版仍 fallback legacy（公开用例 0 次）。
-        if intent.intent in ("replace", "reject_plan"):
+        # replace/reject/restore/model_fallback/conflict 在 Task 5/6 落地前仍 fallback
+        # legacy——确定性链路只安全处理 new_recommendation + add_constraint。
+        if intent.intent in ("replace", "reject_plan", "restore",
+                             "model_fallback", "conflict"):
             super()._run_locked(request_id, session_id, message, participants,
                                 config, c4, lock_token, lost)
             return
@@ -371,8 +372,7 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
             return
 
         # 1. 解析追加约束并写入临时约束（R-002 闭环）
-        intent = FastIntentRouter.route(
-            message, participant_refs[0] if participant_refs else "p1")
+        intent = FastIntentRouter.route(message, tuple(participant_refs))
         qp = self._build_query_plan(intent, request_id, participant_refs)
         state = reduce_workflow_state(
             state, action="set_artifact", artifact="query_plan", value=qp)
