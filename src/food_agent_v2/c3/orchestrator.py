@@ -24,6 +24,7 @@ from food_agent_v2.c3 import detect_untrusted_instruction
 from food_agent_v2.c3.authoritative_answer import AuthoritativeAnswerBuilder
 from food_agent_v2.c3.delta_planner import DeltaPlanner
 from food_agent_v2.c3.fast_intent import FastIntentRouter, IntentDelta
+from food_agent_v2.c3.narrative import NarrativePolisher, narrative_polish_enabled
 from food_agent_v2.c3.perf import PerfTrace
 from food_agent_v2.c3.query_normalizer import QueryNormalizer
 from food_agent_v2.c3.runner import WorkflowRunner
@@ -217,6 +218,11 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
         # 确定性回答 + ReviewArtifact(PASS)
         self._trace.mark_node_start(NodeType.ANSWER_GENERATION.value)
         answer = AuthoritativeAnswerBuilder.build(md, fv, state.build_id)
+        # 可选润色（默认关闭；剩余预算 ≥2.5s 才启用，最多 2.0s，失败回退）
+        if narrative_polish_enabled() and self._trace is not None:
+            elapsed = time.perf_counter() - self._trace.processing_started_at
+            if elapsed < 5.5:  # 8s 总预算 − 2.5s 润色余量
+                answer = NarrativePolisher().polish(answer, timeout_seconds=2.0)
         self._trace.mark_node_end(NodeType.ANSWER_GENERATION.value)
         rv = ReviewArtifact(
             artifact_id=uuid.uuid4(),
