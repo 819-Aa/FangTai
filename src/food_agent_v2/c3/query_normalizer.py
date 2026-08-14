@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 
-from food_agent_v2.c3.fast_intent import IntentDelta
+from food_agent_v2.c3.fast_intent import IntentDelta, _detect_health_language
 from food_agent_v2.c3.llm_client import get_llm_client
 
 _SYSTEM_PROMPT = (
@@ -25,6 +25,8 @@ _SYSTEM_PROMPT = (
     '  "time_constraint_seconds": 整数或 null\n'
     '  "time_constraint_policy": "flexible" 或 "hard"\n'
     '  "target_recipe_id": 整数或 null（替换目标菜）\n'
+    "用户表达的健康禁忌（过敏/不能吃/忌口/疾病指标）必须保留到 health_exclusions，"
+    "不得丢弃或转成普通推荐。"
     "无法唯一解析时 intent 用 needs_clarification 并给出简短 reason。"
     "只输出 JSON，不要解释。"
 )
@@ -106,4 +108,12 @@ class QueryNormalizer:
             return IntentDelta(
                 intent="needs_clarification", query=message,
                 clarification_reason="归一化模型输出非 JSON")
-        return _to_intent_delta(data, message)
+        intent = _to_intent_delta(data, message)
+        # 健康保真：原始 message 含健康语言（过敏/不能吃/忌口/指标），
+        # 归一化结果却丢成普通推荐 → 澄清，不得丢弃健康信号。
+        if _detect_health_language(message) is not None:
+            if intent.intent == "new_recommendation" and not intent.health_exclusions:
+                return IntentDelta(
+                    intent="needs_clarification", query=message,
+                    clarification_reason="健康信号未被归一化保留")
+        return intent

@@ -53,3 +53,11 @@ def test_normalizer_invalid_intent_becomes_clarification():
     llm = _FakeLLM(content=json.dumps({"intent": "not_a_real_intent"}))
     result = QueryNormalizer(llm).normalize("随便说点啥", ("p1",))
     assert result.intent == "needs_clarification"
+
+
+def test_health_language_not_dropped_by_normalizer():
+    # 原始 message 含"不能吃"，归一化却返回普通推荐（丢健康信号）→ 澄清
+    llm = _FakeLLM(content=json.dumps({
+        "intent": "new_recommendation", "health_exclusions": []}))
+    result = QueryNormalizer(llm).normalize("二号参与者不能吃虾", ("p1", "p2"))
+    assert result.intent == "needs_clarification"
