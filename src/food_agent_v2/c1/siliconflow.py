@@ -7,9 +7,10 @@
 
 from __future__ import annotations
 
+import http.client
 import json
 import os
-import urllib.request
+from urllib.parse import urlparse
 
 import numpy as np
 
@@ -23,32 +24,64 @@ class SiliconFlowError(RuntimeError):
     """硅基流动 API 调用失败。"""
 
 
+# P2：进程生命周期复用的持久 HTTP(S) 连接（keep-alive），
+# 避免每次嵌入/重排调用重新 TLS 握手。连接失效由 _post 置 None 后重建。
+_conn: http.client.HTTPConnection | None = None
+# base_url 的路径前缀（如 https://api.siliconflow.cn/v1 → /v1）；http.client 的
+# 连接只承载 host:port，路径前缀需在请求时拼接（否则漏 /v1 会 404）。
+_BASE_PATH = urlparse(_SILICONFLOW_BASE_URL).path.rstrip("/")
+
+
+def _get_connection() -> http.client.HTTPConnection:
+    global _conn
+    if _conn is not None:
+        return _conn
+    parsed = urlparse(_SILICONFLOW_BASE_URL)
+    cls = (http.client.HTTPSConnection if parsed.scheme == "https"
+           else http.client.HTTPConnection)
+    _conn = cls(parsed.hostname, parsed.port, timeout=60)
+    return _conn
+
+
 def _post(path: str, body: dict, timeout: int = 60) -> dict:
-    """POST 到 SiliconFlow API，返回解析后的 JSON。"""
+    """POST 到 SiliconFlow API，返回解析后的 JSON。
+
+    复用模块级持久连接（keep-alive，固定 60s 超时；``timeout`` 参数保留兼容）。
+    半开连接/对端关闭等连接级错误重建重试一次；HTTP 4xx/5xx 按 SiliconFlowError
+    抛出（不重试）。
+    """
     if not _SILICONFLOW_API_KEY:
         raise SiliconFlowError("SILICONFLOW_API_KEY 未配置")
     data = json.dumps(body, ensure_ascii=False).encode()
-    req = urllib.request.Request(
-        f"{_SILICONFLOW_BASE_URL}{path}",
-        data=data,
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {_SILICONFLOW_API_KEY}",
-        },
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read())
-    except urllib.error.HTTPError as e:
-        detail = ""
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {_SILICONFLOW_API_KEY}",
+    }
+    global _conn
+    for attempt in (0, 1):
+        conn = _get_connection()
         try:
-            detail = e.read().decode()[:200]
-        except Exception:
-            pass
-        raise SiliconFlowError(f"SiliconFlow API {path} 失败 {e.code}: {detail}") from e
-    except urllib.error.URLError as e:
-        raise SiliconFlowError(f"SiliconFlow API {path} 连接失败: {e.reason}") from e
+            conn.request("POST", _BASE_PATH + path, body=data, headers=headers)
+            resp = conn.getresponse()
+            raw = resp.read()  # 必须读完整 body，连接才能复用
+            payload = json.loads(raw) if raw else {}
+            if resp.status >= 400:
+                detail = str(payload)[:200] if payload else ""
+                raise SiliconFlowError(
+                    f"SiliconFlow API {path} 失败 {resp.status}: {detail}")
+            return payload
+        except SiliconFlowError:
+            raise
+        except (http.client.HTTPException, OSError, ConnectionError) as e:
+            # 连接失效（半开/对端关闭）→ 关闭并重建，重试一次
+            _conn = None
+            try:
+                conn.close()
+            except Exception:
+                pass
+            if attempt == 0:
+                continue
+            raise SiliconFlowError(f"SiliconFlow API {path} 连接失败: {e}") from e
 
 
 class SiliconFlowEmbedder:

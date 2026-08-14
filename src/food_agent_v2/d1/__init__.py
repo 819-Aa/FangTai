@@ -310,6 +310,22 @@ class RecommendationAPI:
         if request_id in self._requests:
             self._requests[request_id]["stage_events_cursor"] = published
         self._persist_request(request_id)
+        # P2：事件写入后即时唤醒 SSE 订阅者（Redis Pub/Sub；不可用则回退 15s 轮询）
+        self._notify_sse(request_id)
+
+    def _notify_sse(self, request_id: str) -> None:
+        """向该 request 的 SSE 订阅者发布即时通知（Redis Pub/Sub）。
+
+        单进程与多进程共用同一 Redis 通道；Redis 不可用时静默（SSE 回退 15s 轮询）。
+        """
+        try:
+            from food_agent_v2.c4.redis_store import RedisSessionStore
+            store = RedisSessionStore()
+            store._connect()
+            if store._client is not None:
+                store._client.publish(store._key("sse", request_id), "1")
+        except Exception:
+            pass
 
     # ---- POST /v1/recommendation-requests/{request_id}/cancel ----
 

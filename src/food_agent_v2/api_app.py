@@ -48,6 +48,16 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             print(f"[V2] Model warmup failed (continuing): {e}")
 
+    # P2：Qdrant 预热——连接 + 一次不改变数据的最小检索，避免首请求承担连接与
+    # 客户端导入成本（设计文档 §5.6）。
+    try:
+        from food_agent_v2.c1 import get_retrieval_service
+        print("[V2] Qdrant warmup: connecting + minimal retrieve...")
+        get_retrieval_service().retrieve("预热", top_k=5)
+        print("[V2] Qdrant warmup: done")
+    except Exception as e:
+        print(f"[V2] Qdrant warmup failed (continuing): {e}")
+
     # ADR-0006：outbox 恢复循环——启动补投崩溃遗留的 pending 事件，
     # 后台周期扫描兜底首次投递失败；成功 SSE 不得永久丢失。
     stop_event = threading.Event()
@@ -133,22 +143,50 @@ async def get_recommendation_status(request_id: str):
 async def stream_events(request_id: str, request: Request):
     initial_last_event_id = request.headers.get("Last-Event-ID")
 
+    def _subscribe_notifications():
+        """订阅该 request 的即时事件通知（Redis Pub/Sub）；Redis 不可用返回 None。"""
+        try:
+            from food_agent_v2.c4.redis_store import RedisSessionStore
+            store = RedisSessionStore()
+            store._connect()
+            if store._client is not None:
+                pubsub = store._client.pubsub(ignore_subscribe_messages=True)
+                pubsub.subscribe(store._key("sse", request_id))
+                return pubsub
+        except Exception:
+            pass
+        return None
+
     async def event_generator():
         # 局部绑定，修复 UnboundLocalError；稳定字符串 event_id 精确续传（不 int() 比较）
         last_event_id = initial_last_event_id
-        while True:
-            events = api.subscribe_events(request_id, last_event_id)
-            yielded_any = False
-            for event in events:
-                eid = event.get("id", "")
-                yield f"id: {eid}\nevent: {event['event']}\ndata: {event['data']}\n\n"
-                yielded_any = True
-                last_event_id = eid
+        pubsub = _subscribe_notifications()
+        loop = asyncio.get_running_loop()
+        try:
+            while True:
+                events = api.subscribe_events(request_id, last_event_id)
+                yielded_any = False
+                for event in events:
+                    eid = event.get("id", "")
+                    yield f"id: {eid}\nevent: {event['event']}\ndata: {event['data']}\n\n"
+                    yielded_any = True
+                    last_event_id = eid
 
-            if not yielded_any:
-                # 无新事件时发送心跳
-                yield ": heartbeat\n\n"
-            await asyncio.sleep(15)
+                if not yielded_any:
+                    # 无新事件时发送心跳
+                    yield ": heartbeat\n\n"
+                # P2：等待事件通知（阻塞在 executor 线程，不占事件循环）；
+                # 15s 仅作为无事件 heartbeat 兜底，不再是新事件轮询周期。
+                if pubsub is not None:
+                    await loop.run_in_executor(None, pubsub.get_message, 15)
+                else:
+                    await asyncio.sleep(15)
+        finally:
+            if pubsub is not None:
+                try:
+                    pubsub.close()
+                except Exception:
+                    pass
 
     return StreamingResponse(
         event_generator(),

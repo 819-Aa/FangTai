@@ -39,6 +39,9 @@ class LLMClient:
         self._timeout = cfg.llm.timeout_seconds
         self._max_retries = cfg.llm.max_retries
         self._llm_config = cfg.llm
+        # P2：进程生命周期复用 OpenAI client（内部 httpx 连接池 keep-alive），
+        # 避免每次 _call_openai 新建 client + 连接池。惰性创建，测试注入 FakeLLM 不触发。
+        self._openai = None
 
     def invoke(
         self,
@@ -110,12 +113,14 @@ class LLMClient:
 
         from openai import OpenAI
 
-        client = OpenAI(
-            api_key=self._api_key,
-            base_url=self._base_url,
-            timeout=self._timeout,
-            max_retries=0,  # T17：SDK 不自动重试，失败交给 runner fail-closed
-        )
+        if self._openai is None:
+            self._openai = OpenAI(
+                api_key=self._api_key,
+                base_url=self._base_url,
+                timeout=self._timeout,
+                max_retries=0,  # T17：SDK 不自动重试，失败交给 runner fail-closed
+            )
+        client = self._openai
 
         request_messages = [{"role": "system", "content": system_prompt}]
         if messages is not None:
