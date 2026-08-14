@@ -385,14 +385,23 @@ def warmup_models() -> None:
     API key 错误 / 模型不可用。
     """
     from food_agent_v2.c1.qdrant_client import _get_embedding_model
+    from food_agent_v2.c1.siliconflow import (
+        _SILICONFLOW_EMBEDDING_MODEL,
+        _SILICONFLOW_RERANK_MODEL,
+        record_warmup,
+    )
 
     try:
         _get_embedding_model().encode("预热验证", normalize_embeddings=True)
+        record_warmup("embedding", True, _SILICONFLOW_EMBEDDING_MODEL)
         print("[V2] SiliconFlow embedding API: ok")
     except Exception as e:  # noqa: BLE001 —— 预热失败不阻断启动，首请求会再失败
+        record_warmup("embedding", False, _SILICONFLOW_EMBEDDING_MODEL)
         print(f"[V2] SiliconFlow embedding API 预热失败 (continuing): {e}")
     try:
         _get_production_reranker().predict([["预热验证", "测试文档"]])
+        record_warmup("rerank", True, _SILICONFLOW_RERANK_MODEL)
         print("[V2] SiliconFlow rerank API: ok")
     except Exception as e:  # noqa: BLE001
+        record_warmup("rerank", False, _SILICONFLOW_RERANK_MODEL)
         print(f"[V2] SiliconFlow rerank API 预热失败 (continuing): {e}")

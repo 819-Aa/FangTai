@@ -114,11 +114,25 @@ def qdrant_probe(build_id: str, expected_count: int) -> dict[str, Any]:
         store.close()
 
 
+def siliconflow_probe() -> dict[str, Any]:
+    """核对 SiliconFlow embedding/rerank warmup 探测状态（只返回脱敏模型身份）。"""
+    from food_agent_v2.c1.siliconflow import warmup_status
+
+    status = warmup_status()
+    if not status:
+        return {"status": "unavailable"}
+    models = {k: v.get("model", "") for k, v in status.items()}
+    if any(s.get("status") != "ready" for s in status.values()):
+        return {"status": "unavailable", "models": models}
+    return {"status": "ready", "models": models}
+
+
 def check_readiness(
     *,
     mysql_probe: Callable[[], dict[str, Any]] = mysql_fixed_data_probe,
     redis_probe: Callable[[], dict[str, Any]] = redis_probe,
     qdrant_probe: Callable[[str, int], dict[str, Any]] = qdrant_probe,
+    siliconflow_probe: Callable[[], dict[str, Any]] = siliconflow_probe,
 ) -> dict[str, Any]:
     """执行三项只读探针；任一失败都以稳定、脱敏状态 fail-closed。"""
     checks: dict[str, dict[str, Any]] = {}
@@ -157,6 +171,14 @@ def check_readiness(
             checks["qdrant"] = {"status": "ready", "point_count": recipe_count}
         except Exception:
             checks["qdrant"] = {"status": "unavailable"}
+
+    try:
+        siliconflow = siliconflow_probe()
+        if siliconflow.get("status") != "ready":
+            raise RuntimeError("siliconflow not ready")
+        checks["siliconflow"] = siliconflow
+    except Exception:
+        checks["siliconflow"] = {"status": "unavailable"}
 
     if any(check["status"] != "ready" for check in checks.values()):
         raise ServiceNotReady(checks=checks)

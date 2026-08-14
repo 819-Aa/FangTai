@@ -30,11 +30,17 @@ def _qdrant_ready(build_id: str, expected_count: int) -> dict:
     return {"status": "ready", "point_count": 1914}
 
 
-def test_readiness_requires_all_three_stores() -> None:
+def _siliconflow_ready() -> dict:
+    return {"status": "ready", "models": {
+        "embedding": "BAAI/bge-m3", "rerank": "BAAI/bge-reranker-v2-m3"}}
+
+
+def test_readiness_requires_all_four_stores() -> None:
     result = readiness.check_readiness(
         mysql_probe=_mysql_ready,
         redis_probe=_redis_ready,
         qdrant_probe=_qdrant_ready,
+        siliconflow_probe=_siliconflow_ready,
     )
 
     assert result == {
@@ -44,11 +50,13 @@ def test_readiness_requires_all_three_stores() -> None:
             "mysql": {"status": "ready", "artifact_count": 19, "recipe_count": 1914},
             "redis": {"status": "ready"},
             "qdrant": {"status": "ready", "point_count": 1914},
+            "siliconflow": {"status": "ready", "models": {
+                "embedding": "BAAI/bge-m3", "rerank": "BAAI/bge-reranker-v2-m3"}},
         },
     }
 
 
-@pytest.mark.parametrize("failed_store", ["mysql", "redis", "qdrant"])
+@pytest.mark.parametrize("failed_store", ["mysql", "redis", "qdrant", "siliconflow"])
 def test_readiness_fails_closed_with_public_status_only(failed_store: str) -> None:
     def failed_probe(*_args: object) -> dict:
         raise RuntimeError("private host password or driver details")
@@ -58,6 +66,7 @@ def test_readiness_fails_closed_with_public_status_only(failed_store: str) -> No
             mysql_probe=failed_probe if failed_store == "mysql" else _mysql_ready,
             redis_probe=failed_probe if failed_store == "redis" else _redis_ready,
             qdrant_probe=failed_probe if failed_store == "qdrant" else _qdrant_ready,
+            siliconflow_probe=failed_probe if failed_store == "siliconflow" else _siliconflow_ready,
         )
 
     exc = exc_info.value

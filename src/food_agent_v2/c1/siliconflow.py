@@ -1,17 +1,19 @@
-"""硅基流动（SiliconFlow）嵌入与重排 API 封装。
+"""硅基流动（SiliconFlow）嵌入与重排 API 封装（线程安全连接池版）。
 
-替代本地 SentenceTransformer / CrossEncoder 的 BGE 模型加载（CPU 冷加载
-2-4 分钟），改为调用 SiliconFlow 的 OpenAI 兼容 embeddings / rerank API。
-接口与本地模型保持兼容：encode 返回 numpy array、predict 返回 list[float]。
+替代本地 SentenceTransformer / CrossEncoder 的 BGE 模型加载，调用 SiliconFlow
+OpenAI 兼容 embeddings / rerank API。接口兼容本地模型：encode 返回 numpy array、
+predict 返回 list[float]。
+
+P2 修复：进程级 httpx 连接池（线程安全），替换模块级单一 http.client 连接——
+并发请求下单一 HTTPConnection 会抛 ``CannotSendRequest``，httpx.Client 内部连接池
+支持并发 + keep-alive。
 """
 
 from __future__ import annotations
 
-import http.client
-import json
 import os
-from urllib.parse import urlparse
 
+import httpx
 import numpy as np
 
 _SILICONFLOW_BASE_URL = os.getenv("SILICONFLOW_BASE_URL", "https://api.siliconflow.cn/v1")
@@ -24,64 +26,75 @@ class SiliconFlowError(RuntimeError):
     """硅基流动 API 调用失败。"""
 
 
-# P2：进程生命周期复用的持久 HTTP(S) 连接（keep-alive），
-# 避免每次嵌入/重排调用重新 TLS 握手。连接失效由 _post 置 None 后重建。
-_conn: http.client.HTTPConnection | None = None
-# base_url 的路径前缀（如 https://api.siliconflow.cn/v1 → /v1）；http.client 的
-# 连接只承载 host:port，路径前缀需在请求时拼接（否则漏 /v1 会 404）。
-_BASE_PATH = urlparse(_SILICONFLOW_BASE_URL).path.rstrip("/")
+class SiliconFlowHTTPClient:
+    """进程级 httpx 客户端（线程安全连接池），封装 SiliconFlow POST。
 
-
-def _get_connection() -> http.client.HTTPConnection:
-    global _conn
-    if _conn is not None:
-        return _conn
-    parsed = urlparse(_SILICONFLOW_BASE_URL)
-    cls = (http.client.HTTPSConnection if parsed.scheme == "https"
-           else http.client.HTTPConnection)
-    _conn = cls(parsed.hostname, parsed.port, timeout=60)
-    return _conn
-
-
-def _post(path: str, body: dict, timeout: int = 60) -> dict:
-    """POST 到 SiliconFlow API，返回解析后的 JSON。
-
-    复用模块级持久连接（keep-alive，固定 60s 超时；``timeout`` 参数保留兼容）。
-    半开连接/对端关闭等连接级错误重建重试一次；HTTP 4xx/5xx 按 SiliconFlowError
-    抛出（不重试）。
+    HTTP 4xx/5xx 与连接/超时错误统一转为不含 API key 和完整供应商正文的
+    ``SiliconFlowError``；每次请求传入本轮剩余预算形成的 timeout，不做隐式重试。
     """
-    if not _SILICONFLOW_API_KEY:
-        raise SiliconFlowError("SILICONFLOW_API_KEY 未配置")
-    data = json.dumps(body, ensure_ascii=False).encode()
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {_SILICONFLOW_API_KEY}",
-    }
-    global _conn
-    for attempt in (0, 1):
-        conn = _get_connection()
+
+    def __init__(self, api_key: str, base_url: str):
+        self._api_key = api_key
+        self._client = httpx.Client(
+            base_url=base_url.rstrip("/"),
+            headers={"Authorization": f"Bearer {api_key}"},
+            limits=httpx.Limits(max_connections=50, max_keepalive_connections=20),
+        )
+
+    def post(self, path: str, body: dict, timeout_seconds: float = 60.0) -> dict:
+        if not self._api_key:
+            raise SiliconFlowError("SILICONFLOW_API_KEY 未配置")
         try:
-            conn.request("POST", _BASE_PATH + path, body=data, headers=headers)
-            resp = conn.getresponse()
-            raw = resp.read()  # 必须读完整 body，连接才能复用
-            payload = json.loads(raw) if raw else {}
-            if resp.status >= 400:
-                detail = str(payload)[:200] if payload else ""
-                raise SiliconFlowError(
-                    f"SiliconFlow API {path} 失败 {resp.status}: {detail}")
-            return payload
-        except SiliconFlowError:
-            raise
-        except (http.client.HTTPException, OSError, ConnectionError) as e:
-            # 连接失效（半开/对端关闭）→ 关闭并重建，重试一次
-            _conn = None
-            try:
-                conn.close()
-            except Exception:
-                pass
-            if attempt == 0:
-                continue
-            raise SiliconFlowError(f"SiliconFlow API {path} 连接失败: {e}") from e
+            resp = self._client.post(
+                path, json=body, timeout=httpx.Timeout(timeout_seconds))
+        except httpx.TimeoutException as exc:
+            raise SiliconFlowError(
+                f"SiliconFlow API {path} 超时（>{timeout_seconds}s）") from exc
+        except httpx.RequestError as exc:
+            raise SiliconFlowError(
+                f"SiliconFlow API {path} 连接失败: {type(exc).__name__}") from exc
+
+        if resp.status_code >= 400:
+            detail = (resp.text or "")[:200]
+            raise SiliconFlowError(
+                f"SiliconFlow API {path} 失败 {resp.status_code}: {detail}")
+        try:
+            return resp.json()
+        except ValueError:
+            return {}
+
+    def close(self) -> None:
+        self._client.close()
+
+
+#: 进程级共享客户端（线程安全连接池）。
+_client: SiliconFlowHTTPClient | None = None
+
+
+def get_siliconflow_http_client() -> SiliconFlowHTTPClient:
+    global _client
+    if _client is None:
+        _client = SiliconFlowHTTPClient(_SILICONFLOW_API_KEY, _SILICONFLOW_BASE_URL)
+    return _client
+
+
+def close_siliconflow_http_client() -> None:
+    global _client
+    if _client is not None:
+        _client.close()
+        _client = None
+
+
+#: warmup 探测状态（/ready fail-closed 用），只存脱敏供应商/模型身份。
+_warmup: dict[str, dict] = {}
+
+
+def record_warmup(kind: str, ok: bool, model: str) -> None:
+    _warmup[kind] = {"status": "ready" if ok else "unavailable", "model": model}
+
+
+def warmup_status() -> dict:
+    return dict(_warmup)
 
 
 class SiliconFlowEmbedder:
@@ -93,7 +106,7 @@ class SiliconFlowEmbedder:
         if not inputs:
             return np.zeros((0, 1024), dtype=np.float32)
 
-        resp = _post(
+        resp = get_siliconflow_http_client().post(
             "/embeddings",
             {"model": _SILICONFLOW_EMBEDDING_MODEL, "input": inputs},
         )
@@ -124,7 +137,7 @@ class SiliconFlowReranker:
         query = pairs[0][0]
         documents = [p[1] for p in pairs]
 
-        resp = _post(
+        resp = get_siliconflow_http_client().post(
             "/rerank",
             {"model": _SILICONFLOW_RERANK_MODEL, "query": query, "documents": documents},
         )

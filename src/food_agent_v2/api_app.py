@@ -87,6 +87,12 @@ async def lifespan(app: FastAPI):
     yield
     # 关闭
     stop_event.set()
+    # P2：关闭 SiliconFlow 进程级 httpx 客户端（释放连接池）
+    try:
+        from food_agent_v2.c1.siliconflow import close_siliconflow_http_client
+        close_siliconflow_http_client()
+    except Exception:
+        pass
     print("[V2] Shutting down")
 
 
