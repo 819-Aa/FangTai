@@ -44,24 +44,29 @@ class SiliconFlowHTTPClient:
     def post(self, path: str, body: dict, timeout_seconds: float = 60.0) -> dict:
         if not self._api_key:
             raise SiliconFlowError("SILICONFLOW_API_KEY 未配置")
-        try:
-            resp = self._client.post(
-                path, json=body, timeout=httpx.Timeout(timeout_seconds))
-        except httpx.TimeoutException as exc:
-            raise SiliconFlowError(
-                f"SiliconFlow API {path} 超时（>{timeout_seconds}s）") from exc
-        except httpx.RequestError as exc:
-            raise SiliconFlowError(
-                f"SiliconFlow API {path} 连接失败: {type(exc).__name__}") from exc
+        for attempt in (0, 1):
+            try:
+                resp = self._client.post(
+                    path, json=body, timeout=httpx.Timeout(timeout_seconds))
+            except httpx.TimeoutException as exc:
+                raise SiliconFlowError(
+                    f"SiliconFlow API {path} 超时（>{timeout_seconds}s）") from exc
+            except httpx.RequestError as exc:
+                # 连接失效（keep-alive 半开/服务端并发时关闭连接）重试一次；
+                # httpx 会用新连接，不隐式指数重试（超时/4xx 不在此重试）。
+                if attempt == 0:
+                    continue
+                raise SiliconFlowError(
+                    f"SiliconFlow API {path} 连接失败: {type(exc).__name__}") from exc
 
-        if resp.status_code >= 400:
-            detail = (resp.text or "")[:200]
-            raise SiliconFlowError(
-                f"SiliconFlow API {path} 失败 {resp.status_code}: {detail}")
-        try:
-            return resp.json()
-        except ValueError:
-            return {}
+            if resp.status_code >= 400:
+                detail = (resp.text or "")[:200]
+                raise SiliconFlowError(
+                    f"SiliconFlow API {path} 失败 {resp.status_code}: {detail}")
+            try:
+                return resp.json()
+            except ValueError:
+                return {}
 
     def close(self) -> None:
         self._client.close()
