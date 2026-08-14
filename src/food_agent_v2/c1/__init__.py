@@ -128,16 +128,19 @@ class BM25Index:
 
 
 def _get_production_reranker() -> RerankerPort:
-    from sentence_transformers import CrossEncoder
+    # 默认硅基流动 API 重排；本地 CrossEncoder 加载已注释备用
+    from food_agent_v2.c1.siliconflow import SiliconFlowReranker
 
-    from food_agent_v2.c1.qdrant_client import _model_device, _model_source
-
-    cfg = load_config().models
-    return CrossEncoder(
-        _model_source(cfg.reranker_model_path, "BAAI/bge-reranker-v2-m3"),
-        cache_folder=".model-cache",
-        device=_model_device(),
-    )
+    return SiliconFlowReranker()
+    # ---- 本地 CrossEncoder 加载（CPU 冷加载慢，已停用备用）----
+    # from sentence_transformers import CrossEncoder
+    # from food_agent_v2.c1.qdrant_client import _model_device, _model_source
+    # cfg = load_config().models
+    # return CrossEncoder(
+    #     _model_source(cfg.reranker_model_path, "BAAI/bge-reranker-v2-m3"),
+    #     cache_folder=".model-cache",
+    #     device=_model_device(),
+    # )
 
 
 def low_memory_model_mode() -> bool:
@@ -376,10 +379,20 @@ def get_retrieval_service() -> RecipeRetrievalService:
 
 
 def warmup_models() -> None:
-    """预热 BGE-M3 嵌入与 BGE-Reranker（文档 07 §13）。"""
+    """验证硅基流动嵌入/重排 API 可达（首请求不承担 API 配置错误的冷失败）。
+
+    改 API 后不再加载本地模型；此处做一次真实嵌入 + 重排调用，尽早暴露
+    API key 错误 / 模型不可用。
+    """
     from food_agent_v2.c1.qdrant_client import _get_embedding_model
 
-    if low_memory_model_mode():
-        return
-    _get_embedding_model()
-    _get_production_reranker()
+    try:
+        _get_embedding_model().encode("预热验证", normalize_embeddings=True)
+        print("[V2] SiliconFlow embedding API: ok")
+    except Exception as e:  # noqa: BLE001 —— 预热失败不阻断启动，首请求会再失败
+        print(f"[V2] SiliconFlow embedding API 预热失败 (continuing): {e}")
+    try:
+        _get_production_reranker().predict([["预热验证", "测试文档"]])
+        print("[V2] SiliconFlow rerank API: ok")
+    except Exception as e:  # noqa: BLE001
+        print(f"[V2] SiliconFlow rerank API 预热失败 (continuing): {e}")

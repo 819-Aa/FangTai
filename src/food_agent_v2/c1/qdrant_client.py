@@ -27,17 +27,20 @@ def _model_device() -> str:
 
 
 def _get_embedding_model():
-    """返回缓存的 BGE-M3 嵌入模型（首次调用时加载）。"""
+    """返回缓存的 BGE-M3 嵌入（默认硅基流动 API；本地加载已注释备用）。"""
     global _embedding_model
     if _embedding_model is None:
-        from sentence_transformers import SentenceTransformer
+        from food_agent_v2.c1.siliconflow import SiliconFlowEmbedder
 
-        cfg = load_config().models
-        _embedding_model = SentenceTransformer(
-            _model_source(cfg.bge_model_path, "BAAI/bge-m3"),
-            cache_folder=".model-cache",
-            device=_model_device(),
-        )
+        _embedding_model = SiliconFlowEmbedder()
+        # ---- 本地 SentenceTransformer 加载（CPU 冷加载 2-4 分钟，已停用备用）----
+        # from sentence_transformers import SentenceTransformer
+        # cfg = load_config().models
+        # _embedding_model = SentenceTransformer(
+        #     _model_source(cfg.bge_model_path, "BAAI/bge-m3"),
+        #     cache_folder=".model-cache",
+        #     device=_model_device(),
+        # )
     return _embedding_model
 
 
