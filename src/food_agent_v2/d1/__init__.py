@@ -484,11 +484,20 @@ class RecommendationAPI:
 
         def _run():
             try:
-                from food_agent_v2.c3.runner import WorkflowRunner
+                import os
                 req = self._requests.get(request_id)
                 if not req:
                     return
-                runner = WorkflowRunner()
+                # WORKFLOW_MODE=fast_path → 确定性主编排；默认 legacy 五模型主链。
+                # 快速路径通过完整验收后才切默认（设计文档 §11 迁移回滚）。
+                if os.environ.get("WORKFLOW_MODE", "legacy") == "fast_path":
+                    from food_agent_v2.c3.orchestrator import (
+                        DeterministicRecommendationOrchestrator,
+                    )
+                    runner = DeterministicRecommendationOrchestrator()
+                else:
+                    from food_agent_v2.c3.runner import WorkflowRunner
+                    runner = WorkflowRunner()
                 runner.run(
                     request_id=request_id,
                     session_id=session_id,
