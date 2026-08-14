@@ -24,10 +24,12 @@ from food_agent_v2.c3 import detect_untrusted_instruction
 from food_agent_v2.c3.authoritative_answer import AuthoritativeAnswerBuilder
 from food_agent_v2.c3.fast_intent import FastIntentRouter
 from food_agent_v2.c3.perf import PerfTrace
+from food_agent_v2.c3.query_normalizer import QueryNormalizer
 from food_agent_v2.c3.runner import WorkflowRunner
 from food_agent_v2.c3.state import (
     NodeType,
     RequestStatus,
+    WorkflowError,
     WorkflowState,
     reduce_workflow_state,
 )
@@ -109,6 +111,21 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
         if lost.is_set() or not self._session_lock_held(c4, session_id, lock_token):
             return self._fail(state, "SESSION_LOCK_LOST", "会话锁已失效")
         return None
+
+    def _finalize_clarification(self, request_id, session_id, participants,
+                                c4, lock_token, intent):
+        """澄清终态：构造 needs_clarification state 并 finalize（发布澄清事件）。"""
+        build_id = self._resolve_build_id()
+        participant_refs = [p["participant_ref"] for p in participants]
+        state = WorkflowState(
+            request_id=request_id, build_id=build_id,
+            status=RequestStatus.RUNNING, participant_refs=participant_refs)
+        state = reduce_workflow_state(
+            state, action="query_understanding", needs_clarification=True)
+        state.error = WorkflowError(
+            "NEEDS_CLARIFICATION",
+            intent.clarification_reason or "需求需要进一步澄清")
+        self._finalize(state, request_id, c4, lock_token)
 
     # ---- context_building（首次推荐与约束追加共用）----
 
@@ -235,10 +252,22 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
         participant_refs = [p["participant_ref"] for p in participants]
         intent = FastIntentRouter.route(message, tuple(participant_refs))
 
-        # replace/reject/restore/model_fallback/conflict 在 Task 5/6 落地前仍 fallback
-        # legacy——确定性链路只安全处理 new_recommendation + add_constraint。
-        if intent.intent in ("replace", "reject_plan", "restore",
-                             "model_fallback", "conflict"):
+        # model_fallback → 单次 QueryNormalizer（无工具、3s 预算、失败转澄清）
+        if intent.intent == "model_fallback":
+            current_menu = None
+            if self._has_current_menu(c4, session_id):
+                current_menu = (c4.get_session_state(session_id) or {}).get("current_menu")
+            intent = QueryNormalizer().normalize(
+                message, tuple(participant_refs), current_menu)
+
+        # needs_clarification/conflict → 澄清终态（不进入推荐链路）
+        if intent.intent in ("needs_clarification", "conflict"):
+            self._finalize_clarification(request_id, session_id, participants,
+                                         c4, lock_token, intent)
+            return
+
+        # replace/reject/restore 在 Task 6 落地前仍 fallback legacy
+        if intent.intent in ("replace", "reject_plan", "restore"):
             super()._run_locked(request_id, session_id, message, participants,
                                 config, c4, lock_token, lost)
             return

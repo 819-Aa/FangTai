@@ -50,6 +50,7 @@ class LLMClient:
         user_message: str,
         tools: list[dict] | None = None,
         response_format: dict | None = None,
+        timeout_seconds: float | None = None,
     ) -> dict:
         """调用 LLM，返回结构化响应。
 
@@ -59,6 +60,7 @@ class LLMClient:
             user_message: 用户消息（含 ModelContext 投影）
             tools: OpenAI 格式的工具定义列表
             response_format: JSON Schema 格式的响应结构
+            timeout_seconds: 单次请求超时 override（None 用默认 self._timeout）
 
         Returns:
             {"content": str, "tool_calls": list, "usage": dict}
@@ -77,6 +79,7 @@ class LLMClient:
             tools=tools,
             response_format=response_format,
             extra_body=self._llm_config.extra_body_for_role(role),
+            timeout_seconds=timeout_seconds,
         )
 
     def invoke_messages(
@@ -107,6 +110,7 @@ class LLMClient:
         tools: list[dict] | None, response_format: dict | None,
         extra_body: dict | None,
         messages: list[dict[str, Any]] | None = None,
+        timeout_seconds: float | None = None,
     ) -> dict:
         """通过 OpenAI 兼容 API 调用。"""
         import time as _time
@@ -140,6 +144,8 @@ class LLMClient:
             kwargs["response_format"] = response_format
         if extra_body:
             kwargs["extra_body"] = extra_body
+        if timeout_seconds is not None:
+            kwargs["timeout"] = timeout_seconds
 
         start = _time.perf_counter()
         response = client.chat.completions.create(**kwargs)
