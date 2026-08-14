@@ -98,6 +98,8 @@ class WorkflowRunner:
         self._build_provider = build_provider
         self._c4 = c4
         self._trace: PerfTrace | None = None
+        # P0.2：成功 outbox 投递延迟到会话锁释放后（result_committed 不得早于锁释放）
+        self._pending_dispatch_request_id: str | None = None
 
     def _get_c4(self) -> ContextService:
         if self._c4 is None:
@@ -232,6 +234,14 @@ class WorkflowRunner:
             self._stop_heartbeat(heartbeat, stop)
             self._unbind_session_lock(c4, session_id)
             self._release_session_lock(c4, session_id, lock_token)
+            # 锁释放后再投递成功 outbox（result_committed 不得早于锁释放）
+            pending = getattr(self, "_pending_dispatch_request_id", None)
+            if pending is not None:
+                try:
+                    from food_agent_v2.application.outbox import dispatch_request
+                    dispatch_request(pending)
+                except Exception:
+                    pass
 
     def _run_locked(self, request_id: str, session_id: str,
                     message: str, participants: list[dict],
@@ -1453,13 +1463,9 @@ class WorkflowRunner:
                 result_summary = {"status": effective_status}
 
             if effective_status == RequestStatus.COMPLETED.value:
-                # outbox 是提交后的传输层。即时投递异常不得否定已经提交的 MySQL
-                # 业务事实；pending/dispatching 记录由后续 dispatcher 重试。
-                try:
-                    from food_agent_v2.application.outbox import dispatch_request
-                    dispatch_request(request_id)
-                except Exception:
-                    pass
+                # 延迟到会话锁释放后再投递（P0.2）：避免 result_committed 先于锁释放，
+                # 客户端收到提交事件立即发下一轮时拿到 SESSION_LOCK_UNAVAILABLE。
+                self._pending_dispatch_request_id = request_id
 
         d1_api.update_status(request_id, effective_status,
                             result_summary=result_summary,
