@@ -121,6 +121,15 @@ def _has_relative_conflict(message: str) -> bool:
     return False
 
 
+#: 相对称谓（多人角色），参与者归属不唯一，需澄清，不得错误绑定 p1。
+_RELATIVE_PERSON_HINTS = ("小孩", "老人", "孩子", "宝宝", "小朋友", "长辈", "爸爸", "妈妈")
+
+
+def _has_relative_person(message: str) -> bool:
+    """相对称谓多人角色（小孩/老人等）→ 归属不唯一，需澄清。"""
+    return any(h in message for h in _RELATIVE_PERSON_HINTS)
+
+
 def _taboo_exclusions(message: str, participant_ref: str) -> tuple[str, ...]:
     """明确食材禁忌 → B2 临时信号格式（`参与者N:禁忌:值`），由 B2 严格解析闭合。"""
     out: list[str] = []
@@ -174,6 +183,12 @@ class FastIntentRouter:
             return IntentDelta(
                 intent="conflict", query=text,
                 clarification_reason="多人约束互相矛盾，需要澄清")
+
+        # 2.5 相对称谓多人角色（小孩/老人等）→ needs_clarification（归属不唯一）
+        if _has_relative_person(text):
+            return IntentDelta(
+                intent="needs_clarification", query=text,
+                clarification_reason="多人相对称谓需澄清参与者归属")
 
         # 3. 明确多轮意图（替换/否定/恢复）
         if any(h in text for h in _REPLACE_HINTS):

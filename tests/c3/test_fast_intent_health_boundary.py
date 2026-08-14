@@ -35,6 +35,13 @@ def test_relative_multi_person_conflict_requires_clarification():
     assert result.intent == "conflict"
 
 
+def test_relative_person_role_requires_clarification():
+    # "小孩/老人" 相对称谓归属不唯一，不得错误绑定 p1
+    result = FastIntentRouter.route(
+        "小孩不吃辣，老人牙口不好", participant_refs=("p1",))
+    assert result.intent == "needs_clarification"
+
+
 def test_replace_reject_restore_intents():
     assert FastIntentRouter.route("把红烧肉换成清蒸鱼").intent == "replace"
     assert FastIntentRouter.route("重新推荐一批").intent == "reject_plan"
