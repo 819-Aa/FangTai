@@ -1,15 +1,18 @@
-"""T13 B6 软证据可用性测试。
-
-营养特征不可用时输出 available=False + reason，不返回数值分（禁止 0.5/0.0
-伪装）；可用时返回数值分；缺失维度不伪造。
-"""
-
 from food_agent_v2.b6 import NutritionScoringService
 
 
-def _nutrient(code: str, value: float) -> dict:
-    return {"nutrient_code": code, "value": value, "unit": "per_100g", "basis": "per_100g",
-            "source_name": "s", "source_url": "u"}
+def _vector(protein: float, sodium: float, fiber: float = 5.0) -> dict:
+    return {
+        "energy_kcal": 100,
+        "protein_g": protein,
+        "fat_g": 5,
+        "carbohydrate_g": 10,
+        "fiber_g": fiber,
+        "sodium_mg": sodium,
+        "calcium_mg": 20,
+        "iron_mg": 2,
+        "cholesterol_mg": 0,
+    }
 
 
 class FakeNutritionSource:
@@ -21,74 +24,65 @@ class FakeNutritionSource:
             {
                 "recipe_id": 1,
                 "available": False,
-                "reason": "missing_reference_mapping",
-                "missing_ingredient_ids": [1, 2],
-                "references": [],
+                "reason": "mapping_missing",
+                "raw_nutrition_per_100g": None,
             },
             {
                 "recipe_id": 2,
                 "available": True,
-                "reason": "complete_reference_coverage",
-                "references": [
-                    {
-                        "ingredient_id": 1, "reference_id": "r1", "reference_name": "ref1",
-                        "match_method": "exact",
-                        "nutrients": [
-                            _nutrient("energy_kcal", 500), _nutrient("protein_g", 20),
-                            _nutrient("fat_g", 10), _nutrient("carb_g", 40),
-                            _nutrient("sodium_mg", 400), _nutrient("fiber_g", 5),
-                        ],
-                    }
-                ],
-                "missing_ingredient_ids": [],
+                "reason": None,
+                "raw_nutrition_per_100g": _vector(10, 500),
             },
             {
                 "recipe_id": 3,
                 "available": True,
-                "reason": "complete_reference_coverage",
-                "references": [
-                    {
-                        "ingredient_id": 1, "reference_id": "r1", "reference_name": "ref1",
-                        "match_method": "exact",
-                        "nutrients": [_nutrient("energy_kcal", 500)],  # 其它维度缺失
-                    }
-                ],
-                "missing_ingredient_ids": [],
+                "reason": None,
+                "raw_nutrition_per_100g": _vector(30, 100),
+            },
+            {
+                "recipe_id": 4,
+                "available": True,
+                "reason": None,
+                "raw_nutrition_per_100g": _vector(1000, 1),
             },
         ]
 
 
-class TestSoftEvidenceAvailability:
-    def _service(self) -> NutritionScoringService:
-        service = NutritionScoringService(FakeNutritionSource())
-        service.load()
-        return service
+def _service() -> NutritionScoringService:
+    service = NutritionScoringService(FakeNutritionSource())
+    service.load()
+    return service
 
-    def test_unavailable_no_numeric_score(self) -> None:
-        result = self._service().score_recipe(1)
-        assert result.available is False
-        assert result.reason == "missing_reference_mapping"
-        assert result.weighted_total is None
 
-    def test_unavailable_not_fabricated_as_neutral(self) -> None:
-        result = self._service().score_recipe(1)
-        # 不可用绝不伪装成 0.5 或 0.0。
-        assert result.weighted_total is None
-        assert result.weighted_total not in (0.5, 0.0)
+def test_unavailable_feature_never_returns_a_numeric_score() -> None:
+    result = _service().score_candidates((1,), ("high_protein",))[1]
 
-    def test_available_computes_score(self) -> None:
-        result = self._service().score_recipe(2)
-        assert result.available is True
-        assert result.reason is None
-        assert result.weighted_total is not None
-        assert 0.0 <= result.weighted_total <= 1.0
+    assert result.available is False
+    assert result.reason == "mapping_missing"
+    assert result.weighted_total is None
 
-    def test_missing_dimension_not_fabricated(self) -> None:
-        result = self._service().score_recipe(3)
-        assert result.available is True
-        dims = {s.dimension: s for s in result.dimension_scores}
-        assert dims["protein_g"].available is False
-        assert dims["protein_g"].raw_score is None
 
-    def test_score_summary_none_when_unavailable(self) -> None:
-        assert self._service().get_score_summary(1) is None
+def test_goal_percentiles_only_use_current_safe_set() -> None:
+    scores = _service().score_candidates((2, 3), ("high_protein",))
+
+    assert set(scores) == {2, 3}
+    assert scores[3].weighted_total == 1.0
+    assert scores[2].weighted_total == 0.0
+    # recipe 4 的极端值存在于仓库，但不在本次 safe 集合，不能进入 percentile。
+
+
+def test_low_direction_and_multiple_explicit_goals_are_supported() -> None:
+    scores = _service().score_candidates((2, 3), ("low_sodium", "high_protein"))
+
+    assert scores[3].goal_scores == {"low_sodium": 1.0, "high_protein": 1.0}
+    assert scores[3].weighted_total == 1.0
+    assert scores[2].weighted_total == 0.0
+
+
+def test_no_explicit_goal_means_no_nutrition_total() -> None:
+    result = _service().score_candidates((2, 3), ())[2]
+
+    assert result.available is True
+    assert result.reason is None
+    assert result.weighted_total is None
+    assert result.goal_scores == {}

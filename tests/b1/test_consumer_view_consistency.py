@@ -293,9 +293,12 @@ def test_real_fixed_source_publishes_consistent_views(tmp_path) -> None:
         downstream["nutrition"]["available_count"] + downstream["nutrition"]["unavailable_count"]
         == 1914
     )
-    assert downstream["nutrition"]["mapped_unique_ingredient_count"] == 131
-    assert downstream["nutrition"]["unique_ingredient_count"] == 1731
-    assert downstream["nutrition"]["mapping_coverage"] == 0.0757
-    assert downstream["nutrition"]["recipes_with_any_reference"] == 1367
-    assert "zero_complete_recipe_coverage" in downstream["nutrition"]["warnings"]
+    assert downstream["nutrition"]["available_count"] == 0
+    assert sum(downstream["nutrition"]["reason_counts"].values()) == 1914
+    assert set(downstream["nutrition"]["reason_counts"]) <= {
+        "quantity_unapproved",
+        "edible_fraction_missing",
+        "mapping_missing",
+        "nutrient_incomplete",
+    }
     assert (staging / "rag_documents.jsonl").exists()

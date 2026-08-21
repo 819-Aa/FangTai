@@ -38,6 +38,9 @@ class FakeB6:
             weighted_total=self._score if self._available else None,
         )
 
+    def score_candidates(self, safe_recipe_ids, goal_codes=()):
+        return {rid: self.score_recipe(rid) for rid in safe_recipe_ids}
+
 
 def make_planner(count: int = 8, b6_available: bool = True) -> MenuPlanner:
     ids = list(range(1, count + 1))

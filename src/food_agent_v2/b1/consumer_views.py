@@ -420,18 +420,40 @@ def publish_downstream_build_views(
     """运行只接收结构化视图的 B5/B6/C1 构建器并发布派生产物。"""
     from food_agent_v2.b1.nutrition_feature_builder import (
         build_nutrition_features_from_views,
-        index_food_composition,
+    )
+    from food_agent_v2.b1.nutrition_reference import (
+        load_nutrition_crosswalk,
+        load_nutrition_references,
+    )
+    from food_agent_v2.b1.quantity_normalizer import (
+        load_edible_fraction_rules,
+        load_measure_rules,
+        load_quantity_decisions,
     )
     from food_agent_v2.b1.rag_document_builder import build_rag_documents_from_views
     from food_agent_v2.b1.step_time_builder import build_step_profiles_from_views
+    from food_agent_v2.core.paths import PROJECT_ROOT
 
     staging = Path(staging_dir)
     base_report = publish_consumer_views(views, staging)
     step_profiles, step_report = build_step_profiles_from_views(views.step_views)
+    review_dir = PROJECT_ROOT / "data" / "review"
+    nutrition_references = load_nutrition_references(
+        PROJECT_ROOT / "data" / "reference" / "ingredient_nutrition.jsonl"
+    )
     nutrition_features, nutrition_report = build_nutrition_features_from_views(
         views.nutrition_views,
-        identities,
-        index_food_composition(food_composition_records),
+        measure_rules=load_measure_rules(review_dir / "ingredient_measure_rules.csv"),
+        quantity_decisions=load_quantity_decisions(
+            review_dir / "ingredient_quantity_decisions.csv"
+        ),
+        edible_fractions=load_edible_fraction_rules(
+            review_dir / "ingredient_edible_fraction_rules.csv"
+        ),
+        nutrition_crosswalk=load_nutrition_crosswalk(
+            review_dir / "ingredient_nutrition_crosswalk.jsonl",
+            nutrition_references,
+        ),
     )
     rag_documents, rag_report = build_rag_documents_from_views(views.retrieval_views)
 

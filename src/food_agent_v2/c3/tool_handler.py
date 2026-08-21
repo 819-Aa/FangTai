@@ -405,7 +405,13 @@ def _generate_feasible_menus(args: dict, ctx: ToolContext) -> dict:
         require_drink=_requests("饮品", "饮料", "drink"),
         require_dessert=_requests("甜品", "甜点", "dessert"),
     )
-    plans = planner.plan(hard, target_count=5)
+    plans = planner.plan(
+        hard,
+        target_count=5,
+        nutrition_goal_codes=tuple(
+            getattr(query_plan, "nutrition_goal_codes", ()) or ()
+        ),
+    )
     ctx.previous_results["feasible_menus"] = plans
 
     if not plans:
@@ -603,6 +609,10 @@ def _adjust_menu_plan(args: dict, ctx: ToolContext) -> dict:
         args.get("replace_recipe_id", 0),
         ctx.safe_recipe_ids,
         hard,
+        nutrition_goal_codes=tuple(
+            getattr(ctx.previous_results.get("query_plan"), "nutrition_goal_codes", ())
+            or ()
+        ),
     )
     if adjusted:
         return {"adjusted_plan_id": adjusted.plan_id, "recipe_ids": adjusted.recipe_ids}

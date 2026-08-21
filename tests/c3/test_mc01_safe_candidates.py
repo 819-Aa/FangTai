@@ -79,6 +79,7 @@ class TestGenerateFeasibleMenus:
             dish_count_requested=5,
             dish_types=("汤",),
             flavor_preferences=("家常",),
+            nutrition_goal_codes=("low_sodium",),
         )
         with patch("food_agent_v2.c2.MenuPlanner") as planner_cls:
             planner_cls.return_value.plan.return_value = []
@@ -87,6 +88,9 @@ class TestGenerateFeasibleMenus:
         hard = planner_cls.return_value.plan.call_args.args[0]
         assert hard.dish_count == 5
         assert hard.require_soup is True
+        assert planner_cls.return_value.plan.call_args.kwargs["nutrition_goal_codes"] == (
+            "low_sodium",
+        )
 
     def test_c1_rank_becomes_c2_preference_evidence(self) -> None:
         """健康过滤后仍保留 C1 相关性顺序，不能按 recipe_id 重新选菜。"""

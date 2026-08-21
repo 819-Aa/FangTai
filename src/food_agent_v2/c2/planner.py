@@ -61,7 +61,12 @@ class MenuPlanner:
             self._b6 = get_nutrition_service()
         return self._b5, self._b6
 
-    def plan(self, constraints: MenuHardConstraints, target_count: int = 5) -> list[FeasibleMenu]:
+    def plan(
+        self,
+        constraints: MenuHardConstraints,
+        target_count: int = 5,
+        nutrition_goal_codes: tuple[str, ...] = (),
+    ) -> list[FeasibleMenu]:
         """生成确定性差异方案；不满足硬约束时返回空（无可行菜单）。"""
         # 只收有效 B4 安全候选。
         if not self._safe_recipe_ids:
@@ -96,12 +101,22 @@ class MenuPlanner:
             return []  # 候选不足，无法精确凑满菜数
 
         b5, b6 = self._get_services()
+        nutrition_scores = b6.score_candidates(
+            tuple(self._safe_recipe_ids),
+            tuple(nutrition_goal_codes),
+        )
         plans: list[FeasibleMenu] = []
         for strategy in WEIGHT_STRATEGIES:  # 确定性顺序
             if len(plans) >= target_count:
                 break
             menu = self._build_one_menu(
-                locked, candidates, constraints.dish_count, strategy, b5, b6, constraints
+                locked,
+                candidates,
+                constraints.dish_count,
+                strategy,
+                b5,
+                nutrition_scores,
+                constraints,
             )
             if menu is None:
                 continue
@@ -120,7 +135,7 @@ class MenuPlanner:
         dish_count: int,
         strategy: str,
         b5: TimeProfileService,
-        b6: NutritionScoringService,
+        nutrition_scores: dict,
         hard: MenuHardConstraints,
     ) -> FeasibleMenu | None:
         """确定性贪心构建单个方案（无 random）。"""
@@ -136,7 +151,13 @@ class MenuPlanner:
                     slot_counts[t] += 1
 
         remaining = [r for r in candidates if r not in locked]
-        scores = self._score_all_candidates(remaining, b5, b6, weights, selected)
+        scores = self._score_all_candidates(
+            remaining,
+            b5,
+            nutrition_scores,
+            weights,
+            selected,
+        )
         ranked = sorted(scores, key=lambda x: (-x[1], x[0]))  # 策略加权总分降序，同分按 recipe_id 稳定
 
         required_slots = [
@@ -185,7 +206,14 @@ class MenuPlanner:
         if len(selected) != dish_count:
             return None  # 无法精确凑满菜数
 
-        return self._score_menu(selected, weights, strategy, b5, b6, hard)
+        return self._score_menu(
+            selected,
+            weights,
+            strategy,
+            b5,
+            nutrition_scores,
+            hard,
+        )
 
     def _score_menu(
         self,
@@ -193,14 +221,18 @@ class MenuPlanner:
         weights: dict[str, float],
         strategy: str,
         b5: TimeProfileService,
-        b6: NutritionScoringService,
+        nutrition_scores: dict,
         hard: MenuHardConstraints,
     ) -> FeasibleMenu:
         time_s = sum(self._time_score(rid, b5) for rid in recipe_ids) / max(len(recipe_ids), 1)
         nutrition_available = all(
-            self._nutrition_decomposition(rid, b6).available for rid in recipe_ids
+            self._nutrition_decomposition(rid, nutrition_scores).available
+            and self._nutrition_decomposition(rid, nutrition_scores).weighted_total is not None
+            for rid in recipe_ids
         )
-        nutrition_s = sum(self._nutrition_score(rid, b6) for rid in recipe_ids) / max(len(recipe_ids), 1)
+        nutrition_s = sum(
+            self._nutrition_score(rid, nutrition_scores) for rid in recipe_ids
+        ) / max(len(recipe_ids), 1)
         pref_s = sum(self._preference_score(rid) for rid in recipe_ids) / max(len(recipe_ids), 1)
         div_s = self._menu_diversity_score(recipe_ids)
 
@@ -243,8 +275,9 @@ class MenuPlanner:
             return 0.0
         return sum(weights[name] * value for name, value in available) / weight_sum
 
-    def _nutrition_decomposition(self, rid: int, b6: NutritionScoringService):
-        return b6.score_recipe(rid)
+    @staticmethod
+    def _nutrition_decomposition(rid: int, nutrition_scores: dict):
+        return nutrition_scores[rid]
 
     def _time_score(self, rid: int, b5: TimeProfileService) -> float:
         profile = b5.get_recipe_time_profile(rid)
@@ -255,8 +288,8 @@ class MenuPlanner:
             return 0.5
         return max(0.0, 1.0 - total / 7200)
 
-    def _nutrition_score(self, rid: int, b6: NutritionScoringService) -> float:
-        decomposition = b6.score_recipe(rid)
+    def _nutrition_score(self, rid: int, nutrition_scores: dict) -> float:
+        decomposition = self._nutrition_decomposition(rid, nutrition_scores)
         if not decomposition.available or decomposition.weighted_total is None:
             return 0.0
         return decomposition.weighted_total
@@ -293,15 +326,16 @@ class MenuPlanner:
         self,
         ids: list[int],
         b5: TimeProfileService,
-        b6: NutritionScoringService,
+        nutrition_scores: dict,
         weights: dict[str, float],
         already_selected: list[int],
     ) -> list[tuple[int, float, float]]:
         results = []
         for rid in ids:
             time_s = self._time_score(rid, b5)
-            nutrition_available = self._nutrition_decomposition(rid, b6).available
-            nutrition_s = self._nutrition_score(rid, b6)
+            nutrition = self._nutrition_decomposition(rid, nutrition_scores)
+            nutrition_available = nutrition.available and nutrition.weighted_total is not None
+            nutrition_s = self._nutrition_score(rid, nutrition_scores)
             diversity_s = self._diversity_score(rid, already_selected)
             preference_s = self._preference_score(rid)
             dims = {
@@ -344,6 +378,7 @@ class MenuPlanner:
         replace_recipe_id: int,
         safe_ids: list[int],
         constraints: MenuHardConstraints,
+        nutrition_goal_codes: tuple[str, ...] = (),
     ) -> FeasibleMenu | None:
         """替换一道菜（确定性，无 random）。新增方案 makespan 超原方案则回退。"""
         b5, b6 = self._get_services()
@@ -353,6 +388,10 @@ class MenuPlanner:
         ]
         if not candidates:
             return None
+        nutrition_scores = b6.score_candidates(
+            tuple(safe_ids),
+            tuple(nutrition_goal_codes),
+        )
         original_makespan = menu.makespan_seconds or float("inf")
         weights = WEIGHT_STRATEGIES.get(menu.dominant_objective, WEIGHT_STRATEGIES["balanced"])
         # 确定性候选顺序：按 score 降序（同分按 recipe_id）。
@@ -361,8 +400,11 @@ class MenuPlanner:
                 weights,
                 {
                     "time": self._time_score(r, b5),
-                    "nutrition": self._nutrition_score(r, b6)
-                    if self._nutrition_decomposition(r, b6).available else None,
+                    "nutrition": self._nutrition_score(r, nutrition_scores)
+                    if self._nutrition_decomposition(r, nutrition_scores).available
+                    and self._nutrition_decomposition(r, nutrition_scores).weighted_total
+                    is not None
+                    else None,
                     "preference": self._preference_score(r),
                     "diversity": self._diversity_score(r, menu.recipe_ids),
                 },
@@ -372,7 +414,12 @@ class MenuPlanner:
         for candidate, _ in scored[:3]:
             new_ids = [r if r != replace_recipe_id else candidate for r in menu.recipe_ids]
             new_menu = self._score_menu(
-                new_ids, weights, menu.dominant_objective, b5, b6, constraints
+                new_ids,
+                weights,
+                menu.dominant_objective,
+                b5,
+                nutrition_scores,
+                constraints,
             )
             if (new_menu.makespan_seconds or float("inf")) > original_makespan:
                 return None

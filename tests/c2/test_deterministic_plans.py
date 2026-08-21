@@ -41,12 +41,17 @@ class FakeB6:
     ) -> None:
         self._available = available
         self._per_recipe = per_recipe
+        self.calls = []
 
     def score_recipe(self, rid: int):
         if not self._available:
             return SimpleNamespace(available=False, weighted_total=None)
         score = self._per_recipe(rid) if self._per_recipe else 0.8
         return SimpleNamespace(available=True, weighted_total=score)
+
+    def score_candidates(self, safe_recipe_ids, goal_codes=()):
+        self.calls.append((tuple(safe_recipe_ids), tuple(goal_codes)))
+        return {rid: self.score_recipe(rid) for rid in safe_recipe_ids}
 
 
 def make_planner(b6_available: bool = True, count: int = 20) -> MenuPlanner:
@@ -70,6 +75,18 @@ def make_planner(b6_available: bool = True, count: int = 20) -> MenuPlanner:
 
 
 class TestDeterministicPlans:
+    def test_explicit_nutrition_goals_are_scored_only_with_the_b4_safe_set(self) -> None:
+        planner = make_planner(count=8)
+
+        planner.plan(
+            MenuHardConstraints(dish_count=4),
+            nutrition_goal_codes=("high_protein",),
+        )
+
+        assert planner._b6.calls == [
+            (tuple(range(1, 9)), ("high_protein",)),
+        ]
+
     def test_plan_id_stable_for_same_input(self) -> None:
         planner = make_planner()
         a = planner.plan(MenuHardConstraints(dish_count=5))
