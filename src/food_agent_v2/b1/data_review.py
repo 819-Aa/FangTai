@@ -16,6 +16,11 @@ from food_agent_v2.b1.consumer_views import (
     recipe_facts_from_source,
 )
 from food_agent_v2.b1.ingredient_identity import rebuild_ingredient_identities
+from food_agent_v2.b1.nutrition_reference import (
+    load_nutrition_references,
+    nutrition_form_from_occurrence,
+    write_nutrition_crosswalk_candidates,
+)
 from food_agent_v2.b1.quantity_normalizer import (
     load_measure_rules,
     load_quantity_decisions,
@@ -50,7 +55,11 @@ def _read_jsonl(path: Path) -> tuple[dict, ...]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="food-agent-v2 data-review")
-    parser.add_argument("--kind", choices=("profiles", "quantities"), required=True)
+    parser.add_argument(
+        "--kind",
+        choices=("profiles", "quantities", "nutrition"),
+        required=True,
+    )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(
         "--sample",
@@ -78,8 +87,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.kind == "profiles":
         write_profile_candidates(facts, args.output)
         count = len(facts)
-    else:
+    elif args.kind == "quantities":
         count = _write_quantity_review(rows, facts, args.output, sample=args.sample)
+    else:
+        count = _write_nutrition_review(rows, facts, args.output, sample=args.sample)
     print(
         json.dumps(
             {"status": "generated", "kind": args.kind, "count": count,
@@ -91,6 +102,52 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _write_quantity_review(rows, facts, output: Path, *, sample: int | None) -> int:
+    views = _build_review_views(rows, facts)
+    contexts = build_quantity_review_contexts(
+        views.nutrition_views,
+        facts,
+        load_measure_rules(_REVIEW_DIR / "ingredient_measure_rules.csv"),
+        load_quantity_decisions(_REVIEW_DIR / "ingredient_quantity_decisions.csv"),
+    )
+    if sample is not None:
+        contexts = contexts[:sample]
+    from food_agent_v2.c3.llm_client import get_llm_client
+
+    candidates = generate_quantity_candidates(
+        contexts,
+        LLMQuantityEstimator(get_llm_client()),
+    )
+    write_quantity_candidates(candidates, output)
+    return len(candidates)
+
+
+def _write_nutrition_review(rows, facts, output: Path, *, sample: int | None) -> int:
+    views = _build_review_views(rows, facts)
+    ingredient_rows = tuple(
+        (
+            ingredient.ingredient_id,
+            ingredient.ingredient_name,
+            nutrition_form_from_occurrence(ingredient.form),
+        )
+        for view in views.nutrition_views
+        for ingredient in view.ingredients
+    )
+    unique_rows = tuple(
+        {
+            (ingredient_id, form): (ingredient_id, name, form)
+            for ingredient_id, name, form in ingredient_rows
+        }.values()
+    )
+    if sample is not None:
+        unique_rows = unique_rows[:sample]
+    references = load_nutrition_references(
+        PROJECT_ROOT / "data" / "reference" / "ingredient_nutrition.jsonl"
+    )
+    write_nutrition_crosswalk_candidates(unique_rows, references, output)
+    return len(unique_rows)
+
+
+def _build_review_views(rows, facts):
     with TemporaryDirectory(prefix="food-agent-quantity-review-") as temp_dir:
         staging = Path(temp_dir)
         report = rebuild_ingredient_identities(
@@ -125,20 +182,4 @@ def _write_quantity_review(rows, facts, output: Path, *, sample: int | None) -> 
             occurrences=occurrences,
             identities=identities,
         )
-
-    contexts = build_quantity_review_contexts(
-        views.nutrition_views,
-        facts,
-        load_measure_rules(_REVIEW_DIR / "ingredient_measure_rules.csv"),
-        load_quantity_decisions(_REVIEW_DIR / "ingredient_quantity_decisions.csv"),
-    )
-    if sample is not None:
-        contexts = contexts[:sample]
-    from food_agent_v2.c3.llm_client import get_llm_client
-
-    candidates = generate_quantity_candidates(
-        contexts,
-        LLMQuantityEstimator(get_llm_client()),
-    )
-    write_quantity_candidates(candidates, output)
-    return len(candidates)
+    return views
