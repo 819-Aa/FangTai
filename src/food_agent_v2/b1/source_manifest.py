@@ -25,8 +25,24 @@ from food_agent_v2.b1.schemas import (
     SourceRecipeRow,
 )
 from food_agent_v2.contracts.build import SourceManifest, verify_source_file
+from food_agent_v2.core.paths import PROJECT_ROOT
 
 _HEADER_INDEX = {"名称": 0, "食材清单": 1, "烹饪步骤": 2, "label": 3}
+
+_BUILD_INPUT_PATHS = (
+    "data/raw/recipes_sample_2000.csv",
+    "data/raw/50个用户健康档案_详细版7.13.json",
+    "data/review/recipe_classification_overrides.csv",
+    "data/review/ingredient_identity_overrides.csv",
+    "data/review/health_relation_decisions.csv",
+    "data/review/recipe_profile_enrichment.jsonl",
+    "data/review/ingredient_condition_defaults.csv",
+    "data/review/ingredient_measure_rules.csv",
+    "data/review/ingredient_edible_fraction_rules.csv",
+    "data/review/ingredient_quantity_decisions.csv",
+    "data/review/ingredient_nutrition_crosswalk.jsonl",
+    "data/reference/ingredient_nutrition.jsonl",
+)
 
 
 def canonical_source_manifest() -> SourceManifest:
@@ -41,6 +57,28 @@ def canonical_source_manifest() -> SourceManifest:
         row_count=SOURCE_ROW_COUNT,
         headers=SOURCE_HEADERS,
     )
+
+
+def canonical_build_input_manifest() -> dict:
+    """绑定正式 rebuild 的全部事实输入；可再生模型缓存明确不在其中。"""
+    inputs = []
+    for relative_path in _BUILD_INPUT_PATHS:
+        path = PROJECT_ROOT / relative_path
+        if not path.is_file():
+            raise FileNotFoundError(f"构建输入不存在: {relative_path}")
+        raw = path.read_bytes()
+        inputs.append(
+            {
+                "relative_path": relative_path,
+                "byte_size": len(raw),
+                "sha256": hashlib.sha256(raw).hexdigest(),
+            }
+        )
+    return {
+        "schema_version": "2.0.0",
+        "fixed_recipe_source": canonical_source_manifest().model_dump(mode="json"),
+        "inputs": tuple(inputs),
+    }
 
 
 def load_verified_recipe_source(path: Path, manifest: SourceManifest) -> list[SourceRecipeRow]:

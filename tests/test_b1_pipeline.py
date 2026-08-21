@@ -142,6 +142,20 @@ class TestCrossDomain:
 class TestQualityGates:
     """D3 §6.1: 质量门禁"""
 
+    def test_v2_runtime_artifact_schema_versions(self):
+        from food_agent_v2.b1.rebuild import artifact_schema_versions
+
+        versions = artifact_schema_versions(
+            {"rag_documents": object(), "nutrition_features": object(),
+             "step_tasks": object(), "recipe_health_views": object()}
+        )
+        assert versions == {
+            "rag_documents": "2.0.0",
+            "nutrition_features": "2.0.0",
+            "step_tasks": "2.0.0",
+            "recipe_health_views": "1.0.0",
+        }
+
     def test_approved_fixed_build_evidence_exists(self):
         """已批准固定构建证据存在；回归测试不得要求重新 data-rebuild。"""
         from food_agent_v2.core.paths import PROJECT_ROOT

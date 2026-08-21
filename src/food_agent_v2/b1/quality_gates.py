@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -16,7 +17,10 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from food_agent_v2.b1.health_relation_builder import ALLOWED_CONSTRAINT_CODES
-from food_agent_v2.b1.source_manifest import canonical_source_manifest
+from food_agent_v2.b1.source_manifest import (
+    canonical_build_input_manifest,
+    canonical_source_manifest,
+)
 from food_agent_v2.contracts.build import (
     ArtifactEntry,
     BuildManifest,
@@ -56,6 +60,7 @@ ALLOWED_RECORD_TYPES = {
     "test_record",
 }
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+APPROVED_NUTRITION_AVAILABLE_BASELINE = 0
 
 
 class DataQualityError(ValueError):
@@ -146,6 +151,28 @@ def _unique(records: list[dict], field: str, *, artifact: str) -> set:
     if None in values or len(values) != len(set(values)):
         _fail("ARTIFACT_PRIMARY_KEY_INVALID", f"{artifact}.{field} is missing or duplicated")
     return set(values)
+
+
+def _recursive_keys(value) -> set[str]:
+    if isinstance(value, dict):
+        return set(value) | {
+            nested
+            for item in value.values()
+            for nested in _recursive_keys(item)
+        }
+    if isinstance(value, (list, tuple)):
+        return {nested for item in value for nested in _recursive_keys(item)}
+    return set()
+
+
+def _valid_nonnegative_number(value) -> bool:
+    if value is None or isinstance(value, bool):
+        return False
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return False
+    return math.isfinite(number) and number >= 0
 
 
 def _assert_build_identity(
@@ -363,8 +390,177 @@ def evaluate_staging_quality(
         f"leakage={len(rag_health_leakage)}",
     )
 
+    retrieval_by_id = {
+        int(item["recipe_id"]): item
+        for item in artifacts["recipe_retrieval_build_views"]
+    }
+    rag_label_errors = [
+        item.get("recipe_id")
+        for item in artifacts["rag_documents"]
+        if not item.get("meal_tags")
+        or tuple(item.get("label_tags", ()))
+        != tuple(retrieval_by_id[int(item["recipe_id"])].get("label_tags", ()))
+    ]
+    gate(
+        "G12_RAG_LABEL_AND_MEAL_COVERAGE",
+        not rag_label_errors,
+        f"invalid={len(rag_label_errors)}",
+    )
+
+    forbidden_runtime_fields = {
+        "confidence",
+        "duration_confidence",
+        "time_source",
+        "authority",
+        "minimum_seconds",
+        "maximum_seconds",
+        "duration_min_seconds",
+        "duration_max_seconds",
+        "match_method",
+        "coverage_ratio",
+        "evidence",
+        "evidence_ref",
+        "explanation",
+    }
+    runtime_boundary_errors = [
+        (artifact_name, item.get("recipe_id"))
+        for artifact_name in ("rag_documents", "nutrition_features", "step_tasks")
+        for item in artifacts[artifact_name]
+        if _recursive_keys(item) & forbidden_runtime_fields
+    ]
+    gate(
+        "G13_RAG_RUNTIME_FIELD_BOUNDARY",
+        not runtime_boundary_errors,
+        f"invalid={len(runtime_boundary_errors)}",
+    )
+
+    from food_agent_v2.b1.nutrition_reference import NUTRIENT_FIELDS
+
+    def nutrition_record_valid(item: dict) -> bool:
+        available = item.get("available") is True
+        weight = item.get("raw_edible_input_weight_g")
+        total = item.get("raw_nutrition_total")
+        per_100g = item.get("raw_nutrition_per_100g")
+        if not available:
+            return (
+                item.get("available") is False
+                and weight is None
+                and total is None
+                and per_100g is None
+                and bool(item.get("reason"))
+            )
+        if item.get("reason") is not None or not _valid_nonnegative_number(weight):
+            return False
+        if float(weight) <= 0 or not isinstance(total, dict) or not isinstance(per_100g, dict):
+            return False
+        return all(
+            set(vector) == set(NUTRIENT_FIELDS)
+            and all(_valid_nonnegative_number(vector[field]) for field in NUTRIENT_FIELDS)
+            for vector in (total, per_100g)
+        )
+
+    nutrition_all_or_nothing_errors = [
+        item.get("recipe_id")
+        for item in artifacts["nutrition_features"]
+        if not nutrition_record_valid(item)
+    ]
+    gate(
+        "G14_NUTRITION_ALL_OR_NOTHING",
+        not nutrition_all_or_nothing_errors,
+        f"invalid={len(nutrition_all_or_nothing_errors)}",
+    )
+
+    nutrition_available_count = sum(
+        item.get("available") is True for item in artifacts["nutrition_features"]
+    )
+    gate(
+        "G15_NUTRITION_COVERAGE_NON_REGRESSION",
+        nutrition_available_count >= APPROVED_NUTRITION_AVAILABLE_BASELINE,
+        f"baseline={APPROVED_NUTRITION_AVAILABLE_BASELINE}, actual={nutrition_available_count}",
+    )
+
+    from food_agent_v2.b1.schemas import StepAtom, StepTask
+    from food_agent_v2.b1.time_graph_profiler import validate_time_graph
+    from food_agent_v2.b5.scheduler import schedule_task_graphs
+
+    step_view_by_id = {
+        int(item["recipe_id"]): item for item in artifacts["recipe_step_binding_views"]
+    }
+    time_graph_errors: list[int] = []
+    for item in artifacts["step_tasks"]:
+        recipe_id = int(item["recipe_id"])
+        try:
+            tasks = tuple(StepTask.model_validate(task) for task in item.get("step_tasks", ()))
+            if not tasks or len(tasks) < len(step_view_by_id[recipe_id].get("steps", ())):
+                raise ValueError("步骤覆盖不足")
+            atoms = tuple(
+                StepAtom(
+                    atom_id=task.atom_id,
+                    source_step_index=index,
+                    text=task.text,
+                    explicit_duration_seconds=task.duration_seconds,
+                    duration_locked=True,
+                )
+                for index, task in enumerate(tasks, start=1)
+            )
+            validate_time_graph(atoms, tasks)
+            schedule_task_graphs({recipe_id: tasks})
+        except Exception:
+            time_graph_errors.append(recipe_id)
+    gate(
+        "G16_TIME_GRAPH_COMPLETE_AND_ACYCLIC",
+        not time_graph_errors,
+        f"invalid={len(time_graph_errors)}",
+    )
+
+    health_forbidden = {
+        "step_tasks",
+        "active_seconds",
+        "estimated_elapsed_seconds",
+        "raw_nutrition_total",
+        "raw_nutrition_per_100g",
+    }
+    rag_forbidden = health_forbidden | {
+        "verdict",
+        "constraint_code",
+        "participant_ref",
+    }
+    nutrition_forbidden = {
+        "step_tasks",
+        "duration_seconds",
+        "task_type",
+        "verdict",
+        "constraint_code",
+        "participant_ref",
+    }
+    time_forbidden = {
+        "raw_nutrition_total",
+        "raw_nutrition_per_100g",
+        "label_tags",
+        "meal_tags",
+        "verdict",
+        "constraint_code",
+        "participant_ref",
+    }
+    consumer_boundary_errors = sum(
+        bool(_recursive_keys(item) & forbidden)
+        for artifact_name, forbidden in (
+            ("recipe_health_views", health_forbidden),
+            ("rag_documents", rag_forbidden),
+            ("nutrition_features", nutrition_forbidden),
+            ("step_tasks", time_forbidden),
+        )
+        for item in artifacts[artifact_name]
+    )
+    gate(
+        "G17_B4_B5_B6_CONSUMER_BOUNDARY",
+        consumer_boundary_errors == 0,
+        f"invalid={consumer_boundary_errors}",
+    )
+
     metrics = {name: len(records) for name, records in artifacts.items()}
     metrics["health_ingredient_universe"] = len(health_ingredient_ids)
+    metrics["nutrition_available_count"] = nutrition_available_count
     return gates, metrics
 
 
@@ -441,10 +637,14 @@ def verify_build_manifest(
     missing = set(required_artifacts) - set(manifest.artifacts)
     if missing:
         _fail("REQUIRED_ARTIFACT_MISSING", f"missing={sorted(missing)}")
+    if required_artifacts == REQUIRED_ARTIFACTS and set(manifest.artifacts) != set(
+        REQUIRED_ARTIFACTS
+    ):
+        _fail("FIXED_ARTIFACT_SET_MISMATCH", "固定构建必须恰好包含 19 个 Artifact")
     if not _SHA256_RE.match(manifest.source_manifest_hash):
         _fail("BUILD_MANIFEST_INVALID", "source_manifest_hash is not SHA-256")
     canonical_source = canonical_source_manifest()
-    expected_source_hash = source_manifest_hash(canonical_source)
+    expected_source_hash = source_manifest_hash(canonical_build_input_manifest())
     if manifest.source_manifest_hash != expected_source_hash:
         _fail(
             "SOURCE_MANIFEST_HASH_MISMATCH",
@@ -459,6 +659,18 @@ def verify_build_manifest(
             "SCHEMA_VERSION_COVERAGE_MISMATCH",
             "schema_versions must cover exactly the declared artifacts",
         )
+    invalid_schema_versions = {
+        name: version
+        for name, version in manifest.schema_versions.items()
+        if version
+        != (
+            "2.0.0"
+            if name in {"rag_documents", "nutrition_features", "step_tasks"}
+            else "1.0.0"
+        )
+    }
+    if invalid_schema_versions:
+        _fail("SCHEMA_VERSION_MISMATCH", str(invalid_schema_versions))
 
     artifact_paths: dict[str, Path] = {}
     for name, entry in manifest.artifacts.items():

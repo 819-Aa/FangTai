@@ -19,12 +19,21 @@ from food_agent_v2.b1.ingredient_identity import rebuild_ingredient_identities
 from food_agent_v2.b1.rag_document_builder import build_rag_documents_from_views
 from food_agent_v2.b1.rebuild import prepare_reviewed_consumer_inputs
 from food_agent_v2.b1.recipe_classifier import classify_all, load_overrides
+from food_agent_v2.b1.schemas import StepTask
 from food_agent_v2.b1.source_manifest import (
     canonical_source_manifest,
     load_verified_recipe_source,
 )
+from food_agent_v2.b1.step_atomizer import atomize_recipe_steps
+from food_agent_v2.b1.time_graph_profiler import (
+    RecipeTimeProfile,
+    TimeGraphCache,
+    TimeGraphCacheMiss,
+    time_graph_cache_key,
+    time_graph_pipeline_model_id,
+)
 from food_agent_v2.contracts.build import source_manifest_hash
-from food_agent_v2.core.paths import FOOD_COMPOSITION, PROJECT_ROOT, RECIPES_RAW
+from food_agent_v2.core.paths import PROJECT_ROOT, RECIPES_RAW
 
 BUILD = BuildIdentity(
     build_id=UUID("11111111-1111-1111-1111-111111111111"),
@@ -229,6 +238,81 @@ def test_projection_failure_leaves_no_partial_view_files(tmp_path) -> None:
     assert not list(tmp_path.glob("*.jsonl"))
 
 
+def test_downstream_publish_requires_current_validated_time_graph_cache(tmp_path) -> None:
+    views = build_consumer_views(
+        build=BUILD,
+        recipes=(RecipeFact(1, "清蒸鱼", "dish", ("蒸10分钟",)),),
+        occurrences=(IngredientOccurrenceFact("1-1", 1, "鱼500克", "鱼", 1, "edible"),),
+        identities=(IngredientIdentityFact(1, "鱼", 1),),
+    )
+
+    with pytest.raises(TimeGraphCacheMiss):
+        publish_downstream_build_views(
+            views,
+            (IngredientIdentityFact(1, "鱼", 1),),
+            (),
+            tmp_path,
+        )
+
+
+def test_downstream_publish_writes_validated_v2_time_profile(tmp_path) -> None:
+    views = build_consumer_views(
+        build=BUILD,
+        recipes=(
+            RecipeFact(
+                1,
+                "清蒸鱼",
+                "dish",
+                ("蒸10分钟",),
+                label_tags=("晚餐",),
+                meal_tags=("晚餐",),
+            ),
+        ),
+        occurrences=(IngredientOccurrenceFact("1-1", 1, "鱼500克", "鱼", 1, "edible"),),
+        identities=(IngredientIdentityFact(1, "鱼", 1),),
+    )
+    atoms = atomize_recipe_steps(recipe_id=1, steps=((1, "蒸10分钟"),))
+    tasks = (
+        StepTask(
+            atom_id=atoms[0].atom_id,
+            text=atoms[0].text,
+            duration_seconds=600,
+            task_type="unattended_equipment",
+            resources=("steamer",),
+            depends_on=(),
+        ),
+    )
+    cache = TimeGraphCache()
+    cache.put(
+        time_graph_cache_key(1, atoms, time_graph_pipeline_model_id("g", "v")),
+        RecipeTimeProfile(recipe_id=1, recipe_name="清蒸鱼", step_tasks=tasks),
+    )
+
+    report = publish_downstream_build_views(
+        views,
+        (IngredientIdentityFact(1, "鱼", 1),),
+        (),
+        tmp_path,
+        time_graph_cache=cache,
+        time_graph_generator_model_id="g",
+        time_graph_verifier_model_id="v",
+    )
+
+    record = json.loads((tmp_path / "step_time_profiles.jsonl").read_text(encoding="utf-8"))
+    assert report["step_time"]["ready_count"] == 1
+    assert record["active_seconds"] == 0
+    assert record["estimated_elapsed_seconds"] == 600
+    assert set(record) == {
+        "build_id",
+        "source_manifest_hash",
+        "recipe_id",
+        "recipe_name",
+        "active_seconds",
+        "estimated_elapsed_seconds",
+        "step_tasks",
+    }
+
+
 def test_real_fixed_source_publishes_consistent_views(tmp_path) -> None:
     rows = tuple(load_verified_recipe_source(RECIPES_RAW, canonical_source_manifest()))
     classifications = tuple(
@@ -273,34 +357,8 @@ def test_real_fixed_source_publishes_consistent_views(tmp_path) -> None:
     )
     staging = tmp_path / "T07"
     report = publish_consumer_views(views, staging)
-    downstream = publish_downstream_build_views(
-        views,
-        identities,
-        tuple(
-            json.loads(line)
-            for line in FOOD_COMPOSITION.read_text(encoding="utf-8").splitlines()
-            if line
-        ),
-        staging,
-    )
-
     assert len(views.recipe_ids) == 1914
     assert report["status"] == "passed"
     assert report["eligible_recipe_count"] == 1914
     assert report["ingredient_consistency_error_count"] == 0
     assert set(report["view_counts"].values()) == {1914}
-    assert downstream["status"] == "passed"
-    assert set(downstream["derived_counts"].values()) == {1914}
-    assert (
-        downstream["nutrition"]["available_count"] + downstream["nutrition"]["unavailable_count"]
-        == 1914
-    )
-    assert downstream["nutrition"]["available_count"] == 0
-    assert sum(downstream["nutrition"]["reason_counts"].values()) == 1914
-    assert set(downstream["nutrition"]["reason_counts"]) <= {
-        "quantity_unapproved",
-        "edible_fraction_missing",
-        "mapping_missing",
-        "nutrient_incomplete",
-    }
-    assert (staging / "rag_documents.jsonl").exists()

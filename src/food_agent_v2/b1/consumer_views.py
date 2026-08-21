@@ -416,6 +416,10 @@ def publish_downstream_build_views(
     identities: tuple[IngredientIdentityFact, ...],
     food_composition_records: tuple[dict, ...],
     staging_dir: Path,
+    *,
+    time_graph_cache=None,
+    time_graph_generator_model_id: str | None = None,
+    time_graph_verifier_model_id: str | None = None,
 ) -> dict:
     """运行只接收结构化视图的 B5/B6/C1 构建器并发布派生产物。"""
     from food_agent_v2.b1.nutrition_feature_builder import (
@@ -432,11 +436,58 @@ def publish_downstream_build_views(
     )
     from food_agent_v2.b1.rag_document_builder import build_rag_documents_from_views
     from food_agent_v2.b1.step_time_builder import build_step_profiles_from_views
+    from food_agent_v2.b1.time_graph_profiler import (
+        PublishedRecipeTimeProfile,
+        TimeGraphCache,
+        load_cached_recipe_time_graph,
+    )
+    from food_agent_v2.b5.scheduler import schedule_task_graphs
+    from food_agent_v2.core.config import load_config
     from food_agent_v2.core.paths import PROJECT_ROOT
 
+    del identities, food_composition_records
     staging = Path(staging_dir)
-    base_report = publish_consumer_views(views, staging)
-    step_profiles, step_report = build_step_profiles_from_views(views.step_views)
+    atom_profiles, atom_report = build_step_profiles_from_views(views.step_views)
+    cache = (
+        time_graph_cache
+        if time_graph_cache is not None
+        else TimeGraphCache(PROJECT_ROOT / "data" / "cache" / "recipe_time_graphs.jsonl")
+    )
+    configured_model_id = (
+        load_config().llm.model_for_role("unified_review") or "unconfigured"
+    )
+    generator_model_id = time_graph_generator_model_id or configured_model_id
+    verifier_model_id = time_graph_verifier_model_id or configured_model_id
+    names = {view.recipe_id: view.name for view in views.retrieval_views}
+    step_profiles = []
+    for atom_profile in atom_profiles:
+        cached = load_cached_recipe_time_graph(
+            recipe_id=atom_profile.recipe_id,
+            recipe_name=names[atom_profile.recipe_id],
+            atoms=atom_profile.atoms,
+            generator_model_id=generator_model_id,
+            verifier_model_id=verifier_model_id,
+            cache=cache,
+        )
+        scheduled = schedule_task_graphs(
+            {cached.recipe_id: cached.step_tasks}
+        )
+        step_profiles.append(
+            PublishedRecipeTimeProfile(
+                build_id=atom_profile.build_id,
+                source_manifest_hash=atom_profile.source_manifest_hash,
+                recipe_id=cached.recipe_id,
+                recipe_name=cached.recipe_name,
+                active_seconds=scheduled.active_seconds,
+                estimated_elapsed_seconds=scheduled.estimated_makespan_seconds,
+                step_tasks=cached.step_tasks,
+            )
+        )
+    step_report = {
+        **atom_report,
+        "stage": "validated_recipe_time_graphs",
+        "ready_count": len(step_profiles),
+    }
     review_dir = PROJECT_ROOT / "data" / "review"
     nutrition_references = load_nutrition_references(
         PROJECT_ROOT / "data" / "reference" / "ingredient_nutrition.jsonl"
@@ -457,6 +508,7 @@ def publish_downstream_build_views(
     )
     rag_documents, rag_report = build_rag_documents_from_views(views.retrieval_views)
 
+    base_report = publish_consumer_views(views, staging)
     _write_models(staging / "step_time_profiles.jsonl", step_profiles)
     _write_models(staging / "nutrition_reference_views.jsonl", nutrition_features)
     _write_models(staging / "rag_documents.jsonl", rag_documents)

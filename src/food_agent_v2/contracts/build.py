@@ -112,9 +112,11 @@ def canonical_json_hash(obj: Any) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def source_manifest_hash(manifest: SourceManifest) -> str:
-    """SourceManifest 的规范散列，作为 BuildManifest.source_manifest_hash。"""
-    return canonical_json_hash(manifest.model_dump())
+def source_manifest_hash(manifest: Any) -> str:
+    """固定源或完整构建输入清单的规范散列。"""
+    if isinstance(manifest, BaseModel):
+        manifest = manifest.model_dump(mode="json")
+    return canonical_json_hash(manifest)
 
 
 class SourceManifestMismatch(Exception):

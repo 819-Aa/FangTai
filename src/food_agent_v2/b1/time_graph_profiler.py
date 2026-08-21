@@ -8,6 +8,7 @@ from collections import Counter
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Literal, Protocol
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
@@ -89,6 +90,20 @@ class RecipeTimeProfile(BaseModel):
     step_tasks: tuple[StepTask, ...]
 
 
+class PublishedRecipeTimeProfile(BaseModel):
+    """固定 step_tasks Artifact 的 V2 运行时记录。"""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    build_id: UUID
+    source_manifest_hash: str
+    recipe_id: int
+    recipe_name: str
+    active_seconds: int
+    estimated_elapsed_seconds: int
+    step_tasks: tuple[StepTask, ...]
+
+
 class GraphValidationError(ValueError):
     """携带封闭问题代码和相关 atom ID，不写入自由解释。"""
 
@@ -96,6 +111,10 @@ class GraphValidationError(ValueError):
         self.issues = issues
         self.codes = tuple(dict.fromkeys(code for code, _ in issues))
         super().__init__(";".join(self.codes))
+
+
+class TimeGraphCacheMiss(RuntimeError):
+    """普通 rebuild 缺少当前严格缓存键时失败，不在事务内调用模型。"""
 
 
 class TimeGraphCache:
@@ -171,6 +190,34 @@ def time_graph_cache_key(
     return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
+def time_graph_pipeline_model_id(generator_model_id: str, verifier_model_id: str) -> str:
+    return f"generator={generator_model_id}|verifier={verifier_model_id}"
+
+
+def load_cached_recipe_time_graph(
+    *,
+    recipe_id: int,
+    recipe_name: str,
+    atoms: tuple[StepAtom, ...],
+    generator_model_id: str,
+    verifier_model_id: str,
+    cache: TimeGraphCache,
+) -> RecipeTimeProfile:
+    """只读并复验当前键缓存；缺失时绝不隐式调用在线模型。"""
+    pipeline_model_id = time_graph_pipeline_model_id(
+        generator_model_id,
+        verifier_model_id,
+    )
+    cache_key = time_graph_cache_key(recipe_id, atoms, pipeline_model_id)
+    cached = cache.get(cache_key)
+    if cached is None:
+        raise TimeGraphCacheMiss(f"recipe_id={recipe_id} 当前时间图缓存缺失")
+    if cached.recipe_id != recipe_id or cached.recipe_name != recipe_name:
+        raise GraphValidationError((("CACHE_IDENTITY_MISMATCH", ()),))
+    validate_time_graph(atoms, cached.step_tasks)
+    return cached
+
+
 def profile_recipe_time_graph(
     recipe_id: int,
     recipe_name: str,
@@ -182,14 +229,18 @@ def profile_recipe_time_graph(
     """整菜生成一次、程序校验一次、独立模型复核一次，成功后缓存。"""
     if not atoms:
         raise GraphValidationError((("EMPTY_ATOM_SET", ()),))
-    pipeline_model_id = f"generator={model.model_id}|verifier={verifier.model_id}"
+    pipeline_model_id = time_graph_pipeline_model_id(model.model_id, verifier.model_id)
     cache_key = time_graph_cache_key(recipe_id, atoms, pipeline_model_id)
     cached = cache.get(cache_key)
     if cached is not None:
-        if cached.recipe_id != recipe_id or cached.recipe_name != recipe_name:
-            raise GraphValidationError((("CACHE_IDENTITY_MISMATCH", ()),))
-        validate_time_graph(atoms, cached.step_tasks)
-        return cached
+        return load_cached_recipe_time_graph(
+            recipe_id=recipe_id,
+            recipe_name=recipe_name,
+            atoms=atoms,
+            generator_model_id=model.model_id,
+            verifier_model_id=verifier.model_id,
+            cache=cache,
+        )
 
     generator_payload = {
         "recipe_id": recipe_id,

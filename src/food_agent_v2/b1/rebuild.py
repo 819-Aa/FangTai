@@ -45,12 +45,15 @@ from food_agent_v2.b1.review_inputs import (
     load_recipe_profile_enrichments,
 )
 from food_agent_v2.b1.source_manifest import (
+    canonical_build_input_manifest,
     canonical_source_manifest,
     load_verified_recipe_source,
 )
 from food_agent_v2.b1.user_cleaning import clean_one, load_raw_users
 from food_agent_v2.contracts.build import BuildManifest, QualityGateReport, source_manifest_hash
-from food_agent_v2.core.paths import FOOD_COMPOSITION, PROJECT_ROOT, RECIPES_RAW, USERS_RAW
+from food_agent_v2.core.paths import PROJECT_ROOT, RECIPES_RAW, USERS_RAW
+
+V2_RUNTIME_ARTIFACTS = frozenset({"rag_documents", "nutrition_features", "step_tasks"})
 
 CLASSIFICATION_OVERRIDES = PROJECT_ROOT / "data" / "review" / "recipe_classification_overrides.csv"
 INGREDIENT_OVERRIDES = PROJECT_ROOT / "data" / "review" / "ingredient_identity_overrides.csv"
@@ -68,6 +71,14 @@ class DataPipelineError(RuntimeError):
         self.code = code
         self.message = message
         super().__init__(f"{code}: {message}")
+
+
+def artifact_schema_versions(artifacts: dict[str, object]) -> dict[str, str]:
+    """仅三个重建的运行时 Artifact 升级为 2.0.0。"""
+    return {
+        name: "2.0.0" if name in V2_RUNTIME_ARTIFACTS else "1.0.0"
+        for name in artifacts
+    }
 
 
 def _prepare_empty_staging(staging_dir: Path) -> Path:
@@ -251,7 +262,7 @@ def build_fixed_data_staging(
     resolved_build_id = build_id or uuid4()
     build_id_text = str(resolved_build_id)
     resolved_builder_version = builder_version or _git_builder_version()
-    manifest_hash = source_manifest_hash(canonical_source_manifest())
+    manifest_hash = source_manifest_hash(canonical_build_input_manifest())
 
     t04 = staging / "T04"
     t05 = staging / "T05"
@@ -320,7 +331,7 @@ def build_fixed_data_staging(
     downstream_report = publish_downstream_build_views(
         views,
         identities,
-        _read_jsonl(FOOD_COMPOSITION),
+        (),
         t07,
     )
 
@@ -377,7 +388,7 @@ def build_fixed_data_staging(
         build_id=resolved_build_id,
         source_manifest_hash=manifest_hash,
         builder_version=resolved_builder_version,
-        schema_versions={name: "1.0.0" for name in artifact_entries},
+        schema_versions=artifact_schema_versions(artifact_entries),
         artifacts=artifact_entries,
         quality_gate_report=QualityGateReport(
             relative_path=quality_entry.relative_path,

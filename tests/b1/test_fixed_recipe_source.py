@@ -18,7 +18,10 @@ from food_agent_v2.b1.schemas import (
     SOURCE_ROW_COUNT,
     SOURCE_SHA256,
 )
-from food_agent_v2.b1.source_manifest import load_verified_recipe_source
+from food_agent_v2.b1.source_manifest import (
+    canonical_build_input_manifest,
+    load_verified_recipe_source,
+)
 from food_agent_v2.contracts.build import SourceManifest, SourceManifestMismatch
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -39,6 +42,16 @@ def canonical_manifest() -> SourceManifest:
 
 
 class TestFixedSource:
+    def test_build_input_manifest_binds_reviewed_facts_but_not_model_cache(self) -> None:
+        manifest = canonical_build_input_manifest()
+        paths = {entry["relative_path"] for entry in manifest["inputs"]}
+
+        assert "data/review/recipe_profile_enrichment.jsonl" in paths
+        assert "data/review/ingredient_quantity_decisions.csv" in paths
+        assert "data/review/ingredient_nutrition_crosswalk.jsonl" in paths
+        assert "data/reference/ingredient_nutrition.jsonl" in paths
+        assert not any("data/cache" in path for path in paths)
+
     def test_loads_all_2000_rows(self) -> None:
         rows = load_verified_recipe_source(SOURCE_CSV, canonical_manifest())
         assert len(rows) == 2000

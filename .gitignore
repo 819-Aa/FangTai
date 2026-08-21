@@ -36,6 +36,8 @@ reports/data_pipeline/
 data/profiles/
 data/knowledge_base/
 data/database/
+data/cache/*
+!data/cache/.gitkeep
 
 # Editors and operating systems
 .idea/

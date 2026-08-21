@@ -166,16 +166,27 @@ def main() -> None:
         print(json.dumps(cfg_dict, ensure_ascii=False, indent=2))
 
     elif command == "validate-data":
+        import argparse
         import json as _json
+        from pathlib import Path
 
         from food_agent_v2.b1.cross_domain_validator import validate
-        from food_agent_v2.core.paths import CLEANED_RECIPES, CLEANED_USERS
+        from food_agent_v2.b1.quality_gates import verify_build_manifest
 
-        with CLEANED_RECIPES.open("r", encoding="utf-8") as f:
-            recipes = [_json.loads(line) for line in f if line.strip()]
-        with CLEANED_USERS.open("r", encoding="utf-8") as f:
-            users = [_json.loads(line) for line in f if line.strip()]
-        report = validate(recipes, users)
+        parser = argparse.ArgumentParser(prog="food-agent-v2 validate-data")
+        parser.add_argument("--manifest", type=Path, required=True)
+        args = parser.parse_args(sys.argv[2:])
+        manifest_path = args.manifest.resolve()
+        manifest = verify_build_manifest(manifest_path, run_semantic_gates=False)
+        artifact_paths = {
+            name: manifest_path.parent / entry.relative_path
+            for name, entry in manifest.artifacts.items()
+        }
+        report = validate(
+            artifact_paths,
+            build_id=str(manifest.build_id),
+            source_manifest_hash=manifest.source_manifest_hash,
+        )
         print(_json.dumps(report, ensure_ascii=False, indent=2))
 
     else:
