@@ -2,6 +2,7 @@ import json
 
 import pytest
 
+from food_agent_v2.b1 import rebuild
 from food_agent_v2.b1.consumer_views import IngredientOccurrenceFact, recipe_facts_from_source
 from food_agent_v2.b1.review_inputs import (
     RecipeProfileEnrichment,
@@ -145,3 +146,51 @@ def test_profile_candidate_writer_never_auto_approves(tmp_path) -> None:
     assert payload["meal_tags"] == ["晚餐"]
     assert payload["population_tags"] == ["老人"]
     assert payload["review_status"] == "pending"
+
+
+def test_rebuild_entry_applies_reviewed_profiles_and_condition_defaults(
+    tmp_path, monkeypatch
+) -> None:
+    profile_path = tmp_path / "profiles.jsonl"
+    profile_path.write_text(
+        json.dumps(
+            {"recipe_id": 1, "meal_tags": ["晚餐"], "review_status": "approved"},
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    condition_path = tmp_path / "conditions.csv"
+    condition_path.write_text(
+        "recipe_name,choice_group,selected_ingredient,retained_alternatives,review_status\n"
+        "条件菜,牛肩肉/牛腩,牛肩肉,牛肩肉|牛腩,approved\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(rebuild, "RECIPE_PROFILE_ENRICHMENTS", profile_path)
+    monkeypatch.setattr(rebuild, "INGREDIENT_CONDITION_DEFAULTS", condition_path)
+    row = SourceRecipeRow(
+        recipe_id=1,
+        source_row_number=1,
+        name="条件菜",
+        ingredients_raw="牛肩肉或牛腩",
+        steps_raw="炖熟",
+        labels_raw="",
+        row_sha256="1" * 64,
+    )
+    occurrences = (
+        IngredientOccurrenceFact(
+            "1-1", 1, "牛肩肉或牛腩", "牛肩肉", 30, "edible",
+            choice_group_id="1", condition_type="one_of",
+        ),
+        IngredientOccurrenceFact(
+            "1-2", 1, "牛肩肉或牛腩", "牛腩", 40, "edible",
+            choice_group_id="1", condition_type="one_of",
+        ),
+    )
+
+    facts, reviewed_occurrences = rebuild.prepare_reviewed_consumer_inputs(
+        (row,), (_classification(1),), occurrences
+    )
+
+    assert facts[0].meal_tags == ("晚餐",)
+    assert [item.selected_for_base for item in reviewed_occurrences] == [True, False]

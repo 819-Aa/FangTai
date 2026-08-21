@@ -14,10 +14,10 @@ from food_agent_v2.b1.consumer_views import (
     occurrence_facts_from_records,
     publish_consumer_views,
     publish_downstream_build_views,
-    recipe_facts_from_source,
 )
 from food_agent_v2.b1.ingredient_identity import rebuild_ingredient_identities
 from food_agent_v2.b1.rag_document_builder import build_rag_documents_from_views
+from food_agent_v2.b1.rebuild import prepare_reviewed_consumer_inputs
 from food_agent_v2.b1.recipe_classifier import classify_all, load_overrides
 from food_agent_v2.b1.source_manifest import (
     canonical_source_manifest,
@@ -255,13 +255,18 @@ def test_real_fixed_source_publishes_consistent_views(tmp_path) -> None:
         read_jsonl("ingredient_registry.jsonl"),
         read_jsonl("ingredient_aliases.jsonl"),
     )
+    recipe_facts, occurrence_facts = prepare_reviewed_consumer_inputs(
+        rows,
+        classifications,
+        occurrence_facts_from_records(read_jsonl("ingredient_occurrences.jsonl")),
+    )
     views = build_consumer_views(
         build=BuildIdentity(
             UUID("22222222-2222-2222-2222-222222222222"),
             source_manifest_hash(canonical_source_manifest()),
         ),
-        recipes=recipe_facts_from_source(rows, classifications),
-        occurrences=occurrence_facts_from_records(read_jsonl("ingredient_occurrences.jsonl")),
+        recipes=recipe_facts,
+        occurrences=occurrence_facts,
         identities=identities,
     )
     staging = tmp_path / "T07"
@@ -289,8 +294,8 @@ def test_real_fixed_source_publishes_consistent_views(tmp_path) -> None:
         == 1914
     )
     assert downstream["nutrition"]["mapped_unique_ingredient_count"] == 131
-    assert downstream["nutrition"]["unique_ingredient_count"] == 1733
-    assert downstream["nutrition"]["mapping_coverage"] == 0.0756
+    assert downstream["nutrition"]["unique_ingredient_count"] == 1731
+    assert downstream["nutrition"]["mapping_coverage"] == 0.0757
     assert downstream["nutrition"]["recipes_with_any_reference"] == 1367
     assert "zero_complete_recipe_coverage" in downstream["nutrition"]["warnings"]
     assert (staging / "rag_documents.jsonl").exists()
