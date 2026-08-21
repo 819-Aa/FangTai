@@ -75,7 +75,7 @@ class StepAtom(BaseModel):
     duration_locked: bool
 
     @model_validator(mode="after")
-    def validate_explicit_duration(self) -> "StepAtom":
+    def validate_explicit_duration(self) -> StepAtom:
         if self.source_step_index < 1:
             raise ValueError("source_step_index 必须从 1 开始")
         if not self.atom_id or not self.text.strip():
@@ -106,7 +106,7 @@ class StepTask(BaseModel):
     depends_on: tuple[str, ...]
 
     @model_validator(mode="after")
-    def validate_duration(self) -> "StepTask":
+    def validate_duration(self) -> StepTask:
         if self.task_type == "non_task":
             if self.duration_seconds != 0:
                 raise ValueError("non_task 时长必须为 0")

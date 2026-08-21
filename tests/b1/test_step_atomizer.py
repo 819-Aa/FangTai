@@ -11,6 +11,16 @@ def test_non_task_phrases_are_locked_to_zero() -> None:
         "成品展示",
         "尽情品尝吧",
         "烹饪结束",
+        "烹饪结束，即可食用",
+        "烹饪结束，趁热享用",
+        "结束后",
+        "盛出即可食用",
+        "趁热享用",
+        "无需预热",
+        "12寸原料是10寸的1.4倍",
+        "面团揉好后的样子",
+        "若此时蛋糕还未准备好",
+        "9分满即可",
     ):
         atoms = atomize_step(recipe_id=5, source_step_index=1, text=text)
         assert len(atoms) == 1
@@ -31,6 +41,19 @@ def test_oven_startup_and_unattended_run_are_separate_atoms() -> None:
     assert atoms[0].duration_locked is False
     assert atoms[1].explicit_duration_seconds == 1800
     assert atoms[1].duration_locked is True
+
+
+def test_real_wait_fragments_are_not_silently_classified_as_non_tasks() -> None:
+    for text in (
+        "至其入味",
+        "至食材熟透",
+        "预热结束后",
+        "重复这个步骤三次",
+        "使面团全部变硬",
+    ):
+        atom = atomize_step(recipe_id=7, source_step_index=1, text=text)[0]
+        assert atom.explicit_duration_seconds != 0
+        assert not is_non_task_text(atom.text)
 
 
 def test_timed_wait_is_split_from_active_work() -> None:

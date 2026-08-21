@@ -13,7 +13,11 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from food_agent_v2.b1.schemas import StepAtom, StepTask
-from food_agent_v2.b1.step_atomizer import is_non_task_text, ordered_atoms_hash
+from food_agent_v2.b1.step_atomizer import (
+    is_non_task_text,
+    is_passive_wait_text,
+    ordered_atoms_hash,
+)
 
 TIME_GRAPH_PROMPT_VERSION = "time-graph-v4"
 ALLOWED_RESOURCES = frozenset(
@@ -341,17 +345,34 @@ def _materialize_tasks(
     tasks: list[StepTask] = []
     for atom in atoms:
         candidate = candidate_by_id[atom.atom_id]
-        duration = (
+        known_non_task = is_non_task_text(atom.text)
+        known_passive = not known_non_task and is_passive_wait_text(atom.text)
+        duration = 0 if known_non_task else (
             atom.explicit_duration_seconds
             if atom.duration_locked
             else candidate.duration_seconds
         )
+        task_type = (
+            "non_task"
+            if known_non_task
+            else "passive" if known_passive else candidate.task_type
+        )
+        if known_non_task:
+            resources = ()
+        elif known_passive:
+            resources = (
+                ("fridge",)
+                if any(marker in atom.text for marker in ("冰箱", "冷藏", "冷冻"))
+                else ("counter",)
+            )
+        else:
+            resources = _normalize_resources(candidate.task_type, candidate.resources)
         raw_task = {
             "atom_id": atom.atom_id,
             "text": atom.text,
             "duration_seconds": duration,
-            "task_type": candidate.task_type,
-            "resources": _normalize_resources(candidate.task_type, candidate.resources),
+            "task_type": task_type,
+            "resources": resources,
             "depends_on": candidate.depends_on,
         }
         pre_issues = _raw_task_issues(atom, raw_task)

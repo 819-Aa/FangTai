@@ -1,1 +1,3 @@
 occurrence_id,recipe_id,recipe_name,ingredient_name,raw_quantity,step_context,deterministic_calculation,candidate_basis,candidate_grams,decision_grams,review_status
+147-7,147,碗蒸小酥肉,葱,5h,,not_available,project_owner_review,5,5,modified
+1502-1,1502,芝心鸡腿,鸡腿,400个,,not_available,project_owner_review,6000,400,modified

@@ -1,0 +1,85 @@
+{
+  "source_name": "USDA FoodData Central",
+  "license": "CC0 1.0 Universal / public domain",
+  "sources": [
+    {
+      "source_dataset": "usda_foundation",
+      "release": "2026-04",
+      "download_url": "https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_foundation_food_csv_2026-04-30.zip",
+      "archive_sha256": "70457ee9d9342f43bda2010318c85f04210c689fdeb9cd2da4c513b0e8dbc655",
+      "record_count": 469,
+      "import_audit": [
+        {
+          "issue_code": "NEGATIVE_NUTRIENT_TREATED_AS_MISSING",
+          "fdc_id": "2727566",
+          "nutrient_id": "1005",
+          "raw_amount": "-0.47505"
+        },
+        {
+          "issue_code": "NEGATIVE_NUTRIENT_TREATED_AS_MISSING",
+          "fdc_id": "2727567",
+          "nutrient_id": "1005",
+          "raw_amount": "-0.17255"
+        },
+        {
+          "issue_code": "NEGATIVE_NUTRIENT_TREATED_AS_MISSING",
+          "fdc_id": "2727568",
+          "nutrient_id": "1005",
+          "raw_amount": "-0.45875"
+        },
+        {
+          "issue_code": "NEGATIVE_NUTRIENT_TREATED_AS_MISSING",
+          "fdc_id": "2727569",
+          "nutrient_id": "1005",
+          "raw_amount": "-0.42825"
+        },
+        {
+          "issue_code": "NEGATIVE_NUTRIENT_TREATED_AS_MISSING",
+          "fdc_id": "2727570",
+          "nutrient_id": "1005",
+          "raw_amount": "-0.2508"
+        },
+        {
+          "issue_code": "NEGATIVE_NUTRIENT_TREATED_AS_MISSING",
+          "fdc_id": "2727571",
+          "nutrient_id": "1005",
+          "raw_amount": "-0.14955"
+        },
+        {
+          "issue_code": "NEGATIVE_NUTRIENT_TREATED_AS_MISSING",
+          "fdc_id": "2727575",
+          "nutrient_id": "1005",
+          "raw_amount": "-0.5625"
+        },
+        {
+          "issue_code": "NEGATIVE_NUTRIENT_TREATED_AS_MISSING",
+          "fdc_id": "2727576",
+          "nutrient_id": "1005",
+          "raw_amount": "-0.705"
+        },
+        {
+          "issue_code": "NEGATIVE_NUTRIENT_TREATED_AS_MISSING",
+          "fdc_id": "2747656",
+          "nutrient_id": "1005",
+          "raw_amount": "-0.0602"
+        },
+        {
+          "issue_code": "NEGATIVE_NUTRIENT_TREATED_AS_MISSING",
+          "fdc_id": "2747673",
+          "nutrient_id": "1005",
+          "raw_amount": "-0.1045"
+        }
+      ]
+    },
+    {
+      "source_dataset": "usda_sr_legacy",
+      "release": "2018-04",
+      "download_url": "https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip",
+      "archive_sha256": "b80817294b8850530aaedf2e515c02593b1824f763a0ff356e5c2081643e6fd0",
+      "record_count": 7793,
+      "import_audit": []
+    }
+  ],
+  "record_count": 8262,
+  "output": "data\\reference\\ingredient_nutrition.jsonl"
+}

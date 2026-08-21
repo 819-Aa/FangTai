@@ -181,6 +181,81 @@ def test_known_resource_noise_is_canonicalized_from_task_type() -> None:
     assert profile.step_tasks[2].resources == ("oven",)
 
 
+def test_known_non_task_atom_overrides_model_task_type_duration_and_resources() -> None:
+    atom = StepAtom(
+        atom_id="a-finish",
+        source_step_index=1,
+        text="烹饪结束，即可食用",
+        explicit_duration_seconds=0,
+        duration_locked=True,
+    )
+    generator = FakeStructuredModel(
+        "generator-v1",
+        {
+            "tasks": [
+                {
+                    "atom_id": "a-finish",
+                    "duration_seconds": 30,
+                    "task_type": "manual",
+                    "resources": ["cook", "oven"],
+                    "depends_on": [],
+                }
+            ]
+        },
+    )
+    verifier = FakeStructuredModel("verifier-v1", {"issues": []})
+
+    profile = profile_recipe_time_graph(
+        recipe_id=11,
+        recipe_name="完成提示",
+        atoms=(atom,),
+        model=generator,
+        verifier=verifier,
+        cache=TimeGraphCache(),
+    )
+
+    assert profile.step_tasks[0].task_type == "non_task"
+    assert profile.step_tasks[0].duration_seconds == 0
+    assert profile.step_tasks[0].resources == ()
+
+
+def test_known_passive_wait_overrides_invalid_equipment_resource_semantics() -> None:
+    atom = StepAtom(
+        atom_id="a-ferment",
+        source_step_index=1,
+        text="发酵2小时",
+        explicit_duration_seconds=7200,
+        duration_locked=True,
+    )
+    generator = FakeStructuredModel(
+        "generator-v1",
+        {
+            "tasks": [
+                {
+                    "atom_id": "a-ferment",
+                    "duration_seconds": 7200,
+                    "task_type": "unattended_equipment",
+                    "resources": [],
+                    "depends_on": [],
+                }
+            ]
+        },
+    )
+    verifier = FakeStructuredModel("verifier-v1", {"issues": []})
+
+    profile = profile_recipe_time_graph(
+        recipe_id=12,
+        recipe_name="发酵面团",
+        atoms=(atom,),
+        model=generator,
+        verifier=verifier,
+        cache=TimeGraphCache(),
+    )
+
+    assert profile.step_tasks[0].task_type == "passive"
+    assert profile.step_tasks[0].resources == ("counter",)
+
+
 def test_closed_verifier_issue_prevents_ready_profile_and_cache_write() -> None:
     cache = TimeGraphCache()
     generator = FakeStructuredModel("generator-v1", {"tasks": _valid_tasks()})

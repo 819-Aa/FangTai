@@ -372,8 +372,8 @@ def test_real_fixed_source_publishes_consistent_views(tmp_path) -> None:
     )
     staging = tmp_path / "T07"
     report = publish_consumer_views(views, staging)
-    assert len(views.recipe_ids) == 1914
+    assert len(views.recipe_ids) == 1913
     assert report["status"] == "passed"
-    assert report["eligible_recipe_count"] == 1914
+    assert report["eligible_recipe_count"] == 1913
     assert report["ingredient_consistency_error_count"] == 0
-    assert set(report["view_counts"].values()) == {1914}
+    assert set(report["view_counts"].values()) == {1913}

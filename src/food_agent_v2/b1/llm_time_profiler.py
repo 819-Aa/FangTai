@@ -34,6 +34,11 @@ passive 只可为空或 fridge/counter；non_task 必须为 0 且资源为空。
 attended_equipment 必须含 "cook" 且另含 burner/oven/steamer/microwave/blender 中至少一个，不能含 counter；
 unattended_equipment 只能含上述设备且不能含 cook/counter；passive 只能是 []、["counter"] 或 ["fridge"]；
 只有输入 explicit_duration_seconds=0 的 atom 才能标 non_task，其他 atom 绝不能标 non_task。
+“至其入味/至食材熟透/发酵/静置/浸泡/冷藏/冷冻/醒发/重复步骤/预热结束后”等都不是
+non_task；它们是等待、设备或手工任务，必须给正整数时长。不要把步骤片段或状态词因为看起来
+不完整就标成 non_task。explicit_duration_seconds 为 null 时也绝不能标 non_task。
+尤其是“至其入味、至食材入味、至食材熟透、使面团全部变硬”必须按整道菜上下文估算
+1 到 21600 秒内的正整数等待时长，禁止返回 0。
 显式 duration_locked 步骤仍返回一个值，但程序会以原文解析值为准。缺失时长必须估算一个正整数秒数。
 manual/attended 估算不超过 21600 秒，unattended/passive 估算不超过 604800 秒。
 依赖必须表达真实先后关系，不能只为了顺序而阻止本可并行的任务。
@@ -65,6 +70,13 @@ class LLMStructuredModel:
         self.role = role
         self.system_prompt = system_prompt
         self.output_model = output_model
+        self.schema_name = schema_name
+        self.schema_prompt = json.dumps(
+            output_model.model_json_schema(),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
         # DeepSeek's OpenAI-compatible endpoint supports JSON Object mode but rejects
         # response_format=json_schema. Pydantic below remains the strict schema gate.
         self.response_format = {"type": "json_object"}
@@ -72,7 +84,11 @@ class LLMStructuredModel:
     def generate(self, payload: dict) -> dict:
         response = self.client.invoke(
             self.role,
-            self.system_prompt,
+            (
+                f"{self.system_prompt}\n输出对象 {self.schema_name} 必须逐字段满足以下"
+                f"完整 JSON Schema；required 数组中的字段即使为空也必须输出："
+                f"{self.schema_prompt}"
+            ),
             json.dumps(payload, ensure_ascii=False, sort_keys=True),
             response_format=self.response_format,
         )
@@ -118,12 +134,15 @@ def generate_time_graph_review(
     verifier=None,
     max_workers: int = 8,
     checkpoint_size: int = 25,
+    max_attempts: int = 2,
 ) -> dict:
     """生成/复用时间图缓存，仅将程序或 verifier 冲突写入审阅输出。"""
     if generator is None or verifier is None:
         default_generator, default_verifier = create_time_graph_models()
         generator = generator or default_generator
         verifier = verifier or default_verifier
+    if max_attempts < 1 or max_attempts > 2:
+        raise ValueError("时间图每道菜只允许 1 或 2 次生成尝试")
     cache = TimeGraphCache(
         cache_path or PROJECT_ROOT / "data" / "cache" / "recipe_time_graphs.jsonl"
     )
@@ -156,14 +175,21 @@ def generate_time_graph_review(
     checkpoint: dict[str, RecipeTimeProfile] = {}
 
     def generate_one(recipe_id: int, recipe_name: str, atoms: tuple[StepAtom, ...]):
-        return profile_recipe_time_graph(
-            recipe_id=recipe_id,
-            recipe_name=recipe_name,
-            atoms=atoms,
-            model=generator,
-            verifier=verifier,
-            cache=TimeGraphCache(),
-        )
+        last_error = None
+        for _ in range(max_attempts):
+            try:
+                return profile_recipe_time_graph(
+                    recipe_id=recipe_id,
+                    recipe_name=recipe_name,
+                    atoms=atoms,
+                    model=generator,
+                    verifier=verifier,
+                    cache=TimeGraphCache(),
+                )
+            except Exception as exc:
+                last_error = exc
+        assert last_error is not None
+        raise last_error
 
     with ThreadPoolExecutor(max_workers=max(1, max_workers)) as executor:
         future_rows = {

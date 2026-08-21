@@ -50,6 +50,7 @@ class TestFixedSource:
         assert "data/review/ingredient_quantity_decisions.csv" in paths
         assert "data/review/ingredient_nutrition_crosswalk.jsonl" in paths
         assert "data/reference/ingredient_nutrition.jsonl" in paths
+        assert "data/reference/usda_fooddata_central_manifest.json" in paths
         assert not any("data/cache" in path for path in paths)
 
     def test_loads_all_2000_rows(self) -> None:

@@ -42,6 +42,7 @@ _BUILD_INPUT_PATHS = (
     "data/review/ingredient_quantity_decisions.csv",
     "data/review/ingredient_nutrition_crosswalk.jsonl",
     "data/reference/ingredient_nutrition.jsonl",
+    "data/reference/usda_fooddata_central_manifest.json",
 )
 
 

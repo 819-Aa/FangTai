@@ -26,12 +26,71 @@ def test_review_audit_reports_failures_without_approving_candidates(tmp_path) ->
     quantities = tmp_path / "quantities.csv"
     nutrition = tmp_path / "nutrition.csv"
     references = tmp_path / "references.jsonl"
+    food_origins = tmp_path / "food_origins.csv"
+    usda_candidates = tmp_path / "usda_candidates.csv"
     time_conflicts = tmp_path / "time.jsonl"
     _write_jsonl(
         profiles,
         [
             {"recipe_id": 1, "population_tags": ["老人"], "review_status": "pending"},
             {"recipe_id": 2, "population_tags": [], "review_status": "pending"},
+        ],
+    )
+    _write_csv(
+        food_origins,
+        (
+            "reference_id",
+            "canonical_name",
+            "form",
+            "candidate_food_origin",
+            "review_status",
+        ),
+        [
+            {
+                "reference_id": "ref-1",
+                "canonical_name": "梨",
+                "form": "unspecified",
+                "candidate_food_origin": "plant",
+                "review_status": "pending",
+            },
+            {
+                "reference_id": "usda-1",
+                "canonical_name": "Salt, table",
+                "form": "unspecified",
+                "candidate_food_origin": "mixed",
+                "review_status": "pending",
+            },
+        ],
+    )
+    _write_csv(
+        usda_candidates,
+        (
+            "ingredient_id",
+            "ingredient_name",
+            "form",
+            "candidate_reference_id",
+            "candidate_name",
+            "candidate_form",
+            "source_dataset",
+            "match_method",
+            "candidate_rank",
+            "reason",
+            "review_status",
+        ),
+        [
+            {
+                "ingredient_id": 20,
+                "ingredient_name": "盐",
+                "form": "unspecified",
+                "candidate_reference_id": "usda-1",
+                "candidate_name": "Salt, table",
+                "candidate_form": "unspecified",
+                "source_dataset": "usda_sr_legacy",
+                "match_method": "multilingual_embedding_model_review",
+                "candidate_rank": 1,
+                "reason": "usda_identity_and_form_requires_owner_review",
+                "review_status": "pending",
+            }
         ],
     )
     quantity_fields = (
@@ -111,6 +170,8 @@ def test_review_audit_reports_failures_without_approving_candidates(tmp_path) ->
         quantity_candidates=quantities,
         nutrition_candidates=nutrition,
         nutrition_references=references,
+        food_origin_candidates=food_origins,
+        usda_nutrition_candidates=usda_candidates,
         time_conflicts=time_conflicts,
         eligible_recipe_ids={1, 2, 3},
         raw_population_tags={1: set(), 2: set()},
@@ -131,6 +192,10 @@ def test_review_audit_reports_failures_without_approving_candidates(tmp_path) ->
     assert summary["nutrition_references"]["missing_source_url"] == 1
     assert summary["nutrition_references"]["complete_nine_dimension"] == 0
     assert summary["nutrition_references"]["structural_zero_candidates"] == 1
+    assert summary["food_origins"]["candidate_rows"] == 2
+    assert summary["food_origins"]["selected_reference_without_origin_candidate"] == 1
+    assert summary["usda_fallback"]["selected_candidates"] == 1
+    assert summary["usda_fallback"]["combined_unresolved_keys"] == 0
     assert summary["time_graphs"]["ready_recipes"] == 2
     assert summary["time_graphs"]["conflict_codes"] == {"DEPENDENCY_CYCLE": 1}
     assert summary["automatic_approvals"] == 0

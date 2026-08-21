@@ -9,8 +9,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from food_agent_v2.c3.orchestrator import DeterministicRecommendationOrchestrator
 from food_agent_v2.c3.fast_intent import FastIntentRouter
+from food_agent_v2.c3.orchestrator import DeterministicRecommendationOrchestrator
 from food_agent_v2.c3.query_normalizer import SemanticRewrite
 from food_agent_v2.d1 import api as d1_api
 

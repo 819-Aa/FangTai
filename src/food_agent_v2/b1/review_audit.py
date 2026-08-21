@@ -32,12 +32,22 @@ def build_review_coverage_summary(
     time_conflicts: Path,
     eligible_recipe_ids: set[int],
     raw_population_tags: dict[int, set[str]],
+    food_origin_candidates: Path | None = None,
+    usda_nutrition_candidates: Path | None = None,
     occurrence_rows=(),
 ) -> dict:
     profiles = _read_jsonl(profile_candidates)
     quantities = _read_csv(quantity_candidates)
     nutrition = _read_csv(nutrition_candidates)
     references = _read_jsonl(nutrition_references)
+    food_origins = (
+        _read_csv(food_origin_candidates) if food_origin_candidates is not None else []
+    )
+    usda_nutrition = (
+        _read_csv(usda_nutrition_candidates)
+        if usda_nutrition_candidates is not None
+        else []
+    )
     time_rows = _read_jsonl(time_conflicts)
     occurrences = tuple(_as_mapping(item) for item in occurrence_rows)
 
@@ -49,6 +59,7 @@ def build_review_coverage_summary(
         for row in profiles
     )
     quantity_ids = [row.get("occurrence_id", "") for row in quantities]
+    unresolved_quantity_ids = {item for item in quantity_ids if item}
     quantity_values = [_decimal_or_none(row.get("candidate_grams")) for row in quantities]
 
     candidate_refs: dict[tuple[int, str], set[str]] = defaultdict(set)
@@ -58,6 +69,31 @@ def build_review_coverage_summary(
             candidate_refs[(int(row["ingredient_id"]), row.get("form", "").strip())].add(
                 reference_id
             )
+    usda_candidate_refs = {
+        (int(row["ingredient_id"]), row.get("form", "").strip()): (
+            row.get("candidate_reference_id") or ""
+        ).strip()
+        for row in usda_nutrition
+    }
+    primary_keys = {
+        (int(row["ingredient_id"]), row.get("form", "").strip())
+        for row in nutrition
+    }
+    primary_selected_keys = {key for key, values in candidate_refs.items() if values}
+    usda_selected_keys = {
+        key for key, reference_id in usda_candidate_refs.items() if reference_id
+    }
+    origin_reference_ids = {
+        str(row.get("reference_id", "")).strip() for row in food_origins
+    }
+    selected_reference_ids = {
+        reference_id for values in candidate_refs.values() for reference_id in values
+    } | {
+        reference_id for reference_id in usda_candidate_refs.values() if reference_id
+    }
+    known_reference_ids = {
+        str(row.get("reference_id", "")).strip() for row in references
+    }
 
     missing_by_nutrient = {
         field: sum(row.get("per_100g", {}).get(field) is None for row in references)
@@ -86,6 +122,8 @@ def build_review_coverage_summary(
         _status_counts(profiles),
         _status_counts(quantities),
         _status_counts(nutrition),
+        _status_counts(food_origins),
+        _status_counts(usda_nutrition),
     )
     automatic_approvals = sum(
         counts.get("approved", 0) + counts.get("modified", 0)
@@ -113,7 +151,9 @@ def build_review_coverage_summary(
                 value is not None and value > Decimal("5000") for value in quantity_values
             ),
             "unknown_unit_occurrences": sum(
-                bool(row.get("unit_raw")) and row.get("unit_raw") not in _KNOWN_UNITS
+                row.get("occurrence_id") in unresolved_quantity_ids
+                and bool(row.get("unit_raw"))
+                and row.get("unit_raw") not in _KNOWN_UNITS
                 for row in occurrences
             ),
         },
@@ -142,6 +182,53 @@ def build_review_coverage_summary(
             "unknown_food_origin": sum(row.get("food_origin", "unknown") == "unknown" for row in references),
             "structural_zero_candidates": structural_zero_candidates,
             "structural_zero_misuse": 0,
+        },
+        "food_origins": {
+            "candidate_rows": len(food_origins),
+            "status_counts": all_statuses[3],
+            "duplicate_reference_ids": sum(
+                count - 1
+                for count in Counter(
+                    str(row.get("reference_id", "")).strip()
+                    for row in food_origins
+                ).values()
+                if count > 1
+            ),
+            "candidate_distribution": dict(
+                sorted(
+                    Counter(
+                        str(row.get("candidate_food_origin", ""))
+                        for row in food_origins
+                    ).items()
+                )
+            ),
+            "invalid_candidate_values": sum(
+                row.get("candidate_food_origin")
+                not in {"plant", "animal", "mixed", "unknown"}
+                for row in food_origins
+            ),
+            "selected_reference_without_origin_candidate": len(
+                selected_reference_ids - origin_reference_ids
+            ),
+        },
+        "usda_fallback": {
+            "candidate_rows": len(usda_nutrition),
+            "status_counts": all_statuses[4],
+            "selected_candidates": len(usda_selected_keys),
+            "no_exact_match": len(usda_nutrition) - len(usda_selected_keys),
+            "duplicate_ingredient_form_keys": max(
+                0, len(usda_nutrition) - len(usda_candidate_refs)
+            ),
+            "selected_unknown_reference_ids": len(
+                {
+                    reference_id
+                    for reference_id in usda_candidate_refs.values()
+                    if reference_id and reference_id not in known_reference_ids
+                }
+            ),
+            "combined_unresolved_keys": len(
+                primary_keys - primary_selected_keys - usda_selected_keys
+            ),
         },
         "time_graphs": {
             "eligible_recipes": len(eligible_recipe_ids),

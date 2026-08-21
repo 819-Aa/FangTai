@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
+import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from uuid import UUID
@@ -14,6 +16,13 @@ from food_agent_v2.b1.consumer_views import (
     identity_facts_from_records,
     occurrence_facts_from_records,
     recipe_facts_from_source,
+)
+from food_agent_v2.b1.food_origin_review import (
+    FoodOriginCandidateCache,
+    FoodOriginReviewInput,
+    LLMFoodOriginEstimator,
+    generate_food_origin_candidates,
+    write_food_origin_candidates,
 )
 from food_agent_v2.b1.ingredient_identity import rebuild_ingredient_identities
 from food_agent_v2.b1.nutrition_reference import (
@@ -47,6 +56,17 @@ from food_agent_v2.b1.review_inputs import (
 )
 from food_agent_v2.b1.source_manifest import canonical_source_manifest, load_verified_recipe_source
 from food_agent_v2.b1.step_atomizer import atomize_recipe_steps
+from food_agent_v2.b1.usda_crosswalk_review import (
+    LLMUsdaCandidateSelector,
+    LLMUsdaSearchTermEstimator,
+    UsdaCandidateSelectionCache,
+    UsdaCrosswalkReviewInput,
+    UsdaSearchTermCandidateCache,
+    generate_usda_crosswalk_candidates,
+    generate_usda_search_terms,
+    select_usda_crosswalk_candidates,
+    write_usda_crosswalk_candidates,
+)
 from food_agent_v2.contracts.build import source_manifest_hash
 from food_agent_v2.core.paths import PROJECT_ROOT, RECIPES_RAW
 
@@ -65,7 +85,14 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="food-agent-v2 data-review")
     parser.add_argument(
         "--kind",
-        choices=("profiles", "quantities", "nutrition", "time-graphs"),
+        choices=(
+            "profiles",
+            "quantities",
+            "nutrition",
+            "usda-nutrition",
+            "food-origins",
+            "time-graphs",
+        ),
         required=True,
     )
     parser.add_argument("--output", type=Path, required=True)
@@ -109,6 +136,22 @@ def main(argv: list[str] | None = None) -> int:
         )
     elif args.kind == "nutrition":
         count = _write_nutrition_review(rows, facts, args.output, sample=args.sample)
+    elif args.kind == "usda-nutrition":
+        count = _write_usda_nutrition_review(
+            rows,
+            facts,
+            args.output,
+            sample=args.sample,
+            workers=args.workers,
+        )
+    elif args.kind == "food-origins":
+        count = _write_food_origin_review(
+            rows,
+            facts,
+            args.output,
+            sample=args.sample,
+            workers=args.workers,
+        )
     else:
         count = _write_time_graph_review(
             rows, facts, args.output, sample=args.sample, workers=args.workers
@@ -210,6 +253,168 @@ def _write_nutrition_review(rows, facts, output: Path, *, sample: int | None) ->
     )
     write_nutrition_crosswalk_candidates(unique_rows, references, output)
     return len(unique_rows)
+
+
+def _write_food_origin_review(
+    rows,
+    facts,
+    output: Path,
+    *,
+    sample: int | None,
+    workers: int,
+) -> int:
+    views = _build_review_views(rows, facts)
+    ingredient_rows = tuple(
+        (
+            ingredient.ingredient_id,
+            ingredient.ingredient_name,
+            nutrition_form_from_occurrence(ingredient.form),
+        )
+        for view in views.nutrition_views
+        for ingredient in view.ingredients
+    )
+    unique_rows = tuple(
+        {
+            (ingredient_id, form): (ingredient_id, name, form)
+            for ingredient_id, name, form in ingredient_rows
+        }.values()
+    )
+    references = load_nutrition_references(
+        PROJECT_ROOT / "data" / "reference" / "ingredient_nutrition.jsonl"
+    )
+    candidate_references = {}
+    for _, ingredient_name, _ in unique_rows:
+        candidates = references.find_by_name(str(ingredient_name))
+        if not candidates:
+            candidates = references.find_by_review_alias(str(ingredient_name))
+        for reference in candidates:
+            candidate_references[reference.reference_id] = reference
+    usda_candidates_path = (
+        PROJECT_ROOT / "reports" / "data_review" / "usda_nutrition_candidates.csv"
+    )
+    if usda_candidates_path.exists():
+        with usda_candidates_path.open(encoding="utf-8", newline="") as handle:
+            for row in csv.DictReader(handle):
+                reference_id = (row.get("candidate_reference_id") or "").strip()
+                if not reference_id:
+                    continue
+                reference = references.get(reference_id)
+                if reference is None:
+                    raise ValueError(
+                        f"USDA 营养候选引用未知 reference_id: {reference_id}"
+                    )
+                candidate_references[reference.reference_id] = reference
+    selected = tuple(candidate_references.values())
+    if sample is not None:
+        selected = selected[:sample]
+
+    from food_agent_v2.c3.llm_client import get_llm_client
+    from food_agent_v2.core.config import load_config
+
+    model_id = load_config().llm.model_for_role("nutrition_review")
+    candidates = generate_food_origin_candidates(
+        (
+            FoodOriginReviewInput(
+                reference_id=reference.reference_id,
+                canonical_name=reference.canonical_name,
+                form=reference.form,
+            )
+            for reference in selected
+        ),
+        LLMFoodOriginEstimator(get_llm_client(), model_id=model_id),
+        cache=FoodOriginCandidateCache(
+            PROJECT_ROOT / "data" / "cache" / "food_origin_candidates.jsonl"
+        ),
+        max_workers=workers,
+    )
+    write_food_origin_candidates(candidates, output)
+    return len(candidates)
+
+
+def _write_usda_nutrition_review(
+    rows,
+    facts,
+    output: Path,
+    *,
+    sample: int | None,
+    workers: int,
+) -> int:
+    views = _build_review_views(rows, facts)
+    ingredient_rows = tuple(
+        (
+            ingredient.ingredient_id,
+            ingredient.ingredient_name,
+            nutrition_form_from_occurrence(ingredient.form),
+        )
+        for view in views.nutrition_views
+        for ingredient in view.ingredients
+    )
+    unique_rows = tuple(
+        {
+            (ingredient_id, form): (ingredient_id, name, form)
+            for ingredient_id, name, form in ingredient_rows
+        }.values()
+    )
+    references = load_nutrition_references(
+        PROJECT_ROOT / "data" / "reference" / "ingredient_nutrition.jsonl"
+    )
+    unresolved_rows = tuple(
+        row
+        for row in unique_rows
+        if not references.find_by_name(str(row[1]))
+        and not references.find_by_review_alias(str(row[1]))
+    )
+    if sample is not None:
+        unresolved_rows = unresolved_rows[:sample]
+
+    from food_agent_v2.c1.siliconflow import SiliconFlowEmbedder
+    from food_agent_v2.c3.llm_client import get_llm_client
+    from food_agent_v2.core.config import load_config
+
+    review_inputs = tuple(
+        UsdaCrosswalkReviewInput(
+            ingredient_id=int(ingredient_id),
+            ingredient_name=str(ingredient_name),
+            form=str(form),
+        )
+        for ingredient_id, ingredient_name, form in unresolved_rows
+    )
+    llm_model_id = load_config().llm.model_for_role("nutrition_review")
+    search_terms = generate_usda_search_terms(
+        review_inputs,
+        LLMUsdaSearchTermEstimator(get_llm_client(), model_id=llm_model_id),
+        cache=UsdaSearchTermCandidateCache(
+            PROJECT_ROOT / "data" / "cache" / "usda_search_terms.jsonl"
+        ),
+        max_workers=workers,
+    )
+
+    ranked_candidates = generate_usda_crosswalk_candidates(
+        review_inputs,
+        references.values,
+        SiliconFlowEmbedder(),
+        embedding_model_id=os.getenv(
+            "SILICONFLOW_EMBEDDING_MODEL", "BAAI/bge-m3"
+        ),
+        search_terms=search_terms,
+        top_k=20,
+        max_workers=workers,
+        embedding_cache_dir=(
+            PROJECT_ROOT / "data" / "cache" / "usda_crosswalk_embeddings"
+        ),
+    )
+    candidates = select_usda_crosswalk_candidates(
+        review_inputs,
+        ranked_candidates,
+        search_terms,
+        LLMUsdaCandidateSelector(get_llm_client(), model_id=llm_model_id),
+        cache=UsdaCandidateSelectionCache(
+            PROJECT_ROOT / "data" / "cache" / "usda_candidate_selections.jsonl"
+        ),
+        max_workers=workers,
+    )
+    write_usda_crosswalk_candidates(candidates, output)
+    return len(unresolved_rows)
 
 
 def _write_time_graph_review(

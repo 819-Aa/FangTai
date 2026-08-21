@@ -38,10 +38,53 @@ _NON_TASK_RE = re.compile(
     r"准备好(?:所有|全部)?(?:的)?食材|"
     r"食材准备|准备食材|"
     r"(?:放(?:在)?一旁)?备用|"
-    r"成品展示|尽情品尝吧?|烹饪(?:结束|完成)|制作完成|"
-    r"装盘(?:即可)?(?:尽情)?享用|"
-    r"尽情享用|即可享用|完成"
+    r"成品展示|尽情品尝吧?|"
+    r"(?:烹饪|制作)?(?:结束|完成)(?:后)?"
+    r"(?:[，,]?(?:即可|趁热)?(?:食用|享用|品尝)(?:吧)?)?|"
+    r"结束后|"
+    r"(?:装盘|盛出)(?:后)?(?:即可)?(?:尽情)?(?:食用|享用|品尝)(?:吧)?|"
+    r"(?:即可|趁热)(?:食用|享用|品尝)(?:吧)?|"
+    r"尽情享用|大功告成"
     r")$"
+)
+_NON_TASK_NARRATIVE_RE = re.compile(
+    r"^(?:"
+    r".*(?:享用|享受|品尝|来分享).*|"
+    r".*(?:就)?做好(?:了|啦)(?:[！!~].*)?|"
+    r".*(?:搞定|完成)(?:啦|了)?(?:[，,].*)?|"
+    r"(?:烹饪|烘烤)(?:结束|完成).*|"
+    r"(?:可|即可|取出|完成后).*?(?:食用|饮用).*|"
+    r"成品|待用|"
+    r"(?:烹饪|烘烤|烤制|蒸制)(?:结束|完成)(?:后)?|"
+    r"\d+\s*℃|设置：|普通蒸模式|常规烘焙模式|无需预热|9分满即可"
+    r")$"
+)
+_NON_TASK_NOTE_RE = re.compile(
+    r"^(?:"
+    r"[（(](?:量的要求|由于|或用|室温即可|如使用|切记|8寸原料).*|"
+    r"[）)]|"
+    r"提示：.*|此步骤可用.*|用量根据.*|羊排选.*|最后烤制目的是.*|"
+    r"视室温.*|如果希望.*|可不放|这样省的.*|"
+    r"方太.*(?:蒸箱|烤箱)|"
+    r"\d+寸原料是.*|可做.*|此时为第.*|总共要进行.*|"
+    r"切好的.*|包完.*后|.*后的样子|若.*|恨不得.*|"
+    r"香菇多汁.*|\x13\x04|"
+    r"(?:美味的|简单却美味的|完美的|酒香四溢的|可蘸酱油食用的).+|"
+    r"健康又美味|口感极佳|美味的早餐|清香脆口"
+    r")$"
+)
+_PASSIVE_WAIT_RE = re.compile(
+    r"^(?:"
+    r"发酵(?!结束)|开始发酵|室温发酵|冷冻|冷藏|"
+    r"(?:再)?放入冰箱|进冰箱|盖.*(?:醒发|发酵)|"
+    r"静置|浸泡|泡发|腌制|醒发|松弛|"
+    r"至(?:其|食材)?(?:入味|熟透|熟软)|使.*(?:变硬|定型)|"
+    r"等到.*(?:发好|发酵)|"
+    r"待(?:烹饪|烘烤|烤制|蒸制|预热)(?:结束|完成)(?:后)?|预热结束后"
+    r")"
+)
+_PASSIVE_TIMED_MARKER_RE = re.compile(
+    r"发酵|冷冻|冷藏|浸泡|泡发|腌制|醒发|静置|松弛"
 )
 _DEVICE_COMPOUND_RE = re.compile(
     r"^(?P<startup>.*?(?:放入|送入|移入|置入|装入)"
@@ -89,7 +132,24 @@ def parse_explicit_duration(text: str) -> int | None:
 
 def is_non_task_text(text: str) -> bool:
     """识别不代表真实烹饪工作的准备/备用/享用提示语。"""
-    return bool(_NON_TASK_RE.fullmatch(_normalize_atom_text(text)))
+    normalized = _normalize_atom_text(text)
+    return bool(
+        _NON_TASK_RE.fullmatch(normalized)
+        or _NON_TASK_NARRATIVE_RE.fullmatch(normalized)
+        or _NON_TASK_NOTE_RE.fullmatch(normalized)
+    )
+
+
+def is_passive_wait_text(text: str) -> bool:
+    """识别以等待为主、应占 elapsed 但不持续占用厨师的步骤。"""
+    normalized = _normalize_atom_text(text)
+    return bool(
+        _PASSIVE_WAIT_RE.match(normalized)
+        or (
+            parse_explicit_duration(normalized) is not None
+            and _PASSIVE_TIMED_MARKER_RE.search(normalized)
+        )
+    )
 
 
 def atomize_step(*, recipe_id: int, source_step_index: int, text: str) -> tuple[StepAtom, ...]:

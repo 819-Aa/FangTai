@@ -33,6 +33,7 @@ recipe_id,record_type,reason,reviewer,reviewed_at
 1438,dish,完整凉粉成品含调味并可直接食用,project_owner,2026-08-09
 1503,cooking_program,通用慢煮程序且食材未指定,project_owner,2026-08-09
 1513,meal_bundle,包含三菜一汤多个独立成品,project_owner,2026-08-09
+1579,cooking_program,通用停刀烧煮程序且食材未指定,project_owner,2026-08-21
 1647,dish,具体三文鱼成品可直接食用,project_owner,2026-08-09
 1688,dish,完整成品可直接饮用,project_owner,2026-08-09
 1712,dish,完整成品可直接饮用,project_owner,2026-08-09
