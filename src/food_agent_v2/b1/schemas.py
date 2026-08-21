@@ -8,7 +8,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict, model_validator
 
 # ---- 固定 2,000 条源数据的权威常量（data-artifact-contracts.md §2.1）----
 SOURCE_ID = "fixed-recipes-2000"
@@ -59,6 +61,58 @@ class RelationReview(StrEnum):
     APPROVED = "approved"
     PENDING = "pending"
     REJECTED = "rejected"
+
+
+class StepAtom(BaseModel):
+    """确定性步骤原子；仅在离线时间图构建期间使用。"""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    atom_id: str
+    source_step_index: int
+    text: str
+    explicit_duration_seconds: int | None
+    duration_locked: bool
+
+    @model_validator(mode="after")
+    def validate_explicit_duration(self) -> "StepAtom":
+        if self.source_step_index < 1:
+            raise ValueError("source_step_index 必须从 1 开始")
+        if not self.atom_id or not self.text.strip():
+            raise ValueError("atom_id 和 text 不得为空")
+        if self.explicit_duration_seconds is not None and self.explicit_duration_seconds < 0:
+            raise ValueError("显式时长不得为负")
+        if self.duration_locked != (self.explicit_duration_seconds is not None):
+            raise ValueError("duration_locked 必须与显式时长是否存在一致")
+        return self
+
+
+class StepTask(BaseModel):
+    """发布给 B5 的最终单值时间任务。"""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    atom_id: str
+    text: str
+    duration_seconds: int
+    task_type: Literal[
+        "manual",
+        "attended_equipment",
+        "unattended_equipment",
+        "passive",
+        "non_task",
+    ]
+    resources: tuple[str, ...]
+    depends_on: tuple[str, ...]
+
+    @model_validator(mode="after")
+    def validate_duration(self) -> "StepTask":
+        if self.task_type == "non_task":
+            if self.duration_seconds != 0:
+                raise ValueError("non_task 时长必须为 0")
+        elif self.duration_seconds <= 0:
+            raise ValueError("真实任务时长必须为正整数")
+        return self
 
 
 @dataclass

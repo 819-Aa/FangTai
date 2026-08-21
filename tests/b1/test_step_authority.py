@@ -4,61 +4,35 @@ from food_agent_v2.b1.consumer_views import RecipeStepBindingView, StructuredSte
 from food_agent_v2.b1.step_time_builder import build_step_profiles_from_views
 
 
-def _view(raw_text: str) -> RecipeStepBindingView:
+def _view(*steps: str) -> RecipeStepBindingView:
     return RecipeStepBindingView(
         build_id=UUID("11111111-1111-1111-1111-111111111111"),
         source_manifest_hash="a" * 64,
-        recipe_id=1,
+        recipe_id=7,
         ingredient_ids=(),
-        steps=(StructuredStep(step_index=1, raw_text=raw_text),),
+        steps=tuple(
+            StructuredStep(step_index=index, raw_text=text)
+            for index, text in enumerate(steps, start=1)
+        ),
     )
 
 
-def test_explicit_duration_can_produce_strict_boolean() -> None:
-    profiles, _ = build_step_profiles_from_views(
-        (_view("蒸10分钟"),),
-        strict_limit_seconds_by_recipe={1: 900},
-    )
+def test_build_view_publishes_atoms_without_runtime_authority_metadata() -> None:
+    profiles, report = build_step_profiles_from_views((_view("蒸10分钟", "装盘享用"),))
 
-    assert profiles[0].steps[0].duration_seconds == 600
-    assert profiles[0].steps[0].time_source == "explicit"
-    assert profiles[0].authority == "deterministic_high"
-    assert profiles[0].strict_time_feasible is True
-
-
-def test_llm_estimate_is_low_authority_and_strict_result_stays_unknown() -> None:
-    profiles, _ = build_step_profiles_from_views(
-        (_view("翻炒至熟"),),
-        model_estimates={(1, 1): 300},
-        strict_limit_seconds_by_recipe={1: 900},
-    )
-
-    assert profiles[0].steps[0].duration_seconds == 300
-    assert profiles[0].steps[0].time_source == "llm_estimate"
-    assert profiles[0].steps[0].confidence == "low"
-    assert profiles[0].authority == "model_estimate"
-    assert profiles[0].strict_time_feasible == "unknown"
+    assert report["status"] == "passed"
+    assert [atom.explicit_duration_seconds for atom in profiles[0].atoms] == [600, 0]
+    assert all(atom.duration_locked for atom in profiles[0].atoms)
+    atom_keys = set(profiles[0].model_dump(mode="json")["atoms"][0])
+    assert "confidence" not in atom_keys
+    assert "time_source" not in atom_keys
+    assert "minimum_seconds" not in atom_keys
+    assert "maximum_seconds" not in atom_keys
 
 
-def test_duration_range_is_not_double_counted() -> None:
-    profiles, _ = build_step_profiles_from_views((_view("蒸10-20分钟"),))
+def test_missing_duration_remains_unlocked_for_whole_recipe_profiler() -> None:
+    profiles, _ = build_step_profiles_from_views((_view("切成细丝"),))
 
-    assert profiles[0].steps[0].duration_min_seconds == 600
-    assert profiles[0].steps[0].duration_max_seconds == 1200
-    assert profiles[0].steps[0].duration_seconds == 900
-    assert profiles[0].steps[0].time_source == "derived_from_range"
-
-
-def test_empty_steps_have_no_duration_and_never_gain_strict_authority() -> None:
-    empty = RecipeStepBindingView(
-        build_id=UUID("11111111-1111-1111-1111-111111111111"),
-        source_manifest_hash="a" * 64,
-        recipe_id=1,
-        ingredient_ids=(),
-        steps=(),
-    )
-    profiles, _ = build_step_profiles_from_views((empty,), strict_limit_seconds_by_recipe={1: 900})
-
-    assert profiles[0].total_duration_seconds is None
-    assert profiles[0].authority == "deterministic_partial"
-    assert profiles[0].strict_time_feasible == "unknown"
+    atom = profiles[0].atoms[0]
+    assert atom.explicit_duration_seconds is None
+    assert atom.duration_locked is False
