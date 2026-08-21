@@ -318,14 +318,13 @@ class TestTerminalPublish:
         data = json.loads(ev["data"])
         assert data["status"] == "no_safe_menu"  # 不伪装成 failed
 
-    def test_no_feasible_menu_and_strict_time_distinct(self) -> None:
-        for status in ("no_feasible_menu", "strict_time_indeterminate"):
-            rid = _fresh_rid()
-            state = self._state(rid, status)
-            self._finalize(rid, state)
-            ev = next(e for e in d1_api.subscribe_events(rid)
-                      if e["event"] == "request_terminal")
-            assert json.loads(ev["data"])["status"] == status
+    def test_no_feasible_menu_publishes_exact_terminal(self) -> None:
+        rid = _fresh_rid()
+        state = self._state(rid, "no_feasible_menu")
+        self._finalize(rid, state)
+        ev = next(e for e in d1_api.subscribe_events(rid)
+                  if e["event"] == "request_terminal")
+        assert json.loads(ev["data"])["status"] == "no_feasible_menu"
 
     def test_failed_publishes_request_terminal_with_message(self) -> None:
         from food_agent_v2.c3.state import WorkflowError

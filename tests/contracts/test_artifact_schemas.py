@@ -211,21 +211,16 @@ class TestV2QueryAndTimeContracts:
         assert "flavor_preferences" not in dumped
         assert "preference_exclusions" not in dumped
 
-    def test_legacy_time_input_is_projected_to_v2_output(self) -> None:
-        legacy = FeasibleMenu(
-            plan_id="plan_1",
-            recipe_ids=(1, 2),
-            menu_hash=H1,
-            score_decomposition=score_decomp(),
-            strict_time_feasible=True,
-            makespan_seconds=1800,
-        )
-
-        dumped = legacy.model_dump()
-        assert dumped["estimated_time_feasible"] is True
-        assert dumped["estimated_makespan_seconds"] == 1800
-        assert "strict_time_feasible" not in dumped
-        assert "makespan_seconds" not in dumped
+    def test_legacy_time_input_is_rejected(self) -> None:
+        with pytest.raises(ValidationError):
+            FeasibleMenu(
+                plan_id="plan_1",
+                recipe_ids=(1, 2),
+                menu_hash=H1,
+                score_decomposition=score_decomp(),
+                strict_time_feasible=True,
+                makespan_seconds=1800,
+            )
 
 
 class TestVerdictRejected:

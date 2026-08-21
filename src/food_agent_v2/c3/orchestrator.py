@@ -88,7 +88,6 @@ def _semantic_health_exclusions(
 _GENERATE_TERMINAL = {
     "no_safe_menu": "no_safe_menu",
     "no_feasible_menu": "no_feasible_menu",
-    "strict_time_indeterminate": "strict_time_indeterminate",
 }
 
 
@@ -304,7 +303,16 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
 
         # 确定性回答 + ReviewArtifact(PASS)
         self._trace.mark_node_start(NodeType.ANSWER_GENERATION.value)
-        answer = AuthoritativeAnswerBuilder.build(md, fv, state.build_id)
+        estimated_minutes = max(
+            1,
+            round(best.estimated_makespan_seconds / 60),
+        )
+        answer = AuthoritativeAnswerBuilder.build(
+            md,
+            fv,
+            state.build_id,
+            time_note=f"按当前步骤估算，预计需要 {estimated_minutes} 分钟。",
+        )
         # 可选润色（默认关闭；剩余预算 ≥2.5s 才启用，最多 2.0s，失败回退）
         if narrative_polish_enabled() and self._trace is not None:
             elapsed = time.perf_counter() - self._trace.processing_started_at
@@ -427,7 +435,7 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
             if state.is_terminal():
                 return state
         if qp.time_constraint_policy == "hard" and qp.time_constraint_seconds:
-            tool_ctx.time_limit_minutes = max(1, round(qp.time_constraint_seconds / 60))
+            tool_ctx.max_estimated_time_seconds = qp.time_constraint_seconds
         d1_api.publish_analysis_event(request_id, "query_understanding",
                                       "理解需求完成", [])
         self._trace.mark_node_end(NodeType.QUERY_UNDERSTANDING.value)

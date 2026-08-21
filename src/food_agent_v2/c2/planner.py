@@ -3,7 +3,7 @@
 硬规则：
 - 只收 B4 有效安全候选（空集即无可行菜单）；
 - 默认/明确菜数精确执行（不足即无可行，不自动降菜数）；
-- 严格时间只收 true；false/unknown 一律不接受（无软退回）；
+- 明确时间上限只收预计 makespan 比较为 true 的菜单（无软退回）；
 - 不改菜：plan 与最终校验必须同一内容（内容寻址 plan_id/menu_hash）；
 - 软维度不可用时重归一化权重；
 - 相同输入产生稳定 plan_id/menu_hash（无 random）。
@@ -120,8 +120,10 @@ class MenuPlanner:
             )
             if menu is None:
                 continue
-            # 严格时间只收 true；有严格时限时 false/unknown 不接受。
-            if constraints.strict_time_limit is not None and menu.strict_time_feasible is not True:
+            if (
+                constraints.max_estimated_time_seconds is not None
+                and not menu.estimated_time_feasible
+            ):
                 continue
             plans.append(menu)
 
@@ -244,7 +246,10 @@ class MenuPlanner:
         }
         total = self._weighted_renormalized(weights, dims)
 
-        sched = b5.compute_menu_schedule(recipe_ids, hard.strict_time_limit)
+        sched = b5.compute_menu_schedule(
+            recipe_ids,
+            hard.max_estimated_time_seconds,
+        )
         plan_id = canonical_json_hash(
             {"strategy": strategy, "recipe_ids": sorted(recipe_ids)}
         )
@@ -259,9 +264,8 @@ class MenuPlanner:
             nutrition_score=round(nutrition_s, 4),
             preference_score=round(pref_s, 4),
             diversity_score=round(div_s, 4),
-            makespan_seconds=sched.makespan_seconds,
-            strict_time_feasible=sched.strict_time_feasible,
-            time_source=sched.time_source,
+            estimated_makespan_seconds=sched.estimated_makespan_seconds,
+            estimated_time_feasible=sched.estimated_time_feasible,
         )
 
     @staticmethod
@@ -283,7 +287,7 @@ class MenuPlanner:
         profile = b5.get_recipe_time_profile(rid)
         if not profile:
             return 0.5
-        total = profile.total_active_seconds + profile.total_equipment_seconds
+        total = profile.estimated_elapsed_seconds
         if total <= 0:
             return 0.5
         return max(0.0, 1.0 - total / 7200)
@@ -392,7 +396,7 @@ class MenuPlanner:
             tuple(safe_ids),
             tuple(nutrition_goal_codes),
         )
-        original_makespan = menu.makespan_seconds or float("inf")
+        original_makespan = menu.estimated_makespan_seconds or float("inf")
         weights = WEIGHT_STRATEGIES.get(menu.dominant_objective, WEIGHT_STRATEGIES["balanced"])
         # 确定性候选顺序：按 score 降序（同分按 recipe_id）。
         scored = sorted(
@@ -421,7 +425,9 @@ class MenuPlanner:
                 nutrition_scores,
                 constraints,
             )
-            if (new_menu.makespan_seconds or float("inf")) > original_makespan:
+            if (
+                new_menu.estimated_makespan_seconds or float("inf")
+            ) > original_makespan:
                 return None
             new_menu.plan_id = canonical_json_hash(
                 {"base_plan": menu.plan_id, "replaced": replace_recipe_id, "with": candidate}

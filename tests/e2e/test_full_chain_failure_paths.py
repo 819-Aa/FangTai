@@ -52,8 +52,7 @@ def _get_status(request_id: str) -> dict:
 
 def _wait_terminal(request_id: str, max_wait: int = 180) -> dict:
     terminal = {"completed", "failed", "no_safe_menu", "no_feasible_menu",
-                "needs_clarification", "cancelled", "interrupted",
-                "strict_time_indeterminate"}
+                "needs_clarification", "cancelled", "interrupted"}
     deadline = time.time() + max_wait
     while time.time() < deadline:
         s = _get_status(request_id)
@@ -391,13 +390,13 @@ class TestBusinessTerminals:
         assert result["status"] == expected, (
             f"{message!r} 应命中 {expected}，实际 {result['status']} error={result.get('error')}")
 
-    def test_strict_time_indeterminate_terminal(self, _api_ready) -> None:
-        """严格时间无法判定 → 精确 strict_time_indeterminate（不得 accepted/completed/failed）。"""
+    def test_estimated_time_limit_infeasible_terminal(self, _api_ready) -> None:
+        """完整时间图对极紧上限给出 false，流程进入 no_feasible_menu。"""
         resp = _post({
             "idempotency_key": f"e2e-{uuid.uuid4().hex[:12]}",
             "participants": [{"participant_ref": "p1"}],
-            "message": "严格必须在 10 分钟内完成但无法判断时间", "config": {},
+            "message": "严格必须在 1 分钟内完成晚餐", "config": {},
         })
         result = _wait_terminal(resp["request_id"], max_wait=240)
-        assert result["status"] == "strict_time_indeterminate", (
-            f"应 strict_time_indeterminate，实际 {result['status']} error={result.get('error')}")
+        assert result["status"] == "no_feasible_menu", (
+            f"应 no_feasible_menu，实际 {result['status']} error={result.get('error')}")

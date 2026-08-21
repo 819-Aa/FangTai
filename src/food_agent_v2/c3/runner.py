@@ -362,12 +362,11 @@ class WorkflowRunner:
                 _retrieval = tool_ctx.previous_results.get("retrieval")
                 if _retrieval:
                     retrieved_ids = [c.recipe_id for c in _retrieval.candidates]
-                tool_ctx.time_limit_minutes = None
+                tool_ctx.max_estimated_time_seconds = None
                 # ADR-0005：只有硬截止（policy="hard"）才触发严格时间判定；
                 # flexible 软偏好（"45分钟内"/"尽量快"）不设严格时限，只参与软排序。
                 if q_artifact.time_constraint_policy == "hard" and q_artifact.time_constraint_seconds:
-                    tool_ctx.time_limit_minutes = max(
-                        1, round(q_artifact.time_constraint_seconds / 60))
+                    tool_ctx.max_estimated_time_seconds = q_artifact.time_constraint_seconds
 
             elif node == NodeType.HEALTH_MENU_PLANNING:
                 # MC-01-R2 P0-1：节点入口清除旧健康回执，禁止复用前一轮/前一节点回执
@@ -416,7 +415,9 @@ class WorkflowRunner:
                         "menu_hash": getattr(p, "menu_hash", ""),
                         "dominant_objective": getattr(p, "dominant_objective", ""),
                         "total_score": getattr(p, "total_score", 0.0),
-                        "makespan_seconds": getattr(p, "makespan_seconds", None),
+                        "estimated_makespan_seconds": getattr(
+                            p, "estimated_makespan_seconds", None
+                        ),
                     } for p in feasible],
                     "feasible_menu_artifact_ref": str(feasible_artifact.artifact_id)
                     if feasible_artifact else "",
@@ -670,8 +671,8 @@ class WorkflowRunner:
                                         if p.dominant_objective in
                                         ("balanced", "preference", "nutrition", "quick", "diverse")
                                         else "balanced"),
-                    strict_time_feasible=p.strict_time_feasible,
-                    makespan_seconds=p.makespan_seconds,
+                    estimated_time_feasible=p.estimated_time_feasible,
+                    estimated_makespan_seconds=p.estimated_makespan_seconds,
                 )
                 for p in plans
             )
@@ -1108,8 +1109,7 @@ class WorkflowRunner:
                     # 等工具绝不执行；已执行回执仍进入统一校验。
                     if name == "generate_feasible_menus" and isinstance(result, dict):
                         note = result.get("note")
-                        if note in ("no_safe_menu", "no_feasible_menu",
-                                    "strict_time_indeterminate"):
+                        if note in ("no_safe_menu", "no_feasible_menu"):
                             terminal = note
                             tool_results.append({
                                 "tool": name, "tool_call_id": call_id, "result": result,
@@ -1173,7 +1173,7 @@ class WorkflowRunner:
             "get_current_menu": "获取当前会话已有的菜单方案（用于替换/恢复场景）。无需参数。",
             "get_health_constraints": "获取当前参与者的有效健康约束集（硬约束+软目标）。这是健康审查的前置步骤——必须先知道约束才能审查菜品。无需参数。",
             "evaluate_recipe_health": "对指定菜品执行逐参与者、逐菜品的健康审查。传入recipe_ids列表，返回safe_recipe_ids和excluded_recipe_ids。审查基于B4健康引擎的约束-食材关系表。",
-            "generate_feasible_menus": "基于B4安全候选生成3-5个差异化的菜单方案。传入safe_recipe_ids和可选的dish_count。返回方案列表，每个方案含plan_id、recipe_ids、dominant_objective和makespan。",
+            "generate_feasible_menus": "基于B4安全候选生成3-5个差异化的菜单方案。传入safe_recipe_ids和可选的dish_count。返回方案列表，每个方案含plan_id、recipe_ids、dominant_objective和estimated_makespan_seconds。",
             "expand_retrieval": "当前检索结果不足时，使用更宽松的查询进行二次检索。传入新query和已排除的original_ids。",
             "adjust_menu_plan": "调整已有菜单方案，替换指定菜品。传入plan_id和需要替换的recipe_id。",
             "validate_selected_menu_health": "对最终选定的菜单方案执行健康校验。重新加载B2当前约束和B3食材事实后进行最终审查。返回PASS或EXCLUDE。",
@@ -1254,15 +1254,17 @@ class WorkflowRunner:
             _r = _rbuilder.get_recipe(rid) if _rbuilder else None
             _dishes.append({"recipe_id": rid, "name": (_r or {}).get("名称", "")})
         _makespan = None
-        _time_source = "none"
         for _p in (tool_ctx.previous_results.get("feasible_menus", []) or []):
             if getattr(_p, "plan_id", "") == plan_id:
-                _makespan = getattr(_p, "makespan_seconds", None)
-                _time_source = getattr(_p, "time_source", "task_graph")
+                _makespan = getattr(_p, "estimated_makespan_seconds", None)
                 break
-        if _makespan and _time_source == "llm_estimate":
-            _time_data = {"total_minutes": max(1, round(_makespan / 60)),
-                          "available": True, "source": "llm_estimate"}
+        if _makespan:
+            _estimated_minutes = max(1, round(_makespan / 60))
+            _time_data = {
+                "estimated_total_minutes": _estimated_minutes,
+                "display_text": f"按当前步骤估算，预计需要 {_estimated_minutes} 分钟。",
+                "available": True,
+            }
         else:
             _time_data = {"available": False}
         return {
@@ -1276,7 +1278,9 @@ class WorkflowRunner:
             "participant_refs": list(md.participant_refs) if md else [],
             "request_id": str(md.request_id) if md else "",
             "time_data": _time_data,
-            "requested_time_limit_minutes": tool_ctx.time_limit_minutes,
+            "requested_max_estimated_time_seconds": (
+                tool_ctx.max_estimated_time_seconds
+            ),
         }
 
     @staticmethod
@@ -1476,7 +1480,7 @@ class WorkflowRunner:
         # outbox 完成；cancelled 由 cancel_request 的 request_cancelled 保持；
         # 其余业务终态分别发布（绝不伪装成普通 failed）。
         _terminal_notice = {
-            "no_safe_menu", "no_feasible_menu", "strict_time_indeterminate",
+            "no_safe_menu", "no_feasible_menu",
             "failed", "interrupted",
         }
         if effective_status in _terminal_notice:

@@ -30,10 +30,10 @@ MAX_DESSERT = 1
 
 @dataclass
 class MenuHardConstraints:
-    """用户声明的硬约束（菜数/严格时间/严格食材/锁定/拒绝/槽位要求）。"""
+    """用户声明的硬约束（菜数/预计时间/严格食材/锁定/拒绝/槽位要求）。"""
 
     dish_count: int = DEFAULT_DISH_COUNT
-    strict_time_limit: int | None = None
+    max_estimated_time_seconds: int | None = None
     strict_ingredients: bool = False
     available_ingredient_ids: set[int] = field(default_factory=set)
     locked_recipe_ids: set[int] = field(default_factory=set)
@@ -58,6 +58,5 @@ class FeasibleMenu:
     nutrition_score: float = 0.0
     preference_score: float = 0.0
     diversity_score: float = 0.0
-    makespan_seconds: int | None = None
-    strict_time_feasible: bool | str = "unknown"
-    time_source: str = "task_graph"
+    estimated_makespan_seconds: int = 0
+    estimated_time_feasible: bool = True

@@ -29,7 +29,7 @@ class ToolContext:
     previous_results: dict[str, Any] = field(default_factory=dict)
     safe_recipe_ids: list[int] = field(default_factory=list)
     tool_receipts: list[dict] = field(default_factory=list)
-    time_limit_minutes: int | None = None   # 查询理解提取的严格时间约束
+    max_estimated_time_seconds: int | None = None  # QueryPlan 提取的预计时间硬上限
     session_id: str = ""                    # 用于工具回写 C4 会话上下文
     context_service: Any | None = None      # C4 ContextService（工具可回写约束）
 
@@ -420,8 +420,8 @@ def _generate_feasible_menus(args: dict, ctx: ToolContext) -> dict:
         pass
     hard = MenuHardConstraints(
         dish_count=requested_count or MenuHardConstraints().dish_count,
-        # 模型没传时间限制时，自动使用查询理解提取的严格时间约束
-        strict_time_limit=args.get("time_limit_minutes") or ctx.time_limit_minutes,
+        # 时间上限只能来自已验证 QueryPlan，工具自由参数不得覆盖。
+        max_estimated_time_seconds=ctx.max_estimated_time_seconds,
         # P5/L1.3：锁定菜（最小修改——保留不违规的当前菜，仅补足/替换违规菜）
         locked_recipe_ids=set(int(r) for r in (args.get("locked_recipe_ids") or [])),
         # L1.3：拒绝菜（替换/否定场景，从候选排除）
@@ -441,32 +441,13 @@ def _generate_feasible_menus(args: dict, ctx: ToolContext) -> dict:
     ctx.previous_results["feasible_menus"] = plans
 
     if not plans:
-        # 权威 safe 非空但 C2 无法生成满足硬约束的方案。
-        # 有严格时限时区分：B5 对安全候选无法高权威判定时间 → strict_time_indeterminate；
-        # 否则是其他硬约束（菜数/槽位/时间 false）不满足 → no_feasible_menu（INV-021）。
-        if hard.strict_time_limit is not None:
-            try:
-                from food_agent_v2.b5 import get_time_service
-                time_svc = get_time_service()
-                sched = time_svc.compute_menu_schedule(
-                    sorted(safe_ids), hard.strict_time_limit)
-                if sched.strict_time_feasible == "unknown":
-                    return {"plans": [], "count": 0,
-                            "note": "strict_time_indeterminate",
-                            "safe_count": len(safe_ids),
-                            "authority": sched.authority,
-                            "missing_facts": list(sched.missing_facts)}
-            except Exception:
-                # 时间服务不可用不伪装通过；按 no_feasible_menu 失败关闭
-                pass
-        # 无严格时限或非时间原因无方案 → no_feasible_menu（不回退）
         return {"plans": [], "count": 0, "note": "no_feasible_menu", "safe_count": len(safe_ids)}
 
     return {
         "plans": [{
             "plan_id": p.plan_id, "recipe_ids": p.recipe_ids[:10],
             "objective": p.dominant_objective, "total_score": p.total_score,
-            "makespan_seconds": p.makespan_seconds,
+            "estimated_makespan_seconds": p.estimated_makespan_seconds,
         } for p in plans],
         "count": len(plans),
     }

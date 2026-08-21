@@ -115,7 +115,7 @@ def _answer_base(**overrides) -> str:
         "plan_id": "p1", "menu_hash": "a" * 64, "menu_ref": "fm:1",
         "final_validation_ref": "fv:1", "recipe_ids": [1, 2, 3],
         "request_id": _RID, "participant_refs": ["p1"],
-        "time_data": {"total_minutes": 35, "available": True, "source": "llm_estimate"},
+        "time_data": {"estimated_total_minutes": 35, "available": True},
     }
     base.update(overrides)
     return f"## 上下文\n{json.dumps(base, ensure_ascii=False)}\n## 输入\n根据以上菜单生成回答"

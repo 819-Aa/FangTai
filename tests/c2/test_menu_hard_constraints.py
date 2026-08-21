@@ -14,16 +14,18 @@ class FakeB5:
         self._seconds = per_recipe_seconds
 
     def get_recipe_time_profile(self, rid: int):
-        return SimpleNamespace(total_active_seconds=200, total_equipment_seconds=100)
+        return SimpleNamespace(active_seconds=200, estimated_elapsed_seconds=300)
 
-    def compute_menu_schedule(self, recipe_ids, time_limit_minutes=None):
+    def compute_menu_schedule(self, recipe_ids, max_estimated_time_seconds=None):
         makespan = self._seconds * len(recipe_ids)
-        if time_limit_minutes is not None:
-            feasible = makespan <= time_limit_minutes * 60
-        else:
-            feasible = "unknown"
+        feasible = (
+            True
+            if max_estimated_time_seconds is None
+            else makespan <= max_estimated_time_seconds
+        )
         return SimpleNamespace(
-            makespan_seconds=makespan, strict_time_feasible=feasible, time_source="task_graph"
+            estimated_makespan_seconds=makespan,
+            estimated_time_feasible=feasible,
         )
 
 
@@ -82,15 +84,19 @@ class TestMenuHardConstraints:
         assert plans
         assert all(len(p.recipe_ids) == 4 for p in plans)
 
-    def test_strict_time_only_true(self) -> None:
+    def test_estimated_time_hard_limit_only_accepts_true(self) -> None:
         # 宽松时限 → true，有方案。
         loose = make_planner(count=8)
-        plans = loose.plan(MenuHardConstraints(dish_count=4, strict_time_limit=60))
+        plans = loose.plan(
+            MenuHardConstraints(dish_count=4, max_estimated_time_seconds=3600)
+        )
         assert plans
-        assert all(p.strict_time_feasible is True for p in plans)
+        assert all(p.estimated_time_feasible is True for p in plans)
         # 极紧时限 → false，无可行菜单（无软退回）。
         tight = make_planner(count=8)
-        assert tight.plan(MenuHardConstraints(dish_count=4, strict_time_limit=1)) == []
+        assert tight.plan(
+            MenuHardConstraints(dish_count=4, max_estimated_time_seconds=60)
+        ) == []
 
     def test_rejected_recipe_excluded(self) -> None:
         planner = make_planner(count=6)

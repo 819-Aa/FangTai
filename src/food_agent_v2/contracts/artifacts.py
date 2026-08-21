@@ -166,21 +166,6 @@ class FeasibleMenu(BaseModel):
     estimated_makespan_seconds: int
     user_visible_analysis: UserVisibleAnalysis | None = None
 
-    @model_validator(mode="before")
-    @classmethod
-    def project_legacy_time_fields(cls, value):
-        """过渡期读取 V1 时间字段，但序列化时只保留 V2 预计值。"""
-        if not isinstance(value, dict):
-            return value
-        data = dict(value)
-        legacy_feasible = data.pop("strict_time_feasible", None)
-        legacy_makespan = data.pop("makespan_seconds", None)
-        if "estimated_time_feasible" not in data and legacy_feasible is not None:
-            data["estimated_time_feasible"] = legacy_feasible is True
-        if "estimated_makespan_seconds" not in data and legacy_makespan is not None:
-            data["estimated_makespan_seconds"] = int(legacy_makespan)
-        return data
-
 
 class FeasibleMenuArtifact(BaseModel):
     """C2 生成的 3-5 个可行方案，全部菜品 ∈ safe_recipe_ids。"""

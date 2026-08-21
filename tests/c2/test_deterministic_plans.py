@@ -19,17 +19,19 @@ class FakeB5:
     def get_recipe_time_profile(self, rid: int):
         total = self._total(rid)
         return SimpleNamespace(
-            total_active_seconds=int(total * 0.7), total_equipment_seconds=int(total * 0.3)
+            active_seconds=int(total * 0.7), estimated_elapsed_seconds=total
         )
 
-    def compute_menu_schedule(self, recipe_ids, time_limit_minutes=None):
+    def compute_menu_schedule(self, recipe_ids, max_estimated_time_seconds=None):
         makespan = sum(self._total(rid) for rid in recipe_ids)
-        if time_limit_minutes is not None:
-            feasible = makespan <= time_limit_minutes * 60
-        else:
-            feasible = "unknown"
+        feasible = (
+            True
+            if max_estimated_time_seconds is None
+            else makespan <= max_estimated_time_seconds
+        )
         return SimpleNamespace(
-            makespan_seconds=makespan, strict_time_feasible=feasible, time_source="task_graph"
+            estimated_makespan_seconds=makespan,
+            estimated_time_feasible=feasible,
         )
 
 

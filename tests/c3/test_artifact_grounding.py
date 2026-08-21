@@ -405,7 +405,8 @@ class TestDualArtifact:
                          dominant_objective="balanced",
                          total_score=0.8, time_score=0.1, nutrition_score=0.2,
                          preference_score=0.3, diversity_score=0.2,
-                         makespan_seconds=1800, strict_time_feasible=True),
+                         estimated_makespan_seconds=1800,
+                         estimated_time_feasible=True),
         ]
 
     def test_builds_both_real_artifacts(self, runner) -> None:
