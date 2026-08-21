@@ -43,10 +43,10 @@ class TestPureReducer:
         new_state = reduce_workflow_state(make_state(), action="health_menu_planning", result="no_feasible_menu")
         assert new_state.status == RequestStatus.NO_FEASIBLE_MENU
 
-    def test_strict_time_indeterminate(self) -> None:
+    def test_removed_strict_time_result_fails_closed(self) -> None:
         new_state = reduce_workflow_state(
             make_state(), action="health_menu_planning", result="strict_time_indeterminate")
-        assert new_state.status == RequestStatus.STRICT_TIME_INDETERMINATE
+        assert new_state.status == RequestStatus.FAILED
         assert new_state.current_node == NodeType.ATOMIC_COMMIT
         assert new_state.is_terminal()
 

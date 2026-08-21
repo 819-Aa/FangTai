@@ -21,7 +21,6 @@ class RequestStatus(StrEnum):
     NEEDS_CLARIFICATION = "needs_clarification"
     NO_SAFE_MENU = "no_safe_menu"
     NO_FEASIBLE_MENU = "no_feasible_menu"
-    STRICT_TIME_INDETERMINATE = "strict_time_indeterminate"
     FAILED = "failed"
     CANCELLED = "cancelled"
     INTERRUPTED = "interrupted"
@@ -42,7 +41,6 @@ TERMINAL_STATUSES = {
     RequestStatus.NO_SAFE_MENU,
     RequestStatus.NO_FEASIBLE_MENU,
     RequestStatus.NEEDS_CLARIFICATION,
-    RequestStatus.STRICT_TIME_INDETERMINATE,
     RequestStatus.FAILED,
     RequestStatus.CANCELLED,
     RequestStatus.INTERRUPTED,
@@ -150,9 +148,6 @@ def reduce_workflow_state(state: WorkflowState, *, action: str, **params) -> Wor
             return replace(state, status=RequestStatus.NO_SAFE_MENU, current_node=NodeType.ATOMIC_COMMIT)
         if result == "no_feasible_menu":
             return replace(state, status=RequestStatus.NO_FEASIBLE_MENU, current_node=NodeType.ATOMIC_COMMIT)
-        if result == "strict_time_indeterminate":
-            return replace(state, status=RequestStatus.STRICT_TIME_INDETERMINATE,
-                           current_node=NodeType.ATOMIC_COMMIT)
         if result == "needs_expansion":
             new_count, ok = _next_counter(state, "retrieval_expansion_count", 1)
             if ok:

@@ -358,12 +358,11 @@ class RecommendationAPI:
             return 404, {"error": "NOT_FOUND"}
 
         # 终态（含 cancelled）不可取消 → 重复取消返回 409。
-        # 与 state.TERMINAL_STATUSES 一致：needs_clarification /
-        # strict_time_indeterminate / interrupted 也已是终态，不可改写为 cancelled。
+        # 与 state.TERMINAL_STATUSES 一致：needs_clarification / interrupted
+        # 也已是终态，不可改写为 cancelled。
         terminal = {
             "completed", "no_safe_menu", "no_feasible_menu",
-            "needs_clarification", "strict_time_indeterminate",
-            "failed", "cancelled", "interrupted",
+            "needs_clarification", "failed", "cancelled", "interrupted",
         }
         if req["status"] in terminal:
             return 409, {"error": "REQUEST_ALREADY_TERMINAL", "current_status": req["status"]}
@@ -453,8 +452,8 @@ class RecommendationAPI:
                          message: str | None = None) -> None:
         """发布业务终态通知（request_terminal）。
 
-        no_safe_menu / no_feasible_menu / strict_time_indeterminate / failed /
-        interrupted 等终态经此统一发布，status 保持各自语义（绝不伪装成普通
+        no_safe_menu / no_feasible_menu / failed / interrupted 等终态经此统一发布，
+        status 保持各自语义（绝不伪装成普通
         failed）；payload 经禁止字段投影，绝不泄漏 user_id/健康详情。
         """
         payload = strip_forbidden_fields({

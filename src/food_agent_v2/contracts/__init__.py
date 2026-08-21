@@ -3,7 +3,7 @@
 - build.py：固定源 SourceManifest 与构建清单 BuildManifest。
 - artifacts.py：七类在线 Artifact 严格 Schema（禁额外字段）。
 - receipts.py：工具回执与 request/node/input 绑定校验。
-- status.py：请求状态、严格时间三值、判定枚举与散列格式。
+- status.py：请求状态、判定枚举与散列格式。
 
 字段的最终可执行权威是这里的 Pydantic Schema，见
 docs/contracts/data-artifact-contracts.md §1；Schema 语义进入只读集合，
@@ -47,8 +47,6 @@ from food_agent_v2.contracts.status import (
     RequestStatus,
     ReviewVerdict,
     Sha256Hash,
-    StrictTimeFeasible,
-    strict_time_is_feasible,
 )
 
 __all__ = [
@@ -75,12 +73,10 @@ __all__ = [
     "Sha256Hash",
     "SourceManifest",
     "SourceManifestMismatch",
-    "StrictTimeFeasible",
     "ToolReceipt",
     "UserVisibleAnalysis",
     "canonical_json_hash",
     "source_manifest_hash",
-    "strict_time_is_feasible",
     "validate_answer_menu_binding",
     "validate_receipt_binding",
     "verify_source_file",

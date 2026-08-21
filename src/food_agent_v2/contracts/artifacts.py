@@ -15,7 +15,6 @@ from food_agent_v2.contracts.status import (
     HealthVerdict,
     ReviewVerdict,
     Sha256Hash,
-    StrictTimeFeasible,
 )
 
 DominantObjective = Literal["balanced", "preference", "nutrition", "quick", "diverse"]
@@ -40,21 +39,23 @@ class QueryPlanArtifact(BaseModel):
     artifact_id: UUID
     request_id: UUID
     participant_refs: tuple[str, ...]
+    schema_version: Literal["2.0.0"] = "2.0.0"
 
     # 非健康检索需求（C1 消费）
-    flavor_preferences: tuple[str, ...] = ()
-    cuisine_preferences: tuple[str, ...] = ()
+    rewritten_query: str = ""
+    meal_types: tuple[str, ...] = ()
+    population_tags: tuple[str, ...] = ()
     dish_types: tuple[str, ...] = ()
-    cooking_methods: tuple[str, ...] = ()
-    preferred_ingredients: tuple[str, ...] = ()
-    meal_type: str | None = None
-    scenario: str | None = None
-    diversity_requirements: tuple[str, ...] = ()
+    taste_tags: tuple[str, ...] = ()
+    cuisine_tags: tuple[str, ...] = ()
+    scenario_tags: tuple[str, ...] = ()
+    include_ingredients: tuple[str, ...] = ()
+    exclude_ingredients: tuple[str, ...] = ()
+    nutrition_goal_codes: tuple[str, ...] = ()
     dish_count_requested: int | None = None
 
-    # 排除项必须区分：health_exclusions 走 B2，preference_exclusions 走 C1
+    # 健康排除走 B2/B4；普通食材排除由 C1 使用 exclude_ingredients。
     health_exclusions: tuple[str, ...] = ()
-    preference_exclusions: tuple[str, ...] = ()
 
     # 时间：仅记录用户意图，严格可行性由 B5/C2 判定
     time_constraint_seconds: int | None = None
@@ -63,6 +64,30 @@ class QueryPlanArtifact(BaseModel):
     evidence_refs: tuple[str, ...] = ()
     input_fingerprint: Sha256Hash
     content_hash: Sha256Hash
+
+    @model_validator(mode="before")
+    @classmethod
+    def project_legacy_retrieval_fields(cls, value):
+        """过渡期只接受已知 V1 字段，并把它们投影成 V2 输出。"""
+        if not isinstance(value, dict):
+            return value
+        data = dict(value)
+        projections = (
+            ("flavor_preferences", "taste_tags", True),
+            ("cuisine_preferences", "cuisine_tags", True),
+            ("preferred_ingredients", "include_ingredients", True),
+            ("preference_exclusions", "exclude_ingredients", True),
+            ("meal_type", "meal_types", False),
+            ("scenario", "scenario_tags", False),
+        )
+        for old_name, new_name, is_collection in projections:
+            old_value = data.pop(old_name, None)
+            if new_name in data or old_value in (None, "", (), []):
+                continue
+            data[new_name] = tuple(old_value) if is_collection else (str(old_value),)
+        data.pop("cooking_methods", None)
+        data.pop("diversity_requirements", None)
+        return data
 
 
 class ParticipantRecipeHealthResult(BaseModel):
@@ -127,7 +152,7 @@ class MenuScoreDecomposition(BaseModel):
 
 
 class FeasibleMenu(BaseModel):
-    """单个可行菜单方案。strict_time_feasible 三值，unknown 不可入硬时限。"""
+    """单个可行菜单方案，时间字段均为任务图产生的预计值。"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -137,9 +162,24 @@ class FeasibleMenu(BaseModel):
     score_decomposition: MenuScoreDecomposition
     differing_recipe_ids: tuple[int, ...] = ()
     dominant_objective: DominantObjective = "balanced"
-    strict_time_feasible: StrictTimeFeasible
-    makespan_seconds: int | None = None
+    estimated_time_feasible: bool
+    estimated_makespan_seconds: int
     user_visible_analysis: UserVisibleAnalysis | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def project_legacy_time_fields(cls, value):
+        """过渡期读取 V1 时间字段，但序列化时只保留 V2 预计值。"""
+        if not isinstance(value, dict):
+            return value
+        data = dict(value)
+        legacy_feasible = data.pop("strict_time_feasible", None)
+        legacy_makespan = data.pop("makespan_seconds", None)
+        if "estimated_time_feasible" not in data and legacy_feasible is not None:
+            data["estimated_time_feasible"] = legacy_feasible is True
+        if "estimated_makespan_seconds" not in data and legacy_makespan is not None:
+            data["estimated_makespan_seconds"] = int(legacy_makespan)
+        return data
 
 
 class FeasibleMenuArtifact(BaseModel):

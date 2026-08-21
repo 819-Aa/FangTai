@@ -25,7 +25,6 @@ from food_agent_v2.contracts.artifacts import (
     ReviewArtifact,
     validate_answer_menu_binding,
 )
-from food_agent_v2.contracts.status import strict_time_is_feasible
 
 AID = UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
 RID = UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
@@ -38,6 +37,7 @@ def query_plan(**overrides) -> QueryPlanArtifact:
         "artifact_id": AID,
         "request_id": RID,
         "participant_refs": ("p1",),
+        "rewritten_query": "清淡晚餐",
         "input_fingerprint": H1,
         "content_hash": H2,
     }
@@ -81,7 +81,8 @@ def feasible_menu(**overrides) -> FeasibleMenu:
         "recipe_ids": (1, 2),
         "menu_hash": H1,
         "score_decomposition": score_decomp(),
-        "strict_time_feasible": True,
+        "estimated_time_feasible": True,
+        "estimated_makespan_seconds": 1800,
     }
     data.update(overrides)
     return FeasibleMenu(**data)
@@ -160,17 +161,71 @@ def review(**overrides) -> ReviewArtifact:
     return ReviewArtifact(**data)
 
 
-class TestStrictTime:
-    def test_unknown_not_truthy(self) -> None:
-        assert strict_time_is_feasible("unknown") is False
-        assert strict_time_is_feasible(True) is True
-        assert strict_time_is_feasible(False) is False
+class TestV2QueryAndTimeContracts:
+    def test_query_plan_carries_closed_retrieval_facets(self) -> None:
+        plan = query_plan(
+            rewritten_query="老人 清淡 晚餐",
+            meal_types=("晚餐",),
+            population_tags=("老人",),
+            dish_types=("热菜",),
+            taste_tags=("清淡",),
+            cuisine_tags=("家常",),
+            scenario_tags=("日常",),
+            include_ingredients=("豆腐",),
+            exclude_ingredients=("辣椒",),
+            nutrition_goal_codes=("low_sodium",),
+        )
 
-    def test_unknown_parses_as_string_not_true(self) -> None:
-        menu = feasible_menu(strict_time_feasible="unknown")
-        assert menu.strict_time_feasible == "unknown"
-        assert menu.strict_time_feasible is not True
-        assert strict_time_is_feasible(menu.strict_time_feasible) is False
+        assert plan.schema_version == "2.0.0"
+        assert plan.meal_types == ("晚餐",)
+        assert plan.population_tags == ("老人",)
+        assert plan.exclude_ingredients == ("辣椒",)
+
+    def test_estimated_time_is_a_boolean_with_one_makespan(self) -> None:
+        menu = feasible_menu(
+            estimated_time_feasible=False,
+            estimated_makespan_seconds=2700,
+        )
+
+        assert menu.estimated_time_feasible is False
+        assert menu.estimated_makespan_seconds == 2700
+
+    def test_unknown_estimated_time_is_rejected(self) -> None:
+        with pytest.raises(ValidationError):
+            feasible_menu(estimated_time_feasible="unknown")
+
+    def test_legacy_query_input_is_excluded_from_v2_output(self) -> None:
+        legacy = QueryPlanArtifact(
+            artifact_id=AID,
+            request_id=RID,
+            participant_refs=("p1",),
+            flavor_preferences=("清淡",),
+            preference_exclusions=("辣",),
+            input_fingerprint=H1,
+            content_hash=H2,
+        )
+
+        dumped = legacy.model_dump()
+        assert dumped["schema_version"] == "2.0.0"
+        assert dumped["rewritten_query"] == ""
+        assert "flavor_preferences" not in dumped
+        assert "preference_exclusions" not in dumped
+
+    def test_legacy_time_input_is_projected_to_v2_output(self) -> None:
+        legacy = FeasibleMenu(
+            plan_id="plan_1",
+            recipe_ids=(1, 2),
+            menu_hash=H1,
+            score_decomposition=score_decomp(),
+            strict_time_feasible=True,
+            makespan_seconds=1800,
+        )
+
+        dumped = legacy.model_dump()
+        assert dumped["estimated_time_feasible"] is True
+        assert dumped["estimated_makespan_seconds"] == 1800
+        assert "strict_time_feasible" not in dumped
+        assert "makespan_seconds" not in dumped
 
 
 class TestVerdictRejected:
