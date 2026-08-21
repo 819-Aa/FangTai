@@ -834,6 +834,13 @@ def _resolve_terminal_targets(
     return terminal
 
 
+# IDs retired by the parenthesis-aware parser. The signed H02 decisions point to
+# stable V2 ingredient IDs, so these gaps must never be reused by later identities.
+_RETIRED_CANONICAL_IDS = frozenset(
+    {920, 976, 977, 1173, 1445, 1811, 1938, 1940, 2038, 2199}
+)
+
+
 def rebuild_ingredient_identities(
     rows: list[SourceRecipeRow],
     overrides_path: Path,
@@ -877,7 +884,13 @@ def rebuild_ingredient_identities(
             canonical_names.append(name)
 
     evidence = _occurrence_evidence(occurrences)
-    id_by_name = {name: idx for idx, name in enumerate(canonical_names, start=1)}
+    id_by_name: dict[str, int] = {}
+    next_ingredient_id = 1
+    for name in canonical_names:
+        while next_ingredient_id in _RETIRED_CANONICAL_IDS:
+            next_ingredient_id += 1
+        id_by_name[name] = next_ingredient_id
+        next_ingredient_id += 1
 
     canonical_name_set = set(canonical_names)
     non_edible_names = set()
@@ -1238,6 +1251,26 @@ def _normalize_old_name(name: str) -> str:
 # 固定旧 3,326 身份中无法由通用清洗安全决定的异常项。固定数据不会增减，
 # 因此用显式、可审查的迁移决定代替模糊匹配。
 _OLD_IDENTITY_REVIEW: dict[str, tuple[str, tuple[str, ...]]] = {
+    "冬": ("discard", ()),
+    "冬35度": ("discard", ()),
+    "春秋": ("discard", ()),
+    "春秋30度)": ("discard", ()),
+    "稍微有温感": ("discard", ()),
+    "稍微有温感）": ("discard", ()),
+    "稍有烫手的感觉": ("discard", ()),
+    "稍有烫手的感觉）": ("discard", ()),
+    "触水稍微有温感": ("discard", ()),
+    "触水稍微有温感）": ("discard", ()),
+    "沥干": ("discard", ()),
+    "沥干））": ("discard", ()),
+    "浸泡": ("discard", ()),
+    "浸泡10分钟））": ("discard", ()),
+    "撕成丝": ("discard", ()),
+    "撕成丝））": ("discard", ()),
+    "改花刀": ("discard", ()),
+    "改花刀））": ("discard", ()),
+    "划十字花刀": ("discard", ()),
+    "划十字花刀））": ("discard", ()),
     "切块））": ("discard", ()),
     "切4））": ("discard", ()),
     "切丝））": ("discard", ()),

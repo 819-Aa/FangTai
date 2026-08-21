@@ -449,8 +449,8 @@ class TestFullScale:
         rows = load_verified_recipe_source(SOURCE_CSV, canonical_source_manifest())
         report = rebuild_ingredient_identities(rows, OVERRIDES, tmp_path / "out")
         gates = report["gates"]
-        assert report["registry_count"] == 1781
-        assert report["occurrence_count"] == 17521
+        assert report["registry_count"] == 1771
+        assert report["occurrence_count"] == 17509
         assert report["form_count"] == 381
         assert report["alias_count"] == 21
         assert report["pending_decision_count"] == 0
@@ -465,9 +465,9 @@ class TestFullScale:
         relations = read_jsonl(tmp_path / "out" / "recipe_ingredient_relations.jsonl")
         forms = read_jsonl(tmp_path / "out" / "ingredient_forms.jsonl")
         aliases = read_jsonl(tmp_path / "out" / "ingredient_aliases.jsonl")
-        assert len(occurrences) == 17521
+        assert len(occurrences) == 17509
         assert sum(item["consumption_role"] == "non_edible" for item in occurrences) == 16
-        assert len(relations) == 17505
+        assert len(relations) == 17493
         assert len({(item["ingredient_id"], item["form"]) for item in forms}) == len(forms)
         assert len({item["alias"] for item in aliases}) == len(aliases)
         assert "姜丝" not in {item["alias"] for item in aliases}
@@ -538,6 +538,15 @@ class TestFullScale:
         abalone_shell = next(item for item in occurrences if item["name_clean"] == "鲍鱼壳")
         assert abalone_shell["consumption_role"] == "non_edible"
         assert abalone_shell["resolved_ingredient_id"] is None
+        registry_name_by_id = {
+            item["ingredient_id"]: item["name_canonical"] for item in registry
+        }
+        cheese = next(
+            item
+            for item in occurrences
+            if item["recipe_id"] == 1502 and item["name_clean"] == "芝士"
+        )
+        assert registry_name_by_id[cheese["resolved_ingredient_id"]] == "奶酪"
 
     def test_old_to_new_diff(self, tmp_path: Path) -> None:
         rows = load_verified_recipe_source(SOURCE_CSV, canonical_source_manifest())

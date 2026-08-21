@@ -1,3 +1,4 @@
+import csv
 import json
 from decimal import Decimal
 
@@ -274,3 +275,32 @@ def test_nutrition_candidate_writer_never_approves_and_keeps_state_mismatch_visi
     assert "approved" not in text
     assert nutrition_form_from_occurrence("丝") == "unspecified"
     assert nutrition_form_from_occurrence("水发") == "hydrated"
+
+
+def test_nutrition_candidate_writer_suggests_reference_aliases_without_approving(
+    tmp_path,
+) -> None:
+    references = NutritionReferenceIndex(
+        (
+            _reference(name="梨(均值)", form="unspecified"),
+            _reference(name="马铃薯[土豆，洋芋]", form="unspecified").model_copy(
+                update={"reference_id": "cn-2"}
+            ),
+        )
+    )
+    output = tmp_path / "nutrition_candidates.csv"
+
+    write_nutrition_crosswalk_candidates(
+        ((10, "梨肉", "unspecified"), (20, "土豆", "unspecified")),
+        references,
+        output,
+    )
+    rows = list(csv.DictReader(output.open(encoding="utf-8")))
+
+    assert [(row["ingredient_name"], row["candidate_name"]) for row in rows] == [
+        ("梨肉", "梨(均值)"),
+        ("土豆", "马铃薯[土豆，洋芋]"),
+    ]
+    assert {row["match_method"] for row in rows} == {"reference_alias"}
+    assert {row["reason"] for row in rows} == {"alias_candidate_requires_review"}
+    assert {row["review_status"] for row in rows} == {"pending"}

@@ -22,8 +22,8 @@ from dataclasses import dataclass, field
 #: 组分前缀：主料/辅料/配料/A料/B料/C料/D料
 GROUP_PREFIX_RE = re.compile(r"^(?:主料|辅料|配料|A料|B料|C料|D料)[：:]")
 
-#: 分割符
-SPLIT_PATTERN = re.compile(r"[；;，,、\n。]")
+#: 分割符；仅在括号外生效，括号中的温度/处理说明属于同一个食材。
+_SPLIT_CHARS = frozenset("；;，,、\n。")
 
 #: 可选标记（括号内或尾部）
 OPTIONAL_MARKERS = (
@@ -279,7 +279,22 @@ def split_ingredient_text(ingredients_raw: str) -> list[str]:
     if not ingredients_raw:
         return []
     fragments: list[str] = []
-    for p in SPLIT_PATTERN.split(ingredients_raw):
+    buffer: list[str] = []
+    parenthesis_depth = 0
+    top_level_parts: list[str] = []
+    for character in ingredients_raw:
+        if character in "（(":
+            parenthesis_depth += 1
+        elif character in "）)" and parenthesis_depth:
+            parenthesis_depth -= 1
+        if character in _SPLIT_CHARS and parenthesis_depth == 0:
+            top_level_parts.append("".join(buffer))
+            buffer.clear()
+        else:
+            buffer.append(character)
+    top_level_parts.append("".join(buffer))
+
+    for p in top_level_parts:
         p = p.strip()
         if not p:
             continue

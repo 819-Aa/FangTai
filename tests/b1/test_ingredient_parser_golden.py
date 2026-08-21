@@ -183,3 +183,40 @@ class TestParserGolden:
     def test_oil_fritter_is_a_whole_ingredient_not_a_form(self) -> None:
         occs = parse_ingredients("油条1根")
         assert [(o.name_clean, o.form) for o in occs if not o.is_note] == [("油条", None)]
+
+    @pytest.mark.parametrize(
+        ("raw", "expected_name", "expected_quantity", "expected_unit"),
+        [
+            (
+                "主料：温水（水温40℃，触水稍微有温感）130克；酵母3克",
+                "温水",
+                "130克",
+                "克",
+            ),
+            (
+                "主料：温水(夏25度，冬35度，春秋30度)150毫升；盐4克",
+                "温水",
+                "150毫升",
+                "毫升",
+            ),
+            (
+                "主料：温热水（50-60℃，稍有烫手的感觉）70ml；红糖50g",
+                "温热水",
+                "70ml",
+                "ml",
+            ),
+        ],
+    )
+    def test_parenthetical_commas_do_not_create_fake_ingredients(
+        self,
+        raw: str,
+        expected_name: str,
+        expected_quantity: str,
+        expected_unit: str,
+    ) -> None:
+        occurrences = parse_ingredients(raw)
+
+        assert len(occurrences) == 2
+        assert occurrences[0].name_clean == expected_name
+        assert occurrences[0].quantity_raw == expected_quantity
+        assert occurrences[0].unit_raw == expected_unit

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 from decimal import Decimal
 from pathlib import Path
 from typing import Literal
@@ -138,6 +139,22 @@ class NutritionReferenceIndex:
                     item
                     for item in self._references.values()
                     if item.canonical_name.strip() == name
+                ),
+                key=lambda item: (source_priority(item.source_dataset), item.reference_id),
+            )
+        )
+
+    def find_by_review_alias(
+        self, ingredient_name: str
+    ) -> tuple[IngredientNutritionReference, ...]:
+        """Return conservative, review-only aliases; never an approved mapping."""
+        lookup_names = _ingredient_review_aliases(ingredient_name)
+        return tuple(
+            sorted(
+                (
+                    item
+                    for item in self._references.values()
+                    if lookup_names & _reference_review_aliases(item.canonical_name)
                 ),
                 key=lambda item: (source_priority(item.source_dataset), item.reference_id),
             )
@@ -285,6 +302,8 @@ def write_nutrition_crosswalk_candidates(
             seen.add(key)
             candidates = references.find_by_name(str(ingredient_name))
             if not candidates:
+                candidates = references.find_by_review_alias(str(ingredient_name))
+            if not candidates:
                 writer.writerow(
                     {
                         "ingredient_id": ingredient_id,
@@ -297,6 +316,7 @@ def write_nutrition_crosswalk_candidates(
                 continue
             for reference in candidates:
                 same_form = str(form).strip() == reference.form.strip()
+                exact_name = str(ingredient_name).strip() == reference.canonical_name.strip()
                 writer.writerow(
                     {
                         "ingredient_id": ingredient_id,
@@ -306,13 +326,39 @@ def write_nutrition_crosswalk_candidates(
                         "candidate_name": reference.canonical_name,
                         "candidate_form": reference.form,
                         "source_dataset": reference.source_dataset,
-                        "match_method": "exact",
+                        "match_method": "exact" if exact_name else "reference_alias",
                         "reason": (
-                            "exact_candidate" if same_form else "form_state_requires_review"
+                            ("exact_candidate" if same_form else "form_state_requires_review")
+                            if exact_name
+                            else "alias_candidate_requires_review"
                         ),
                         "review_status": "pending",
                     }
                 )
+
+
+_REFERENCE_BASE_RE = re.compile(r"[\[【(（].*$")
+_REFERENCE_BRACKET_ALIAS_RE = re.compile(r"[\[【]([^\]】]+)[\]】]")
+
+
+def _ingredient_review_aliases(name: str) -> set[str]:
+    cleaned = name.strip()
+    aliases = {cleaned}
+    if len(cleaned) > 1 and cleaned.endswith("肉"):
+        aliases.add(cleaned[:-1])
+    return {alias for alias in aliases if alias}
+
+
+def _reference_review_aliases(name: str) -> set[str]:
+    cleaned = name.strip()
+    aliases = {_REFERENCE_BASE_RE.sub("", cleaned).strip()}
+    for match in _REFERENCE_BRACKET_ALIAS_RE.finditer(cleaned):
+        aliases.update(
+            alias.strip()
+            for alias in re.split(r"[，、,]", match.group(1))
+            if alias.strip()
+        )
+    return {alias for alias in aliases if alias}
 
 
 def load_nutrition_references(path: Path) -> NutritionReferenceIndex:
