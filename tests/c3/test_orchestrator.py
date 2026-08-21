@@ -10,6 +10,8 @@ from types import SimpleNamespace
 import pytest
 
 from food_agent_v2.c3.orchestrator import DeterministicRecommendationOrchestrator
+from food_agent_v2.c3.fast_intent import FastIntentRouter
+from food_agent_v2.c3.query_normalizer import SemanticRewrite
 from food_agent_v2.d1 import api as d1_api
 
 
@@ -33,13 +35,40 @@ def _mysql_available() -> bool:
         return False
 
 
+def test_semantic_rewrite_is_the_only_query_plan_and_retrieval_source() -> None:
+    orchestrator = DeterministicRecommendationOrchestrator(llm=SimpleNamespace())
+    routed = FastIntentRouter.route("给我推荐老人吃的晚餐", ("p1",))
+    rewrite = SemanticRewrite(
+        retrieval_query="老人 晚餐",
+        meal_types=("晚餐",),
+        population_tags=("老人",),
+        exclude_ingredients=("辣椒",),
+        max_time_minutes=30,
+    )
+
+    intent = orchestrator._apply_semantic_rewrite(
+        routed,
+        rewrite,
+        ("p1",),
+        has_current_menu=False,
+    )
+    plan = orchestrator._build_query_plan(intent, _fresh_rid(), ["p1"])
+
+    assert plan.rewritten_query == "老人 晚餐"
+    assert plan.meal_types == ("晚餐",)
+    assert plan.population_tags == ("老人",)
+    assert plan.exclude_ingredients == ("辣椒",)
+    assert plan.time_constraint_seconds == 1800
+    assert orchestrator._retrieval_query(intent) == "老人 晚餐"
+
+
 pytestmark = pytest.mark.skipif(not _mysql_available(), reason="MySQL 不可用")
 
 
 @pytest.fixture(autouse=True)
 def _deterministic_c1_candidates(monkeypatch: pytest.MonkeyPatch) -> None:
     class RetrievalPort:
-        def retrieve(self, _query: str, top_k: int = 20):
+        def retrieve(self, _query: str, top_k: int = 20, **_kwargs):
             # 跳过固定数据缺食材视图的 recipe_id（19/39），避免 B4 完整覆盖 fail-closed
             candidates = [
                 SimpleNamespace(recipe_id=recipe_id, name=f"固定菜品{recipe_id}", source_paths=[])

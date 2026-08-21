@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import time
 import uuid
+from dataclasses import replace
 from typing import Any
 from uuid import UUID
 
@@ -49,6 +50,39 @@ from food_agent_v2.contracts.artifacts import (
 )
 from food_agent_v2.contracts.build import canonical_json_hash
 from food_agent_v2.d1 import api as d1_api
+
+
+def _semantic_health_exclusions(
+    constraints: tuple[str, ...],
+    participant_refs: tuple[str, ...],
+) -> tuple[str, ...]:
+    if not constraints:
+        return ()
+    output: list[str] = []
+    for constraint in constraints:
+        if constraint.count(":") == 2:
+            output.append(constraint)
+            continue
+        if len(participant_refs) != 1:
+            continue
+        participant = participant_refs[0]
+        if "过敏" in constraint:
+            value = constraint.split("过敏", 1)[0].rsplit("对", 1)[-1]
+            value = value.removeprefix("我").strip()
+            if value:
+                output.append(f"{participant}:过敏:{value}")
+                continue
+        disease = next(
+            (
+                item
+                for item in ("糖尿病", "高血压", "痛风", "肾病", "脂肪肝")
+                if item in constraint
+            ),
+            None,
+        )
+        if disease:
+            output.append(f"{participant}:疾病:{disease}")
+    return tuple(output)
 
 #: generate_feasible_menus 返回的业务终态 → reducer result 映射。
 _GENERATE_TERMINAL = {
@@ -88,11 +122,18 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
             artifact_id=uuid.uuid4(),
             request_id=UUID(request_id),
             participant_refs=tuple(participant_refs),
-            flavor_preferences=intent.flavor_preferences,
+            rewritten_query=intent.rewritten_query or intent.query,
+            meal_types=intent.meal_types,
+            population_tags=intent.population_tags,
             dish_types=intent.dish_types,
+            taste_tags=intent.taste_tags or intent.flavor_preferences,
+            cuisine_tags=intent.cuisine_tags,
+            scenario_tags=intent.scenario_tags,
+            include_ingredients=intent.include_ingredients,
+            exclude_ingredients=intent.exclude_ingredients,
+            nutrition_goal_codes=intent.nutrition_goal_codes,
             dish_count_requested=intent.dish_count_requested,
             health_exclusions=intent.health_exclusions,
-            preference_exclusions=intent.preference_exclusions,
             time_constraint_seconds=intent.time_constraint_seconds,
             time_constraint_policy=intent.time_constraint_policy,
             input_fingerprint=canonical_json_hash(
@@ -103,20 +144,49 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
 
     @staticmethod
     def _retrieval_query(intent) -> str:
-        """用归一化语义构造检索 query（meal_type/scenario/flavor 拼接）。
+        """检索只消费已经验证的封闭式 rewritten_query。"""
+        return intent.rewritten_query or intent.query
 
-        LLM 归一化出的"早餐/清爽/补气血"等语义词，拼成检索 query，比口语原文
-        更能命中对应菜谱；无语义时回退原文。
-        """
-        parts = []
-        if getattr(intent, "meal_type", None):
-            parts.append(intent.meal_type)
-        if getattr(intent, "scenario", None):
-            parts.append(intent.scenario)
-        parts.extend(getattr(intent, "flavor_preferences", ()) or ())
-        if parts:
-            return " ".join(parts)
-        return intent.query
+    @staticmethod
+    def _apply_semantic_rewrite(
+        routed: IntentDelta,
+        rewrite,
+        participant_refs: tuple[str, ...],
+        *,
+        has_current_menu: bool,
+    ) -> IntentDelta:
+        action = routed.intent
+        if action == "model_fallback":
+            action = "add_constraint" if has_current_menu else "new_recommendation"
+        health_exclusions = routed.health_exclusions
+        if not health_exclusions:
+            health_exclusions = _semantic_health_exclusions(
+                rewrite.health_constraints,
+                participant_refs,
+            )
+        return replace(
+            routed,
+            intent=action,
+            rewritten_query=rewrite.retrieval_query,
+            meal_type=rewrite.meal_types[0] if rewrite.meal_types else None,
+            meal_types=rewrite.meal_types,
+            population_tags=rewrite.population_tags,
+            scenario=rewrite.scenario_tags[0] if rewrite.scenario_tags else None,
+            scenario_tags=rewrite.scenario_tags,
+            dish_count_requested=rewrite.dish_count,
+            flavor_preferences=rewrite.taste_tags,
+            taste_tags=rewrite.taste_tags,
+            cuisine_tags=rewrite.cuisine_tags,
+            dish_types=rewrite.dish_types,
+            include_ingredients=rewrite.include_ingredients,
+            exclude_ingredients=rewrite.exclude_ingredients,
+            nutrition_goal_codes=rewrite.nutrition_goal_codes,
+            health_exclusions=health_exclusions,
+            time_constraint_seconds=rewrite.time_constraint_seconds,
+            time_constraint_policy=(
+                "hard" if rewrite.max_time_minutes is not None else "flexible"
+            ),
+        )
 
     def _guard_active(self, state, c4, session_id, lock_token, lost):
         """取消/失锁统一门卫：返回终态 state（若触发）或 None（继续）。
@@ -281,14 +351,6 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
         participant_refs = [p["participant_ref"] for p in participants]
         intent = FastIntentRouter.route(message, tuple(participant_refs))
 
-        # model_fallback → 单次 QueryNormalizer（无工具、3s 预算、失败转澄清）
-        if intent.intent == "model_fallback":
-            current_menu = None
-            if self._has_current_menu(c4, session_id):
-                current_menu = (c4.get_session_state(session_id) or {}).get("current_menu")
-            intent = QueryNormalizer().normalize(
-                message, tuple(participant_refs), current_menu)
-
         # needs_clarification/conflict → 澄清终态（不进入推荐链路）
         if intent.intent in ("needs_clarification", "conflict"):
             self._finalize_clarification(request_id, session_id, participants,
@@ -301,8 +363,25 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
                                 config, c4, lock_token, lost)
             return
 
+        has_current_menu = self._has_current_menu(c4, session_id)
+        previous_query_plan = None
+        if has_current_menu:
+            session_state = c4.get_session_state(session_id) or {}
+            previous_query_plan = session_state.get("query_plan")
+        rewrite = QueryNormalizer(self._llm).normalize(
+            message,
+            tuple(participant_refs),
+            previous_query_plan=previous_query_plan,
+        )
+        intent = self._apply_semantic_rewrite(
+            intent,
+            rewrite,
+            tuple(participant_refs),
+            has_current_menu=has_current_menu,
+        )
+
         # add_constraint / reject_plan 且已有前文菜单 → 确定性 delta（最小修改）
-        if intent.intent in ("add_constraint", "reject_plan") and self._has_current_menu(c4, session_id):
+        if intent.intent in ("add_constraint", "reject_plan") and has_current_menu:
             self._run_delta(request_id, session_id, message, participants,
                             config, c4, lock_token, lost, intent)
             return

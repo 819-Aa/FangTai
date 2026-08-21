@@ -42,6 +42,14 @@ def test_relative_person_role_requires_clarification():
     assert result.intent == "needs_clarification"
 
 
+def test_population_recommendation_does_not_require_participant_binding():
+    result = FastIntentRouter.route(
+        "给我推荐一些老人吃的晚餐", participant_refs=("p1",)
+    )
+
+    assert result.intent != "needs_clarification"
+
+
 def test_relative_person_with_enough_participants_assigns_roles():
     # 参与者足够 → 按角色归属（小孩的"辣"禁忌 → p2）
     result = FastIntentRouter.route(

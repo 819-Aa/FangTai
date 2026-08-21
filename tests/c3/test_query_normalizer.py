@@ -1,63 +1,124 @@
-"""QueryNormalizer 单次模型归一化测试（L1 Task 5）。"""
-
 from __future__ import annotations
 
 import json
 
-import pytest
-
+from food_agent_v2.c3.fast_intent import FastIntentRouter
+from food_agent_v2.c3.orchestrator import DeterministicRecommendationOrchestrator
 from food_agent_v2.c3.query_normalizer import QueryNormalizer
 
 
 class _FakeLLM:
-    def __init__(self, content: str | None = None, raise_on_call: Exception | None = None):
-        self.calls = 0
-        self.last_tools = None
-        self._content = content
-        self.raise_on_call = raise_on_call
+    def __init__(self, responses=None, error: Exception | None = None):
+        self.responses = list(responses or [])
+        self.error = error
+        self.calls = []
 
-    def invoke(self, role, system_prompt, user_message, tools=None,
-               response_format=None, timeout_seconds=None):
-        self.calls += 1
-        self.last_tools = tools
-        if self.raise_on_call:
-            raise self.raise_on_call
-        return {"content": self._content or "{}", "tool_calls": [], "usage": {}}
+    def invoke(self, role, system_prompt, user_message, **kwargs):
+        self.calls.append((role, system_prompt, user_message, kwargs))
+        if self.error is not None:
+            raise self.error
+        content = self.responses.pop(0) if self.responses else "{}"
+        return {"content": content}
 
 
-def test_normalizer_uses_one_call_and_no_tools():
-    llm = _FakeLLM(content=json.dumps({"intent": "replace", "target_recipe_id": 2}))
-    result = QueryNormalizer(llm).normalize(
-        "把清淡些的要求留着，重做主菜", ("p1",), {"recipe_ids": [1, 2, 3]})
-    assert llm.calls == 1
-    assert llm.last_tools is None
-    assert result.intent == "replace"
-    assert result.target_recipe_id == 2
+def test_closed_rewrite_extracts_population_meal_negation_and_time() -> None:
+    llm = _FakeLLM(
+        responses=[
+            json.dumps(
+                {
+                    "retrieval_query": "老人 晚餐 豆腐",
+                    "meal_types": ["晚餐"],
+                    "population_tags": ["老人"],
+                    "include_ingredients": ["豆腐"],
+                    "exclude_ingredients": ["辣椒"],
+                    "max_time_minutes": 30,
+                },
+                ensure_ascii=False,
+            )
+        ]
+    )
+
+    rewrite = QueryNormalizer(llm).normalize(
+        "给老人推荐晚餐，不要辣，想吃豆腐，30分钟内",
+        ("p1",),
+    )
+
+    assert len(llm.calls) == 1
+    assert rewrite.meal_types == ("晚餐",)
+    assert rewrite.population_tags == ("老人",)
+    assert rewrite.include_ingredients == ("豆腐",)
+    assert rewrite.exclude_ingredients == ("辣椒",)
+    assert rewrite.max_time_minutes == 30
+    assert rewrite.time_constraint_seconds == 1800
 
 
-@pytest.mark.parametrize("failure", [TimeoutError(), ValueError("bad schema")])
-def test_normalizer_failure_becomes_clarification(failure):
-    llm = _FakeLLM(raise_on_call=failure)
-    result = QueryNormalizer(llm).normalize(
-        "给老人换一道更容易咀嚼的菜", ("p1",), {"recipe_ids": [1, 2, 3]})
-    assert result.intent == "needs_clarification"
+def test_invalid_output_retries_twice_then_uses_deterministic_fallback() -> None:
+    llm = _FakeLLM(responses=["not json", "[]", '{"recipe_ids":[1]}'])
+
+    rewrite = QueryNormalizer(llm).normalize(
+        "给我推荐老人吃的晚餐，不要辣，30分钟内",
+        ("p1",),
+    )
+
+    assert len(llm.calls) == 3
+    assert rewrite.meal_types == ("晚餐",)
+    assert rewrite.population_tags == ("老人",)
+    assert rewrite.exclude_ingredients == ("辣椒",)
+    assert rewrite.max_time_minutes == 30
 
 
-def test_normalizer_non_json_becomes_clarification():
-    llm = _FakeLLM(content="这不是 JSON")
-    result = QueryNormalizer(llm).normalize("随便说点啥", ("p1",))
-    assert result.intent == "needs_clarification"
+def test_model_failure_fallback_preserves_include_and_exclude() -> None:
+    llm = _FakeLLM(error=TimeoutError())
+
+    rewrite = QueryNormalizer(llm).normalize("不要辣椒，想吃豆腐", ("p1",))
+
+    assert len(llm.calls) == 3
+    assert rewrite.include_ingredients == ("豆腐",)
+    assert rewrite.exclude_ingredients == ("辣椒",)
 
 
-def test_normalizer_invalid_intent_becomes_clarification():
-    llm = _FakeLLM(content=json.dumps({"intent": "not_a_real_intent"}))
-    result = QueryNormalizer(llm).normalize("随便说点啥", ("p1",))
-    assert result.intent == "needs_clarification"
+def test_previous_query_plan_not_free_text_history_is_sent_to_model() -> None:
+    llm = _FakeLLM(responses=['{"retrieval_query":"清淡晚餐"}'])
+    previous = {"meal_types": ["晚餐"], "exclude_ingredients": ["辣椒"]}
+
+    QueryNormalizer(llm).normalize("再清淡一点", ("p1",), previous_query_plan=previous)
+
+    payload = json.loads(llm.calls[0][2])
+    assert payload["previous_query_plan"] == previous
+    assert "history" not in payload
 
 
-def test_health_language_not_dropped_by_normalizer():
-    # 原始 message 含"不能吃"，归一化却返回普通推荐（丢健康信号）→ 澄清
-    llm = _FakeLLM(content=json.dumps({
-        "intent": "new_recommendation", "health_exclusions": []}))
-    result = QueryNormalizer(llm).normalize("二号参与者不能吃虾", ("p1", "p2"))
-    assert result.intent == "needs_clarification"
+def test_validated_rewrite_is_the_only_query_plan_and_retrieval_source() -> None:
+    orchestrator = DeterministicRecommendationOrchestrator(llm=object())
+    routed = FastIntentRouter.route("给我推荐老人吃的晚餐", ("p1",))
+    rewrite = QueryNormalizer(
+        _FakeLLM(
+            responses=[
+                json.dumps(
+                    {
+                        "retrieval_query": "老人 晚餐",
+                        "meal_types": ["晚餐"],
+                        "population_tags": ["老人"],
+                    },
+                    ensure_ascii=False,
+                )
+            ]
+        )
+    ).normalize("给我推荐老人吃的晚餐", ("p1",))
+
+    intent = orchestrator._apply_semantic_rewrite(
+        routed,
+        rewrite,
+        ("p1",),
+        has_current_menu=False,
+    )
+    plan = orchestrator._build_query_plan(
+        intent,
+        "11111111-1111-1111-1111-111111111111",
+        ["p1"],
+    )
+
+    assert plan.rewritten_query == "老人 晚餐"
+    assert plan.meal_types == ("晚餐",)
+    assert plan.population_tags == ("老人",)
+    assert orchestrator._retrieval_query(intent) == "老人 晚餐"

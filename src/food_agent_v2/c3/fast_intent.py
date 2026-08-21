@@ -78,11 +78,20 @@ class IntentDelta:
 
     intent: IntentKind = "new_recommendation"
     query: str = ""
+    rewritten_query: str = ""
     meal_type: str | None = None
+    meal_types: tuple[str, ...] = ()
+    population_tags: tuple[str, ...] = ()
     scenario: str | None = None
+    scenario_tags: tuple[str, ...] = ()
     dish_count_requested: int | None = None
     flavor_preferences: tuple[str, ...] = ()
+    taste_tags: tuple[str, ...] = ()
+    cuisine_tags: tuple[str, ...] = ()
     dish_types: tuple[str, ...] = ()
+    include_ingredients: tuple[str, ...] = ()
+    exclude_ingredients: tuple[str, ...] = ()
+    nutrition_goal_codes: tuple[str, ...] = ()
     health_exclusions: tuple[str, ...] = ()
     preference_exclusions: tuple[str, ...] = ()
     time_constraint_seconds: int | None = None
@@ -151,6 +160,14 @@ _RELATIVE_PERSON_HINTS = ("小孩", "老人", "孩子", "宝宝", "小朋友", "
 def _has_relative_person(message: str) -> bool:
     """相对称谓多人角色（小孩/老人等）→ 归属不唯一，需澄清。"""
     return any(h in message for h in _RELATIVE_PERSON_HINTS)
+
+
+def _needs_participant_binding(message: str) -> bool:
+    """只有相对称谓承载个人健康/禁忌约束时才需要绑定具体参与者。"""
+    return _has_relative_person(message) and any(
+        marker in message
+        for marker in ("不吃", "不能吃", "过敏", "忌口", "牙口", "血压", "血糖", "尿酸")
+    )
 
 
 def _required_participants(message: str) -> int:
@@ -251,7 +268,7 @@ class FastIntentRouter:
                 clarification_reason="多人约束互相矛盾，需要澄清")
 
         # 2.5 相对称谓多人角色（小孩/老人等）→ 参与者不足则澄清；足够则按角色归属
-        if _has_relative_person(text) and len(participant_refs) < _required_participants(text):
+        if _needs_participant_binding(text) and len(participant_refs) < _required_participants(text):
             return IntentDelta(
                 intent="needs_clarification", query=text,
                 clarification_reason="多人相对称谓需澄清参与者归属")
