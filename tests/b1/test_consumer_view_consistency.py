@@ -41,6 +41,21 @@ BUILD = BuildIdentity(
 )
 
 
+@pytest.mark.parametrize("name", ["改花刀", "划十字花刀"])
+def test_known_processing_instruction_occurrence_is_quarantined_from_consumption(name) -> None:
+    fact = occurrence_facts_from_records(({
+        "occurrence_id": "1384-11",
+        "recipe_id": 1384,
+        "source_fragment": "改花刀））",
+        "name_clean": name,
+        "resolved_ingredient_id": 99,
+        "consumption_role": "edible",
+    },))[0]
+
+    assert fact.consumption_role == "non_edible"
+    assert fact.is_process_material is True
+
+
 def test_all_consumer_views_share_build_recipe_and_ingredient_identity() -> None:
     views = build_consumer_views(
         build=BUILD,

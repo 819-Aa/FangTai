@@ -41,6 +41,7 @@ _TASTE_TAGS = {
     "清淡", "酸", "甜", "辣", "麻辣", "香辣", "酸甜", "咸鲜", "鲜香", "奶香"
 }
 _LABEL_SPLIT_RE = re.compile(r"[、,，;；|/]+")
+_NON_INGREDIENT_OCCURRENCE_RE = re.compile(r"^(?:改|划(?:十字)?)花刀$")
 
 
 @dataclass(frozen=True)
@@ -300,6 +301,9 @@ def occurrence_facts_from_records(
         condition_type: ConditionType = (
             "one_of" if choice_group_id is not None else ("optional" if is_optional else "required")
         )
+        is_processing_instruction = bool(
+            _NON_INGREDIENT_OCCURRENCE_RE.fullmatch(record["name_clean"])
+        )
         facts.append(
             IngredientOccurrenceFact(
             occurrence_id=record["occurrence_id"],
@@ -311,7 +315,9 @@ def occurrence_facts_from_records(
                 if record.get("resolved_ingredient_id") is not None
                 else None
             ),
-            consumption_role=record["consumption_role"],
+            consumption_role=(
+                "non_edible" if is_processing_instruction else record["consumption_role"]
+            ),
             quantity_raw=record.get("quantity_raw"),
             unit_raw=record.get("unit_raw"),
             form=record.get("form"),
@@ -319,7 +325,9 @@ def occurrence_facts_from_records(
             choice_group_id=str(choice_group_id) if choice_group_id is not None else None,
             condition_type=condition_type,
             selected_for_base=bool(record.get("is_default_choice", True)),
-            is_process_material=bool(record.get("is_process_material", False)),
+            is_process_material=(
+                is_processing_instruction or bool(record.get("is_process_material", False))
+            ),
             added_from_step=bool(record.get("added_from_step", False)),
         )
         )

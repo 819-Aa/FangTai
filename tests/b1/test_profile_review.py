@@ -80,7 +80,7 @@ def test_profile_model_uses_exact_content_cache_on_resume(tmp_path) -> None:
     assert second.calls == 0
 
 
-def test_llm_profile_estimator_rejects_out_of_vocabulary_tags() -> None:
+def test_llm_profile_estimator_drops_out_of_vocabulary_tags() -> None:
     class _LLM:
         def invoke(self, *_args, **_kwargs):
             return {"content": '{"profiles":[{"recipe_id":1,"meal_tags":["早餐"],'
@@ -89,9 +89,6 @@ def test_llm_profile_estimator_rejects_out_of_vocabulary_tags() -> None:
 
     estimator = LLMProfileEstimator(_LLM(), model_id="model")
 
-    try:
-        estimator.estimate_batch((_input(),))
-    except ValueError as exc:
-        assert "封闭词表" in str(exc)
-    else:
-        raise AssertionError("越界画像标签必须被拒绝")
+    result = estimator.estimate_batch((_input(),))
+
+    assert result[1]["dish_type_tags"] == []

@@ -222,11 +222,11 @@ def _validate_profile_payload(payload: dict) -> dict[str, list[str]]:
         values = payload[field]
         if not isinstance(values, list) or any(not isinstance(value, str) for value in values):
             raise ValueError(f"画像字段 {field} 必须为字符串数组")
-        if set(values) - vocabulary:
-            raise ValueError(f"画像字段 {field} 越出封闭词表")
-        normalized[field] = list(dict.fromkeys(values))
-    if not normalized["meal_tags"] or not normalized["dish_type_tags"]:
-        raise ValueError("meal_tags 和 dish_type_tags 不得为空")
+        normalized[field] = list(
+            dict.fromkeys(value for value in values if value in vocabulary)
+        )
+    if not normalized["meal_tags"]:
+        raise ValueError("meal_tags 不得为空")
     return normalized
 
 
