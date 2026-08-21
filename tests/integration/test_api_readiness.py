@@ -6,6 +6,33 @@ from food_agent_v2.api_app import app
 from food_agent_v2.application import readiness
 
 
+def test_readiness_rejects_old_runtime_artifact_versions() -> None:
+    def mysql_probe():
+        return {
+            "status": "ready",
+            "build_id": "build-old",
+            "artifact_count": 19,
+            "recipe_count": 1914,
+            "runtime_schema_versions": {
+                "rag_documents": "1.0.0",
+                "nutrition_features": "1.0.0",
+                "step_tasks": "1.0.0",
+            },
+        }
+
+    try:
+        readiness.check_readiness(
+            mysql_probe=mysql_probe,
+            redis_probe=lambda: {"status": "ready"},
+            qdrant_probe=lambda _build, count: {"status": "ready", "point_count": count},
+            siliconflow_probe=lambda: {"status": "ready"},
+        )
+    except readiness.ServiceNotReady as exc:
+        assert exc.checks["mysql"]["status"] == "unavailable"
+    else:
+        raise AssertionError("旧运行时 Artifact 版本必须阻止 readiness")
+
+
 def test_health_remains_io_free_when_readiness_fails(monkeypatch) -> None:
     monkeypatch.setattr(
         readiness,

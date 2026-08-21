@@ -6,6 +6,7 @@ Qdrant，并且只返回稳定的公开状态，不向 HTTP 层传播基础设�
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from typing import Any
 
@@ -31,6 +32,12 @@ EXPECTED_FIXED_ARTIFACT_COUNTS: dict[str, int] = {
     "recipe_step_binding_views": 1914,
     "step_tasks": 1914,
     "user_profiles": 50,
+}
+
+EXPECTED_RUNTIME_SCHEMA_VERSIONS: dict[str, str] = {
+    "rag_documents": "2.0.0",
+    "nutrition_features": "2.0.0",
+    "step_tasks": "2.0.0",
 }
 
 
@@ -64,13 +71,26 @@ def mysql_fixed_data_probe() -> dict[str, Any]:
             read_timeout=10,
         )
         cursor = connection.cursor()
-        cursor.execute("SELECT build_id FROM data_builds WHERE status='ready'")
+        cursor.execute("SELECT build_id, schema_versions FROM data_builds WHERE status='ready'")
         ready_rows = cursor.fetchall()
         if len(ready_rows) != 1:
             raise RuntimeError("unique ready build required")
         build_id = str(ready_rows[0][0])
         if not build_id:
             raise RuntimeError("ready build identity required")
+        raw_schema_versions = ready_rows[0][1]
+        if isinstance(raw_schema_versions, (bytes, bytearray)):
+            raw_schema_versions = raw_schema_versions.decode("utf-8")
+        schema_versions = (
+            raw_schema_versions
+            if isinstance(raw_schema_versions, dict)
+            else json.loads(raw_schema_versions)
+        )
+        runtime_schema_versions = {
+            name: schema_versions.get(name) for name in EXPECTED_RUNTIME_SCHEMA_VERSIONS
+        }
+        if runtime_schema_versions != EXPECTED_RUNTIME_SCHEMA_VERSIONS:
+            raise RuntimeError("runtime artifact schema versions do not match V2 contract")
 
         cursor.execute(
             "SELECT artifact_name, COUNT(*) FROM fixed_artifact_records "
@@ -85,6 +105,7 @@ def mysql_fixed_data_probe() -> dict[str, Any]:
             "build_id": build_id,
             "artifact_count": len(actual),
             "recipe_count": actual["recipe_retrieval_build_views"],
+            "runtime_schema_versions": runtime_schema_versions,
         }
     finally:
         if cursor is not None:
@@ -143,14 +164,19 @@ def check_readiness(
         mysql = mysql_probe()
         build_id = str(mysql["build_id"])
         recipe_count = int(mysql["recipe_count"])
+        artifact_count = int(mysql["artifact_count"])
+        runtime_schema_versions = dict(mysql["runtime_schema_versions"])
         if not build_id or recipe_count != EXPECTED_FIXED_ARTIFACT_COUNTS[
             "recipe_retrieval_build_views"
-        ]:
+        ] or artifact_count != len(EXPECTED_FIXED_ARTIFACT_COUNTS):
             raise RuntimeError("invalid fixed data identity")
+        if runtime_schema_versions != EXPECTED_RUNTIME_SCHEMA_VERSIONS:
+            raise RuntimeError("invalid runtime artifact schema versions")
         checks["mysql"] = {
             "status": "ready",
-            "artifact_count": int(mysql["artifact_count"]),
+            "artifact_count": artifact_count,
             "recipe_count": recipe_count,
+            "runtime_schema_versions": runtime_schema_versions,
         }
     except Exception:
         checks["mysql"] = {"status": "unavailable"}

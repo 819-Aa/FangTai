@@ -17,6 +17,7 @@ def _mysql_ready() -> dict:
         "build_id": BUILD_ID,
         "artifact_count": len(readiness.EXPECTED_FIXED_ARTIFACT_COUNTS),
         "recipe_count": 1914,
+        "runtime_schema_versions": dict(readiness.EXPECTED_RUNTIME_SCHEMA_VERSIONS),
     }
 
 
@@ -47,7 +48,12 @@ def test_readiness_requires_all_four_stores() -> None:
         "status": "ready",
         "build_id": BUILD_ID,
         "checks": {
-            "mysql": {"status": "ready", "artifact_count": 19, "recipe_count": 1914},
+            "mysql": {
+                "status": "ready",
+                "artifact_count": 19,
+                "recipe_count": 1914,
+                "runtime_schema_versions": dict(readiness.EXPECTED_RUNTIME_SCHEMA_VERSIONS),
+            },
             "redis": {"status": "ready"},
             "qdrant": {"status": "ready", "point_count": 1914},
             "siliconflow": {"status": "ready", "models": {
@@ -79,7 +85,7 @@ def test_mysql_probe_requires_exact_fixed_artifact_counts(monkeypatch: pytest.Mo
     expected = readiness.EXPECTED_FIXED_ARTIFACT_COUNTS
     cursor = SimpleNamespace()
     responses = [
-        [(BUILD_ID,)],
+        [(BUILD_ID, readiness.EXPECTED_RUNTIME_SCHEMA_VERSIONS)],
         [(name, count) for name, count in expected.items() if name != "user_profiles"],
     ]
     cursor.execute = lambda *_args: None

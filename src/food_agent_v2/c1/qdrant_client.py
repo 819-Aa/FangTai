@@ -10,6 +10,53 @@ from food_agent_v2.core.config import load_config
 # 模块级 BGE-M3 模型缓存：避免每次检索都重新加载 ~2GB 模型（文档 07 §13：启动预热，首轮不承担冷加载）
 _embedding_model = None
 
+RAG_PAYLOAD_FIELDS = (
+    "recipe_id",
+    "name",
+    "label_tags",
+    "meal_tags",
+    "population_tags",
+    "dish_type_tags",
+    "taste_tags",
+    "cuisine_tags",
+    "cooking_method_tags",
+    "texture_tags",
+    "scenario_tags",
+    "ingredient_names",
+    "ingredient_ids",
+    "catalog_eligibility",
+    "build_id",
+    "source_manifest_hash",
+    "source_row_sha256",
+)
+
+_RAG_ARRAY_FIELDS = frozenset(
+    {
+        "label_tags",
+        "meal_tags",
+        "population_tags",
+        "dish_type_tags",
+        "taste_tags",
+        "cuisine_tags",
+        "cooking_method_tags",
+        "texture_tags",
+        "scenario_tags",
+        "ingredient_names",
+        "ingredient_ids",
+    }
+)
+
+
+def rag_document_payload(document: dict) -> dict:
+    """Project one verified RAG record into the complete online filter payload."""
+    payload = {}
+    for field in RAG_PAYLOAD_FIELDS:
+        if field in _RAG_ARRAY_FIELDS:
+            payload[field] = list(document.get(field, ()))
+        else:
+            payload[field] = document[field]
+    return payload
+
 
 def _model_source(configured_path: str, model_id: str) -> str:
     path = Path(configured_path)
@@ -240,25 +287,7 @@ class QdrantInitializationTarget:
                 PointStruct(
                     id=int(document["recipe_id"]),
                     vector=embedding.tolist(),
-                    payload={
-                        "recipe_id": document["recipe_id"],
-                        "name": document["name"],
-                        "label_tags": document.get("label_tags", []),
-                        "meal_tags": document.get("meal_tags", []),
-                        "population_tags": document.get("population_tags", []),
-                        "dish_type_tags": document.get("dish_type_tags", []),
-                        "taste_tags": document.get("taste_tags", []),
-                        "cuisine_tags": document.get("cuisine_tags", []),
-                        "cooking_method_tags": document.get("cooking_method_tags", []),
-                        "texture_tags": document.get("texture_tags", []),
-                        "scenario_tags": document.get("scenario_tags", []),
-                        "ingredient_names": document.get("ingredient_names", []),
-                        "ingredient_ids": document.get("ingredient_ids", []),
-                        "catalog_eligibility": document["catalog_eligibility"],
-                        "build_id": document["build_id"],
-                        "source_manifest_hash": document["source_manifest_hash"],
-                        "source_row_sha256": document["source_row_sha256"],
-                    },
+                    payload=rag_document_payload(document),
                 )
                 for document, embedding in zip(batch, embeddings, strict=True)
             ]
@@ -281,6 +310,24 @@ class QdrantInitializationTarget:
             if offset is None:
                 break
         return ids
+
+    def point_payloads(self, collection_name: str) -> dict[int, dict]:
+        """Read back every payload so initialization can prove semantic parity."""
+        payloads: dict[int, dict] = {}
+        offset = None
+        while True:
+            points, offset = self._client.scroll(
+                collection_name=collection_name,
+                limit=256,
+                offset=offset,
+                with_payload=True,
+                with_vectors=False,
+            )
+            for point in points:
+                payloads[int(point.id)] = dict(point.payload or {})
+            if offset is None:
+                break
+        return payloads
 
     def publish_collection(self, staging_name: str, final_name: str) -> None:
         from qdrant_client.models import CreateAlias, CreateAliasOperation

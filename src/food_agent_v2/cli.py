@@ -9,7 +9,7 @@ COMMANDS = {
     "data-verify": "Verify a fixed-data BuildManifest and all quality gates",
     "data-initialize": "Initialize empty V2 MySQL/Qdrant from a verified manifest",
     "data-review": "Generate offline profile/quantity/nutrition/time-graph review candidates",
-    "seed-generate": "Generate MySQL seed SQL from B1 outputs",
+    "seed-generate": "Show migration path for removed independent seed generation",
     "qdrant-build": "Show migration path for removed direct Qdrant build",
     "database-load": "Show migration path for removed mutable database load",
     "models-prepare": "Download and cache BGE models",
@@ -82,12 +82,16 @@ def main() -> None:
         print(_json.dumps(result, ensure_ascii=False, indent=2))
 
     elif command == "seed-generate":
-        from food_agent_v2.b1.seed_writer import generate_mysql_seed, generate_qdrant_payloads
+        import json as _j
 
-        sql_path = generate_mysql_seed()
-        print(f"MySQL seed: {sql_path}")
-        qdrant_path = generate_qdrant_payloads()
-        print(f"Qdrant payloads: {qdrant_path}")
+        print(_j.dumps({
+            "status": "blocked",
+            "reason": "DIRECT_SEED_GENERATION_REMOVED",
+            "required_command": (
+                "food-agent-v2 data-initialize --manifest <BuildManifest> --confirm-empty-v2"
+            ),
+        }, ensure_ascii=False, indent=2))
+        sys.exit(2)
 
     elif command == "qdrant-build":
         from food_agent_v2.c1.index_builder import build_index

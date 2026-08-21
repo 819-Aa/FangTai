@@ -48,6 +48,8 @@ class VectorInitializationTarget(Protocol):
 
     def point_ids(self, collection_name: str) -> set[int]: ...
 
+    def point_payloads(self, collection_name: str) -> dict[int, dict]: ...
+
     def publish_collection(self, staging_name: str, final_name: str) -> None: ...
 
     def delete_collection(self, collection_name: str) -> None: ...
@@ -56,6 +58,12 @@ class VectorInitializationTarget(Protocol):
 def _read_jsonl(path: Path) -> list[dict]:
     with path.open("r", encoding="utf-8") as handle:
         return [json.loads(line) for line in handle if line.strip()]
+
+
+def _json_value(value: object) -> str | None:
+    if value is None:
+        return None
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
 def _read_manifest_artifact(root: Path, manifest, name: str) -> list[dict]:
@@ -143,6 +151,7 @@ def initialize_verified_fixed_data(
         "builder_version": manifest.builder_version,
         "manifest_sha256": manifest_sha256,
         "quality_report_sha256": manifest.quality_gate_report.sha256,
+        "schema_versions": dict(manifest.schema_versions),
     }
     staging_collection = f"{collection}__staging__{manifest.build_id.hex}"
     evidence_path = report_path or (
@@ -183,7 +192,12 @@ def initialize_verified_fixed_data(
         phase = "vector"
         vector.create_staging_collection(staging_collection)
         vector_created = True
-        vector.index_documents(staging_collection, rag_documents)
+        indexed_count = vector.index_documents(staging_collection, rag_documents)
+        if indexed_count != len(rag_documents):
+            raise InitializationError(
+                "VECTOR_INDEX_COUNT_FAILED",
+                f"expected={len(rag_documents)}, reported={indexed_count}",
+            )
         actual_ids = vector.point_ids(staging_collection)
         if actual_ids != mysql_recipe_ids:
             missing = sorted(mysql_recipe_ids - actual_ids)[:10]
@@ -192,6 +206,24 @@ def initialize_verified_fixed_data(
                 "VECTOR_INDEX_PARITY_FAILED",
                 f"expected={len(mysql_recipe_ids)}, actual={len(actual_ids)}, "
                 f"missing={missing}, extra={extra}",
+            )
+        from food_agent_v2.c1.qdrant_client import rag_document_payload
+
+        expected_payloads = {
+            int(document["recipe_id"]): rag_document_payload(document)
+            for document in rag_documents
+        }
+        actual_payloads = vector.point_payloads(staging_collection)
+        if actual_payloads != expected_payloads:
+            mismatched = sorted(
+                point_id
+                for point_id in expected_recipe_ids
+                if actual_payloads.get(point_id) != expected_payloads[point_id]
+            )[:10]
+            raise InitializationError(
+                "VECTOR_PAYLOAD_PARITY_FAILED",
+                f"expected={len(expected_payloads)}, actual={len(actual_payloads)}, "
+                f"mismatched={mismatched}",
             )
         vector.publish_collection(staging_collection, collection)
         vector_published = True
@@ -252,6 +284,7 @@ def initialize_verified_fixed_data(
         "builder_version": manifest.builder_version,
         "manifest_sha256": manifest_sha256,
         "quality_report_sha256": manifest.quality_gate_report.sha256,
+        "schema_versions": dict(manifest.schema_versions),
         "mysql_artifact_counts": expected_counts,
         "qdrant_collection": collection,
         "qdrant_physical_collection": staging_collection,
@@ -273,9 +306,8 @@ def initialize_verified_fixed_data(
 class PyMySQLFixedDataTarget:
     """Transactional MySQL adapter backed by generic immutable artifact rows.
 
-    Domain-specific read tables remain populated by later module migrations; T09 keeps a
-    lossless, queryable copy of every verified artifact and its exact row count in one
-    transaction so no partial fixed-data build can be observed.
+    The generic table remains the lossless replay source. Runtime nutrition/time
+    projections are populated in the same transaction so no partial build is observable.
     """
 
     def __init__(self) -> None:
@@ -332,14 +364,20 @@ class PyMySQLFixedDataTarget:
         self.cursor.execute(
             "INSERT INTO data_builds "
             "(build_id, source_manifest_hash, builder_version, manifest_sha256, "
-            "quality_report_sha256, status) "
-            "VALUES (%s, %s, %s, %s, %s, 'initializing')",
+            "quality_report_sha256, schema_versions, status) "
+            "VALUES (%s, %s, %s, %s, %s, %s, 'initializing')",
             (
                 self._build_id,
                 build_metadata["source_manifest_hash"],
                 build_metadata["builder_version"],
                 build_metadata["manifest_sha256"],
                 build_metadata["quality_report_sha256"],
+                json.dumps(
+                    build_metadata["schema_versions"],
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
             ),
         )
 
@@ -369,6 +407,64 @@ class PyMySQLFixedDataTarget:
                 "(build_id, artifact_name, record_index, payload) VALUES (%s, %s, %s, %s)",
                 payloads,
             )
+        self._load_runtime_projection(artifact_name, records)
+
+    def _load_runtime_projection(self, artifact_name: str, records: list[dict]) -> None:
+        if artifact_name == "recipe_source_rows":
+            rows = [
+                (
+                    int(record["recipe_id"]),
+                    record["name"],
+                    record["ingredients_raw"],
+                    record["steps_raw"],
+                    record["labels_raw"],
+                )
+                for record in records
+            ]
+            if rows:
+                self.cursor.executemany(
+                    "INSERT INTO recipes "
+                    "(recipe_id, name, ingredients_raw, steps_raw, labels_raw) "
+                    "VALUES (%s, %s, %s, %s, %s)",
+                    rows,
+                )
+        elif artifact_name == "nutrition_features":
+            rows = [
+                (
+                    int(record["recipe_id"]),
+                    bool(record["available"]),
+                    record.get("raw_edible_input_weight_g"),
+                    _json_value(record.get("raw_nutrition_total")),
+                    _json_value(record.get("raw_nutrition_per_100g")),
+                    record.get("reason"),
+                )
+                for record in records
+            ]
+            if rows:
+                self.cursor.executemany(
+                    "INSERT INTO nutrition_profiles "
+                    "(recipe_id, available, raw_edible_input_weight_g, "
+                    "raw_nutrition_total, raw_nutrition_per_100g, reason) "
+                    "VALUES (%s, %s, %s, %s, %s, %s)",
+                    rows,
+                )
+        elif artifact_name == "step_tasks":
+            rows = [
+                (
+                    int(record["recipe_id"]),
+                    int(record["active_seconds"]),
+                    int(record["estimated_elapsed_seconds"]),
+                    _json_value(record["step_tasks"]),
+                )
+                for record in records
+            ]
+            if rows:
+                self.cursor.executemany(
+                    "INSERT INTO time_profiles "
+                    "(recipe_id, active_seconds, estimated_elapsed_seconds, step_tasks) "
+                    "VALUES (%s, %s, %s, %s)",
+                    rows,
+                )
 
     def artifact_counts(self) -> dict[str, int]:
         self.cursor.execute(

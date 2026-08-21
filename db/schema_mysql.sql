@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS data_builds (
     builder_version CHAR(40) NOT NULL,
     manifest_sha256 CHAR(64) NOT NULL,
     quality_report_sha256 CHAR(64) NOT NULL,
+    schema_versions JSON NOT NULL,
     artifact_counts JSON,
     status ENUM('initializing', 'ready') NOT NULL,
     initialized_at TIMESTAMP NULL,
@@ -67,20 +68,19 @@ CREATE TABLE IF NOT EXISTS health_relations (
 
 CREATE TABLE IF NOT EXISTS nutrition_profiles (
     recipe_id INT PRIMARY KEY,
-    match_method VARCHAR(32),
-    confidence VARCHAR(16),
-    coverage_ratio FLOAT DEFAULT 0,
-    nutrient_values JSON,
+    available BOOLEAN NOT NULL,
+    raw_edible_input_weight_g DECIMAL(12, 2),
+    raw_nutrition_total JSON,
+    raw_nutrition_per_100g JSON,
+    reason VARCHAR(64),
     FOREIGN KEY (recipe_id) REFERENCES recipes(recipe_id)
 );
 
 CREATE TABLE IF NOT EXISTS time_profiles (
     recipe_id INT PRIMARY KEY,
-    total_steps INT DEFAULT 0,
-    total_active_seconds INT DEFAULT 0,
-    total_equipment_seconds INT DEFAULT 0,
-    total_passive_seconds INT DEFAULT 0,
-    step_tasks JSON,
+    active_seconds INT NOT NULL,
+    estimated_elapsed_seconds INT NOT NULL,
+    step_tasks JSON NOT NULL,
     FOREIGN KEY (recipe_id) REFERENCES recipes(recipe_id)
 );
 
