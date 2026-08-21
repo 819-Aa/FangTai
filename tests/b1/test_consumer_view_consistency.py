@@ -77,6 +77,8 @@ def test_all_consumer_views_share_build_recipe_and_ingredient_identity() -> None
     assert views.build == BUILD
     assert views.health_views[0].ingredient_ids == (10, 20)
     assert views.nutrition_views[0].ingredient_ids == (10, 20)
+    assert views.nutrition_views[0].ingredients[0].ingredient_name == "姜"
+    assert views.nutrition_views[0].ingredients[0].form == "丝"
     assert views.retrieval_views[0].ingredient_ids == (10, 20)
     assert views.step_views[0].ingredient_ids == (10, 20)
     assert views.step_views[0].steps[0].bound_occurrence_ids == ("1-1", "1-2")

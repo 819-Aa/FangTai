@@ -143,6 +143,8 @@ class NutritionOccurrenceInput:
     quantity_raw: str | None
     unit_raw: str | None
     quantity_status: QuantityStatus
+    ingredient_name: str = ""
+    form: str | None = None
 
 
 @dataclass(frozen=True)
@@ -601,6 +603,8 @@ def build_consumer_views(
                     NutritionOccurrenceInput(
                         occurrence_id=item.occurrence_id,
                         ingredient_id=item.ingredient_id,
+                        ingredient_name=identity_by_id[item.ingredient_id].name_canonical,
+                        form=item.form,
                         quantity_raw=item.quantity_raw,
                         unit_raw=item.unit_raw,
                         quantity_status=_quantity_status(item.quantity_raw),
