@@ -17,6 +17,7 @@ from food_agent_v2.b4.repository import HealthDataRepository
 from food_agent_v2.b4.schemas import (
     FinalValidationResult,
     HealthEvaluationReceipt,
+    HealthIngredientOccurrence,
     RecipeHealthResult,
 )
 
@@ -131,6 +132,75 @@ class HealthRuleEngine:
             evidence_refs=[f"recipe_pass:{recipe_id}"],
         )
 
+    def evaluate_recipe_occurrences(
+        self,
+        recipe_id: int,
+        occurrences: list[HealthIngredientOccurrence],
+        constraints: list[CodedHealthConstraint | ExplicitFoodTabooConstraint],
+        participant_ref: str,
+    ) -> RecipeHealthResult:
+        """按条件关系评估；未选中的 one-of 备选不属于本菜实际默认食材集。"""
+        active = [
+            item
+            for item in occurrences
+            if item.condition_type != "one_of" or item.is_default_choice
+        ]
+        result = self.evaluate_recipe(
+            recipe_id,
+            list(dict.fromkeys(item.ingredient_id for item in active)),
+            constraints,
+            participant_ref,
+        )
+        relations_by_id = {item.ingredient_id: item for item in active}
+        for hit in result.hitting_constraints:
+            relation = relations_by_id.get(int(hit["ingredient_id"]))
+            if relation is None:
+                continue
+            hit["ingredient_condition"] = relation.condition_type
+            hit["conditional"] = relation.condition_type == "optional"
+        return result
+
+    def evaluate_batch_occurrences(
+        self,
+        recipe_ids: list[int],
+        recipe_occurrence_map: dict[int, list[HealthIngredientOccurrence]],
+        constraint_sets: dict[
+            str, list[CodedHealthConstraint | ExplicitFoodTabooConstraint]
+        ],
+    ) -> HealthEvaluationReceipt:
+        results: list[RecipeHealthResult] = []
+        safe: set[int] = set(recipe_ids)
+        excluded: set[int] = set()
+        for recipe_id in recipe_ids:
+            if recipe_id not in recipe_occurrence_map:
+                raise HEALTH_INGREDIENT_SET_INCOMPLETE(
+                    f"缺失菜品条件食材集合: recipe {recipe_id}"
+                )
+            for participant_ref, constraints in constraint_sets.items():
+                result = self.evaluate_recipe_occurrences(
+                    recipe_id,
+                    recipe_occurrence_map[recipe_id],
+                    constraints,
+                    participant_ref,
+                )
+                results.append(result)
+                if result.verdict == "EXCLUDE":
+                    safe.discard(recipe_id)
+                    excluded.add(recipe_id)
+        return HealthEvaluationReceipt(
+            evaluation_id=f"eval_{len(results)}",
+            request_id=None,
+            retrieval_result_ref=None,
+            constraint_set_refs=list(constraint_sets),
+            participant_recipe_results=results,
+            safe_recipe_ids=sorted(safe),
+            excluded_recipe_ids=sorted(excluded),
+            input_fingerprint=(
+                f"recipes:{len(recipe_ids)}_"
+                f"constraints:{sum(len(items) for items in constraint_sets.values())}"
+            ),
+        )
+
     def evaluate_batch(
         self,
         recipe_ids: list[int],
@@ -182,6 +252,29 @@ class HealthRuleEngine:
         """最终健康复核：重新执行同一核心并绑定 menu_hash（INV-001）。"""
         batch = self.evaluate_batch(selected_recipe_ids, recipe_ingredient_map, constraint_sets)
         all_pass = all(r.verdict == "PASS" for r in batch.participant_recipe_results)
+        return FinalValidationResult(
+            request_id="",
+            plan_id=plan_id,
+            verdict="PASS" if all_pass else "EXCLUDE",
+            menu_hash=menu_hash,
+            participant_recipe_results=batch.participant_recipe_results,
+            evidence_refs=batch.evidence_refs,
+        )
+
+    def validate_selected_menu_occurrences(
+        self,
+        selected_recipe_ids: list[int],
+        recipe_occurrence_map: dict[int, list[HealthIngredientOccurrence]],
+        constraint_sets: dict[
+            str, list[CodedHealthConstraint | ExplicitFoodTabooConstraint]
+        ],
+        plan_id: str,
+        menu_hash: str,
+    ) -> FinalValidationResult:
+        batch = self.evaluate_batch_occurrences(
+            selected_recipe_ids, recipe_occurrence_map, constraint_sets
+        )
+        all_pass = all(result.verdict == "PASS" for result in batch.participant_recipe_results)
         return FinalValidationResult(
             request_id="",
             plan_id=plan_id,

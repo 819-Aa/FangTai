@@ -243,6 +243,7 @@ def _evaluate_recipe_health(args: dict, ctx: ToolContext) -> dict:
     from food_agent_v2.b2 import UserHealthProfileService
     from food_agent_v2.b3.recipe_views import get_view_builder
     from food_agent_v2.b4 import HealthRuleEngine
+    from food_agent_v2.b4.schemas import HealthIngredientOccurrence
 
     recipe_ids = args.get("recipe_ids", [])
     if not recipe_ids:
@@ -253,11 +254,33 @@ def _evaluate_recipe_health(args: dict, ctx: ToolContext) -> dict:
 
     # 从 B3 获取真实食材视图
     builder = get_view_builder()
-    ing_map: dict[int, list[int]] = {}
+    occurrence_map: dict[int, list[HealthIngredientOccurrence]] = {}
     for rid in recipe_ids:
         view = builder.build_health_ingredient_view(rid)
         if view:
-            ing_map[rid] = view.ingredient_ids
+            relations = getattr(view, "ingredient_relations", None)
+            if relations is None:
+                occurrence_map[rid] = [
+                    HealthIngredientOccurrence(
+                        ingredient_id=int(ingredient_id),
+                        condition_type="required",
+                        choice_group_id=None,
+                        is_default_choice=True,
+                        is_process_material=False,
+                    )
+                    for ingredient_id in view.ingredient_ids
+                ]
+            else:
+                occurrence_map[rid] = [
+                    HealthIngredientOccurrence(
+                        ingredient_id=int(relation.ingredient_id),
+                        condition_type=relation.condition_type,
+                        choice_group_id=relation.choice_group_id,
+                        is_default_choice=bool(relation.is_default_choice),
+                        is_process_material=bool(relation.is_process_material),
+                    )
+                    for relation in relations
+                ]
 
     # B4 引擎
     engine = HealthRuleEngine()
@@ -283,7 +306,7 @@ def _evaluate_recipe_health(args: dict, ctx: ToolContext) -> dict:
                         "safe_recipe_ids": [], "excluded_recipe_ids": []}
         all_constraints[ref] = hard
 
-    batch = engine.evaluate_batch(recipe_ids, ing_map, all_constraints)
+    batch = engine.evaluate_batch_occurrences(recipe_ids, occurrence_map, all_constraints)
     # MC-01-R2 P0-1：绑定回执到当前请求，供 generate 校验新鲜度（禁止跨请求复用）
     batch.request_id = ctx.request_id
     ctx.previous_results["health_evaluation"] = batch
@@ -426,6 +449,7 @@ def _validate_selected_menu_health(args: dict, ctx: ToolContext) -> dict:
     from food_agent_v2.b2 import UserHealthProfileService
     from food_agent_v2.b3.recipe_views import get_view_builder
     from food_agent_v2.b4 import HealthRuleEngine
+    from food_agent_v2.b4.schemas import HealthIngredientOccurrence
     from food_agent_v2.c2.schemas import menu_hash_for
     from food_agent_v2.contracts.artifacts import (
         FinalValidationArtifact,
@@ -447,11 +471,33 @@ def _validate_selected_menu_health(args: dict, ctx: ToolContext) -> dict:
     menu_hash = plan_menu_hash
 
     builder = get_view_builder()
-    ing_map: dict[int, list[int]] = {}
+    occurrence_map: dict[int, list[HealthIngredientOccurrence]] = {}
     for rid in recipe_ids:
         view = builder.build_health_ingredient_view(rid)
         if view:
-            ing_map[rid] = view.ingredient_ids
+            relations = getattr(view, "ingredient_relations", None)
+            if relations is None:
+                occurrence_map[rid] = [
+                    HealthIngredientOccurrence(
+                        ingredient_id=int(ingredient_id),
+                        condition_type="required",
+                        choice_group_id=None,
+                        is_default_choice=True,
+                        is_process_material=False,
+                    )
+                    for ingredient_id in view.ingredient_ids
+                ]
+            else:
+                occurrence_map[rid] = [
+                    HealthIngredientOccurrence(
+                        ingredient_id=int(relation.ingredient_id),
+                        condition_type=relation.condition_type,
+                        choice_group_id=relation.choice_group_id,
+                        is_default_choice=bool(relation.is_default_choice),
+                        is_process_material=bool(relation.is_process_material),
+                    )
+                    for relation in relations
+                ]
 
     engine = HealthRuleEngine()
     engine.load_relations()
@@ -475,8 +521,8 @@ def _validate_selected_menu_health(args: dict, ctx: ToolContext) -> dict:
                         "verdict": None, "plan_id": plan_id}
         all_constraints[ref] = hard
 
-    result = engine.validate_selected_menu(
-        recipe_ids, ing_map, all_constraints, plan_id, menu_hash
+    result = engine.validate_selected_menu_occurrences(
+        recipe_ids, occurrence_map, all_constraints, plan_id, menu_hash
     )
 
     # 权威可引用 FinalValidationArtifact（menu_artifact_ref 指向健康规划产出的 FeasibleMenuArtifact）

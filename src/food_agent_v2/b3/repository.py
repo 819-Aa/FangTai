@@ -25,9 +25,19 @@ class RepositoryError(RuntimeError):
 
 
 @dataclass
+class HealthIngredientRelation:
+    ingredient_id: int
+    condition_type: str
+    choice_group_id: str | None
+    is_default_choice: bool
+    is_process_material: bool
+
+
+@dataclass
 class RecipeHealthIngredientView:
     recipe_id: int
     ingredient_ids: list[int]
+    ingredient_relations: list[HealthIngredientRelation]
     ingredient_evidence_paths: list[str]
     unresolved_occurrence_count: int
     composition_expansion_status: str
@@ -183,6 +193,7 @@ class FixedDataRepository:
                 RecipeHealthIngredientView(
                     recipe_id=int(record["recipe_id"]),
                     ingredient_ids=[int(i) for i in record.get("ingredient_ids", [])],
+                    ingredient_relations=_health_relations(record),
                     ingredient_evidence_paths=list(record.get("ingredient_evidence_paths", [])),
                     unresolved_occurrence_count=int(record.get("unresolved_occurrence_count", 0)),
                     composition_expansion_status=record.get("composition_expansion_status", "unknown"),
@@ -236,6 +247,7 @@ class FixedDataRepository:
             RecipeHealthIngredientView(
                 recipe_id=int(r["recipe_id"]),
                 ingredient_ids=[int(i) for i in r.get("ingredient_ids", [])],
+                ingredient_relations=_health_relations(r),
                 ingredient_evidence_paths=list(r.get("ingredient_evidence_paths", [])),
                 unresolved_occurrence_count=int(r.get("unresolved_occurrence_count", 0)),
                 composition_expansion_status=r.get("composition_expansion_status", "unknown"),
@@ -280,3 +292,32 @@ class FixedDataRepository:
 
 def default_mysql_repository() -> FixedDataRepository:
     return FixedDataRepository(MySQLArtifactRecordSource())
+
+
+def _health_relations(record: dict) -> list[HealthIngredientRelation]:
+    raw_relations = record.get("ingredient_relations")
+    if raw_relations is None:
+        raw_relations = [
+            {
+                "ingredient_id": ingredient_id,
+                "condition_type": "required",
+                "choice_group_id": None,
+                "is_default_choice": True,
+                "is_process_material": False,
+            }
+            for ingredient_id in record.get("ingredient_ids", [])
+        ]
+    return [
+        HealthIngredientRelation(
+            ingredient_id=int(item["ingredient_id"]),
+            condition_type=str(item.get("condition_type", "required")),
+            choice_group_id=(
+                str(item["choice_group_id"])
+                if item.get("choice_group_id") is not None
+                else None
+            ),
+            is_default_choice=bool(item.get("is_default_choice", True)),
+            is_process_material=bool(item.get("is_process_material", False)),
+        )
+        for item in raw_relations
+    ]

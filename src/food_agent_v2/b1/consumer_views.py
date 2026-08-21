@@ -14,11 +14,13 @@ from pathlib import Path
 from typing import Literal
 from uuid import UUID
 
+from food_agent_v2.b1.review_inputs import RecipeProfileEnrichment
 from food_agent_v2.b1.schemas import RecipeClassification, RecordType, SourceRecipeRow
 
 CatalogEligibility = Literal["eligible", "ineligible"]
 ConsumptionRole = Literal["edible", "non_edible"]
 QuantityStatus = Literal["explicit", "range", "unknown"]
+ConditionType = Literal["required", "optional", "one_of"]
 
 _ALLOWED_SEARCH_FIELDS = {
     "meal",
@@ -30,6 +32,15 @@ _ALLOWED_SEARCH_FIELDS = {
     "texture",
     "occasion",
 }
+
+_MEAL_TAGS = {"早餐", "早午餐", "午餐", "下午茶", "晚餐", "夜宵"}
+_POPULATION_TAGS = {
+    "婴儿", "幼儿", "儿童", "青少年", "学生", "孕妇", "产妇", "老人", "老年人"
+}
+_TASTE_TAGS = {
+    "清淡", "酸", "甜", "辣", "麻辣", "香辣", "酸甜", "咸鲜", "鲜香", "奶香"
+}
+_LABEL_SPLIT_RE = re.compile(r"[、,，;；|/]+")
 
 
 @dataclass(frozen=True)
@@ -45,6 +56,16 @@ class RecipeFact:
     record_type: RecordType | str
     step_segments: tuple[str, ...] = ()
     searchable_fields: Mapping[str, str] = field(default_factory=dict)
+    source_row_sha256: str = ""
+    label_tags: tuple[str, ...] = ()
+    meal_tags: tuple[str, ...] = ()
+    population_tags: tuple[str, ...] = ()
+    dish_type_tags: tuple[str, ...] = ()
+    taste_tags: tuple[str, ...] = ()
+    cuisine_tags: tuple[str, ...] = ()
+    cooking_method_tags: tuple[str, ...] = ()
+    texture_tags: tuple[str, ...] = ()
+    scenario_tags: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -60,6 +81,10 @@ class IngredientOccurrenceFact:
     form: str | None = None
     is_optional: bool = False
     choice_group_id: str | None = None
+    condition_type: ConditionType = "required"
+    selected_for_base: bool = True
+    is_process_material: bool = False
+    added_from_step: bool = False
 
 
 @dataclass(frozen=True)
@@ -71,12 +96,23 @@ class IngredientIdentityFact:
 
 
 @dataclass(frozen=True)
+class RecipeHealthIngredientRelation:
+    occurrence_id: str
+    ingredient_id: int
+    condition_type: ConditionType
+    choice_group_id: str | None
+    is_default_choice: bool
+    is_process_material: bool
+
+
+@dataclass(frozen=True)
 class RecipeHealthIngredientView:
     build_id: UUID
     source_manifest_hash: str
     recipe_id: int
     catalog_eligibility: CatalogEligibility
     ingredient_ids: tuple[int, ...]
+    ingredient_relations: tuple[RecipeHealthIngredientRelation, ...]
     ingredient_evidence_paths: tuple[str, ...]
     unresolved_occurrence_count: int
     composition_expansion_status: Literal["atomic", "complete", "invalid"]
@@ -133,6 +169,16 @@ class RecipeRetrievalBuildView:
     ingredient_family_ids: tuple[int, ...]
     searchable_fields: Mapping[str, str]
     step_summary_input: tuple[str, ...]
+    source_row_sha256: str = ""
+    label_tags: tuple[str, ...] = ()
+    meal_tags: tuple[str, ...] = ()
+    population_tags: tuple[str, ...] = ()
+    dish_type_tags: tuple[str, ...] = ()
+    taste_tags: tuple[str, ...] = ()
+    cuisine_tags: tuple[str, ...] = ()
+    cooking_method_tags: tuple[str, ...] = ()
+    texture_tags: tuple[str, ...] = ()
+    scenario_tags: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -151,24 +197,77 @@ class ConsumerViewSet:
 def recipe_facts_from_source(
     rows: tuple[SourceRecipeRow, ...],
     classifications: tuple[RecipeClassification, ...],
+    profile_enrichments: Mapping[int, RecipeProfileEnrichment] | None = None,
 ) -> tuple[RecipeFact, ...]:
     """B1 原始步骤的唯一适配边界：分类后分段一次，再发布结构化事实。"""
     from food_agent_v2.b1.step_time_builder import split_steps
 
     classification_by_id = _unique_by(classifications, "recipe_id")
+    enrichments = dict(profile_enrichments or {})
     if {row.recipe_id for row in rows} != set(classification_by_id):
         raise ValueError("菜品源与分类 recipe_id 集合不一致")
-    return tuple(
-        RecipeFact(
+    if set(enrichments) - {row.recipe_id for row in rows}:
+        raise ValueError("画像补全引用未知 recipe_id")
+
+    facts: list[RecipeFact] = []
+    for row in rows:
+        label_tags = _split_label_tags(row.labels_raw)
+        enrichment = enrichments.get(row.recipe_id)
+        raw_population_tags = tuple(tag for tag in label_tags if tag in _POPULATION_TAGS)
+        if enrichment is not None:
+            invented_sensitive = set(enrichment.population_tags) - set(raw_population_tags)
+            if invented_sensitive:
+                raise ValueError(
+                    f"recipe_id={row.recipe_id} 画像补全含未经原始 label 支持的敏感标签: "
+                    f"{sorted(invented_sensitive)}"
+                )
+        meal_tags = _merge_tags(
+            (tag for tag in label_tags if tag in _MEAL_TAGS),
+            enrichment.meal_tags if enrichment else (),
+        )
+        population_tags = _merge_tags(raw_population_tags, ())
+        taste_tags = _merge_tags(
+            (tag for tag in label_tags if tag in _TASTE_TAGS),
+            enrichment.taste_tags if enrichment else (),
+        )
+        dish_type_tags = tuple(enrichment.dish_type_tags) if enrichment else ()
+        cuisine_tags = tuple(enrichment.cuisine_tags) if enrichment else ()
+        cooking_method_tags = tuple(enrichment.cooking_method_tags) if enrichment else ()
+        texture_tags = tuple(enrichment.texture_tags) if enrichment else ()
+        scenario_tags = tuple(enrichment.scenario_tags) if enrichment else ()
+        searchable_fields = {
+            key: " ".join(values)
+            for key, values in {
+                "meal": meal_tags,
+                "taste": taste_tags,
+                "cuisine": cuisine_tags,
+                "cooking_method": cooking_method_tags,
+                "dish_type": dish_type_tags,
+                "texture": texture_tags,
+                "occasion": scenario_tags,
+            }.items()
+            if values
+        }
+        facts.append(
+            RecipeFact(
             recipe_id=row.recipe_id,
             name=row.name,
             record_type=classification_by_id[row.recipe_id].record_type,
             step_segments=tuple(split_steps(row.steps_raw)),
-            # 原始 label 不直接进入 RAG；审核后的非健康候选需显式注入。
-            searchable_fields={},
+            searchable_fields=searchable_fields,
+            source_row_sha256=row.row_sha256,
+            label_tags=label_tags,
+            meal_tags=meal_tags,
+            population_tags=population_tags,
+            dish_type_tags=dish_type_tags,
+            taste_tags=taste_tags,
+            cuisine_tags=cuisine_tags,
+            cooking_method_tags=cooking_method_tags,
+            texture_tags=texture_tags,
+            scenario_tags=scenario_tags,
         )
-        for row in rows
-    )
+        )
+    return tuple(facts)
 
 
 def identity_facts_from_records(
@@ -192,8 +291,15 @@ def identity_facts_from_records(
 def occurrence_facts_from_records(
     occurrence_records: tuple[dict, ...],
 ) -> tuple[IngredientOccurrenceFact, ...]:
-    return tuple(
-        IngredientOccurrenceFact(
+    facts: list[IngredientOccurrenceFact] = []
+    for record in occurrence_records:
+        choice_group_id = record.get("choice_group_id")
+        is_optional = bool(record.get("is_optional", False))
+        condition_type: ConditionType = (
+            "one_of" if choice_group_id is not None else ("optional" if is_optional else "required")
+        )
+        facts.append(
+            IngredientOccurrenceFact(
             occurrence_id=record["occurrence_id"],
             recipe_id=int(record["recipe_id"]),
             source_fragment=record["source_fragment"],
@@ -207,11 +313,15 @@ def occurrence_facts_from_records(
             quantity_raw=record.get("quantity_raw"),
             unit_raw=record.get("unit_raw"),
             form=record.get("form"),
-            is_optional=bool(record.get("is_optional", False)),
-            choice_group_id=record.get("choice_group_id"),
+            is_optional=is_optional,
+            choice_group_id=str(choice_group_id) if choice_group_id is not None else None,
+            condition_type=condition_type,
+            selected_for_base=bool(record.get("is_default_choice", True)),
+            is_process_material=bool(record.get("is_process_material", False)),
+            added_from_step=bool(record.get("added_from_step", False)),
         )
-        for record in occurrence_records
-    )
+        )
+    return tuple(facts)
 
 
 def publish_consumer_views(views: ConsumerViewSet, staging_dir: Path) -> dict:
@@ -243,14 +353,28 @@ def publish_consumer_views(views: ConsumerViewSet, staging_dir: Path) -> dict:
     nutrition_by_id = {view.recipe_id: view for view in views.nutrition_views}
     retrieval_by_id = {view.recipe_id: view for view in views.retrieval_views}
     for recipe_id in views.recipe_ids:
-        expected = health_by_id[recipe_id].ingredient_ids
+        health = health_by_id[recipe_id]
+        health_ids = health.ingredient_ids
+        expected_nutrition = _unique(
+            relation.ingredient_id
+            for relation in health.ingredient_relations
+            if relation.condition_type != "optional"
+            and relation.is_default_choice
+            and not relation.is_process_material
+        )
         observed = {
-            "health": expected,
+            "health": health_ids,
             "step": step_by_id[recipe_id].ingredient_ids,
             "nutrition": nutrition_by_id[recipe_id].ingredient_ids,
             "retrieval": retrieval_by_id[recipe_id].ingredient_ids,
         }
-        if any(value != expected for value in observed.values()):
+        retrieval_ids = observed["retrieval"]
+        valid = (
+            observed["step"] == retrieval_ids
+            and set(health_ids).issubset(retrieval_ids)
+            and observed["nutrition"] == expected_nutrition
+        )
+        if not valid:
             consistency_errors.append({"recipe_id": recipe_id, "ingredient_ids": observed})
     if consistency_errors:
         raise ValueError(f"消费者视图食材身份不一致: {consistency_errors[:5]}")
@@ -398,21 +522,36 @@ def build_consumer_views(
             for item in recipe_occurrences
             if item.consumption_role == "edible" and item.ingredient_id is not None
         ]
-        edible_ids = _unique(
+        retrieval_ids = _unique(
             item.ingredient_id for item in edible if item.ingredient_id is not None
+        )
+        health_occurrences = [
+            item
+            for item in edible
+            if item.condition_type != "one_of" or item.selected_for_base
+        ]
+        nutrition_occurrences = [
+            item
+            for item in health_occurrences
+            if item.condition_type != "optional"
+            and item.selected_for_base
+            and not item.is_process_material
+        ]
+        health_ids = _unique(
+            item.ingredient_id for item in health_occurrences if item.ingredient_id is not None
         )
         record_type = (
             recipe.record_type.value
             if isinstance(recipe.record_type, RecordType)
             else recipe.record_type
         )
-        eligible = record_type == RecordType.DISH.value and unresolved == 0 and bool(edible_ids)
+        eligible = record_type == RecordType.DISH.value and unresolved == 0 and bool(retrieval_ids)
         if not eligible:
             continue
 
         evidence_paths = tuple(
             f"recipe:{recipe_id}/occurrence:{item.occurrence_id}/ingredient:{item.ingredient_id}"
-            for item in edible
+            for item in health_occurrences
         )
         health_views.append(
             RecipeHealthIngredientView(
@@ -420,7 +559,19 @@ def build_consumer_views(
                 source_manifest_hash=build.source_manifest_hash,
                 recipe_id=recipe_id,
                 catalog_eligibility="eligible",
-                ingredient_ids=edible_ids,
+                ingredient_ids=health_ids,
+                ingredient_relations=tuple(
+                    RecipeHealthIngredientRelation(
+                        occurrence_id=item.occurrence_id,
+                        ingredient_id=int(item.ingredient_id),
+                        condition_type=item.condition_type,
+                        choice_group_id=item.choice_group_id,
+                        is_default_choice=item.selected_for_base,
+                        is_process_material=item.is_process_material,
+                    )
+                    for item in health_occurrences
+                    if item.ingredient_id is not None
+                ),
                 ingredient_evidence_paths=evidence_paths,
                 unresolved_occurrence_count=0,
                 composition_expansion_status="atomic",
@@ -436,7 +587,7 @@ def build_consumer_views(
                 build_id=build.build_id,
                 source_manifest_hash=build.source_manifest_hash,
                 recipe_id=recipe_id,
-                ingredient_ids=edible_ids,
+                ingredient_ids=retrieval_ids,
                 steps=steps,
             )
         )
@@ -454,13 +605,13 @@ def build_consumer_views(
                         unit_raw=item.unit_raw,
                         quantity_status=_quantity_status(item.quantity_raw),
                     )
-                    for item in edible
+                    for item in nutrition_occurrences
                     if item.ingredient_id is not None
                 ),
             )
         )
 
-        identities_for_recipe = [identity_by_id[item] for item in edible_ids]
+        identities_for_recipe = [identity_by_id[item] for item in retrieval_ids]
         retrieval_views.append(
             RecipeRetrievalBuildView(
                 build_id=build.build_id,
@@ -468,7 +619,7 @@ def build_consumer_views(
                 recipe_id=recipe_id,
                 catalog_eligibility="eligible",
                 name=recipe.name,
-                ingredient_ids=edible_ids,
+                ingredient_ids=retrieval_ids,
                 ingredient_display_names=tuple(
                     identity.name_canonical for identity in identities_for_recipe
                 ),
@@ -481,6 +632,16 @@ def build_consumer_views(
                     if key in _ALLOWED_SEARCH_FIELDS and value
                 },
                 step_summary_input=recipe.step_segments,
+                source_row_sha256=recipe.source_row_sha256,
+                label_tags=recipe.label_tags,
+                meal_tags=recipe.meal_tags,
+                population_tags=recipe.population_tags,
+                dish_type_tags=recipe.dish_type_tags,
+                taste_tags=recipe.taste_tags,
+                cuisine_tags=recipe.cuisine_tags,
+                cooking_method_tags=recipe.cooking_method_tags,
+                texture_tags=recipe.texture_tags,
+                scenario_tags=recipe.scenario_tags,
             )
         )
 
@@ -573,6 +734,18 @@ def _quantity_status(quantity_raw: str | None) -> QuantityStatus:
     if any(marker in quantity_raw for marker in ("-", "–", "—", "~", "～", "至", "到")):
         return "range"
     return "explicit"
+
+
+def _split_label_tags(labels_raw: str) -> tuple[str, ...]:
+    return _unique(
+        tag.strip()
+        for tag in _LABEL_SPLIT_RE.split(labels_raw or "")
+        if tag.strip()
+    )
+
+
+def _merge_tags(primary, secondary) -> tuple[str, ...]:
+    return _unique((*tuple(primary), *tuple(secondary)))
 
 
 def _validate_build_identity(build: BuildIdentity) -> None:

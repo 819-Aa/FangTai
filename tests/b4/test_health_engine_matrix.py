@@ -12,6 +12,7 @@ from food_agent_v2.b4.engine import (
     HEALTH_INGREDIENT_SET_INCOMPLETE,
     HealthRuleEngine,
 )
+from food_agent_v2.b4.schemas import HealthIngredientOccurrence
 
 BUILD = "build-b4"
 
@@ -72,6 +73,31 @@ class TestHealthEngineMatrix:
     def test_clean_recipe_passes(self, engine) -> None:
         result = engine.evaluate_recipe(1, [1, 2], [peanut_constraint()], "p1")
         assert result.verdict == "PASS"
+
+    def test_unselected_one_of_option_does_not_exclude(self, engine) -> None:
+        result = engine.evaluate_recipe_occurrences(
+            1,
+            [
+                HealthIngredientOccurrence(1, "required", None, True, False),
+                HealthIngredientOccurrence(277, "one_of", "nuts", False, False),
+            ],
+            [peanut_constraint()],
+            "p1",
+        )
+
+        assert result.verdict == "PASS"
+
+    def test_optional_health_hit_is_marked_conditional_and_excluded(self, engine) -> None:
+        result = engine.evaluate_recipe_occurrences(
+            1,
+            [HealthIngredientOccurrence(277, "optional", None, False, False)],
+            [peanut_constraint()],
+            "p1",
+        )
+
+        assert result.verdict == "EXCLUDE"
+        assert result.hitting_constraints[0]["ingredient_condition"] == "optional"
+        assert result.hitting_constraints[0]["conditional"] is True
 
     def test_uncovered_constraint_code_fails_closed(self) -> None:
         engine = HealthRuleEngine(FakeHealthData())

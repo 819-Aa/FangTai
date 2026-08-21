@@ -134,6 +134,41 @@ def test_non_edible_material_stays_in_steps_without_polluting_food_views() -> No
     assert views.step_views[0].steps[0].bound_occurrence_ids == ("1-2",)
 
 
+def test_conditioned_ingredients_project_different_consumer_sets() -> None:
+    views = build_consumer_views(
+        build=BUILD,
+        recipes=(RecipeFact(1, "条件菜", "dish", ("处理全部食材",)),),
+        occurrences=(
+            IngredientOccurrenceFact("1-1", 1, "豆腐", "豆腐", 10, "edible"),
+            IngredientOccurrenceFact(
+                "1-2", 1, "香菜可选", "香菜", 20, "edible",
+                condition_type="optional", selected_for_base=False,
+            ),
+            IngredientOccurrenceFact(
+                "1-3", 1, "牛肩肉或牛腩", "牛肩肉", 30, "edible",
+                condition_type="one_of", choice_group_id="meat", selected_for_base=True,
+            ),
+            IngredientOccurrenceFact(
+                "1-4", 1, "牛肩肉或牛腩", "牛腩", 40, "edible",
+                condition_type="one_of", choice_group_id="meat", selected_for_base=False,
+            ),
+        ),
+        identities=(
+            IngredientIdentityFact(10, "豆腐", 1),
+            IngredientIdentityFact(20, "香菜", 2),
+            IngredientIdentityFact(30, "牛肩肉", 3),
+            IngredientIdentityFact(40, "牛腩", 3),
+        ),
+    )
+
+    assert views.health_views[0].ingredient_ids == (10, 20, 30)
+    assert views.nutrition_views[0].ingredient_ids == (10, 30)
+    assert views.retrieval_views[0].ingredient_ids == (10, 20, 30, 40)
+    assert [relation.condition_type for relation in views.health_views[0].ingredient_relations] == [
+        "required", "optional", "one_of",
+    ]
+
+
 def test_publish_rejects_cross_build_consumer_view(tmp_path) -> None:
     views = build_consumer_views(
         build=BUILD,

@@ -22,6 +22,14 @@ class FakeSource:
                 {
                     "build_id": BUILD, "recipe_id": 1,
                     "ingredient_ids": [1, 2],
+                    "ingredient_relations": [
+                        {"ingredient_id": 1, "condition_type": "required",
+                         "choice_group_id": None, "is_default_choice": True,
+                         "is_process_material": False},
+                        {"ingredient_id": 2, "condition_type": "optional",
+                         "choice_group_id": None, "is_default_choice": False,
+                         "is_process_material": False},
+                    ],
                     "ingredient_evidence_paths": ["recipe:1/occurrence:1-1/ingredient:1"],
                     "unresolved_occurrence_count": 0,
                     "composition_expansion_status": "atomic",
@@ -77,6 +85,7 @@ class TestRepositoryViews:
         views = repository.get_health_view([1, 2], BUILD)
         assert [v.recipe_id for v in views] == [1, 2]
         assert views[0].ingredient_ids == [1, 2]
+        assert views[0].ingredient_relations[1].condition_type == "optional"
         assert views[0].unresolved_occurrence_count == 0
 
     def test_unknown_recipe_fails_closed(self, repository) -> None:

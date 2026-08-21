@@ -8,6 +8,7 @@ COMMANDS = {
     "data-rebuild": "Run B1 offline data pipeline",
     "data-verify": "Verify a fixed-data BuildManifest and all quality gates",
     "data-initialize": "Initialize empty V2 MySQL/Qdrant from a verified manifest",
+    "data-review": "Generate offline review candidates without auto-approval",
     "seed-generate": "Generate MySQL seed SQL from B1 outputs",
     "qdrant-build": "Show migration path for removed direct Qdrant build",
     "database-load": "Show migration path for removed mutable database load",
@@ -31,6 +32,11 @@ def main() -> None:
 
     if command == "data-rebuild":
         from food_agent_v2.b1.rebuild import main as fn
+
+        sys.exit(fn(sys.argv[2:]))
+
+    elif command == "data-review":
+        from food_agent_v2.b1.data_review import main as fn
 
         sys.exit(fn(sys.argv[2:]))
 

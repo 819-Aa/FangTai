@@ -6,6 +6,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Literal
+
+
+@dataclass(frozen=True)
+class HealthIngredientOccurrence:
+    ingredient_id: int
+    condition_type: Literal["required", "optional", "one_of"]
+    choice_group_id: str | None
+    is_default_choice: bool
+    is_process_material: bool
 
 
 @dataclass
