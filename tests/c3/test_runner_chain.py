@@ -52,7 +52,7 @@ def _deterministic_c1_candidates(monkeypatch: pytest.MonkeyPatch) -> None:
     """
 
     class RetrievalPort:
-        def retrieve(self, _query: str, top_k: int = 20):
+        def retrieve(self, _query: str, top_k: int = 20, **_kwargs):
             candidates = [
                 SimpleNamespace(recipe_id=recipe_id, name=f"固定菜品{recipe_id}", source_paths=[])
                 for recipe_id in range(1, max(top_k, 30) + 1)

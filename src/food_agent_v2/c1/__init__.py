@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from typing import Protocol
 
 from food_agent_v2.b3.repository import MySQLArtifactRecordSource
+from food_agent_v2.c1.filters import RetrievalFilters
 from food_agent_v2.c1.qdrant_client import QdrantVectorStore
 from food_agent_v2.core.config import load_config
 
@@ -50,7 +51,7 @@ class RetrievalCandidate:
     lexical_score: float = 0.0
     vector_score: float = 0.0
     rerank_score: float | None = None
-    searchable_fields: dict[str, str] = field(default_factory=dict)
+    searchable_fields: dict[str, object] = field(default_factory=dict)
     source_paths: list[str] = field(default_factory=list)
 
 
@@ -109,7 +110,12 @@ class BM25Index:
             df = len(doc_freqs)
             self._idf[term] = math.log((n_docs - df + 0.5) / (df + 0.5) + 1.0)
 
-    def search(self, query: str, top_k: int = 50) -> list[tuple[int, float]]:
+    def search(
+        self,
+        query: str,
+        top_k: int = 50,
+        allowed_ids: set[int] | None = None,
+    ) -> list[tuple[int, float]]:
         tokens = self._tokenize(query)
         scores: dict[int, float] = defaultdict(float)
         for term in tokens:
@@ -117,6 +123,8 @@ class BM25Index:
             if idf == 0:
                 continue
             for rid, tf in self._term_freqs.get(term, {}).items():
+                if allowed_ids is not None and rid not in allowed_ids:
+                    continue
                 dl = self._doc_lengths.get(rid, 1)
                 numerator = tf * (self.k1 + 1)
                 denominator = tf + self.k1 * (1 - self.b + self.b * dl / self._avg_dl)
@@ -168,7 +176,6 @@ class RecipeRetrievalService:
         self._source = source or MySQLArtifactRecordSource()
         self._build_id: str | None = None
         self._eligible: set[int] = set()
-        self._time_lookup: dict[int, dict] = {}
         self._loaded = False
 
     def load(self, path=None) -> None:
@@ -178,22 +185,11 @@ class RecipeRetrievalService:
         rag_docs = self._source.records("rag_documents", build_id)
         self._index.index(rag_docs)
 
-        views = self._source.records("recipe_retrieval_build_views", build_id)
         self._eligible = {
-            int(v["recipe_id"])
-            for v in views
-            if v.get("catalog_eligibility") == "eligible"
+            int(document["recipe_id"])
+            for document in rag_docs
+            if document.get("catalog_eligibility") == "eligible"
         }
-
-        step_rows = self._source.records("step_tasks", build_id)
-        self._time_lookup = {}
-        for rec in step_rows:
-            total_s = rec.get("total_duration_seconds")
-            if rec.get("authority") == "deterministic_high" and total_s:
-                self._time_lookup[int(rec["recipe_id"])] = {
-                    "total_minutes": int(total_s) // 60,
-                    "confidence": "high",
-                }
         self._loaded = True
 
     @property
@@ -205,7 +201,12 @@ class RecipeRetrievalService:
             raise RetrievalError("RETRIEVAL_NOT_LOADED", "检索服务未加载")
 
     def retrieve(
-        self, query: str, top_k: int = 20, exclude_ids: list[int] | None = None
+        self,
+        query: str,
+        *,
+        filters: RetrievalFilters,
+        top_k: int = 20,
+        exclude_ids: set[int] | None = None,
     ) -> RetrievalResult:
         """完整混合检索；词法/向量/重排任一不可用即失败。"""
         self._ensure_loaded()
@@ -213,17 +214,28 @@ class RecipeRetrievalService:
         if not self._vector.available:
             raise RetrievalError("VECTOR_INDEX_UNAVAILABLE", "Qdrant 向量索引不可用，不降级")
 
-        exclude = set(exclude_ids or [])
-        lexical = [(rid, s) for rid, s in self._index.search(query, top_k=100) if rid not in exclude]
-        vector = [(rid, s) for rid, s in self._vector.search(query, top_k=100) if rid not in exclude]
+        exclude = set(exclude_ids or set())
+        matching_ids = {
+            recipe_id
+            for recipe_id, document in self._index._docs.items()
+            if recipe_id in self._eligible and filters.matches_payload(document)
+        } - exclude
+        lexical = self._index.search(query, top_k=100, allowed_ids=matching_ids)
+        vector = [
+            (rid, score)
+            for rid, score in self._vector.search(query, top_k=100, filters=filters)
+            if rid in matching_ids
+        ]
 
         fused = self._rrf_fuse(lexical, vector)
         candidates = self._normalize_and_build(fused, max(top_k, 30))
         candidates = self._rerank(query, candidates, top_k)
-        candidates = self._apply_time_boost(query, candidates, top_k)
-
-        # 只保留当前构建 eligible 候选。
-        candidates = [c for c in candidates if c.recipe_id in self._eligible]
+        candidates = [
+            candidate
+            for candidate in candidates
+            if candidate.recipe_id in matching_ids
+            and filters.matches_payload(self._index._docs.get(candidate.recipe_id, {}))
+        ]
 
         return RetrievalResult(
             retrieval_id=f"retr_{len(candidates)}",
@@ -260,7 +272,19 @@ class RecipeRetrievalService:
         candidates = []
         for i, (rid, fused, lex_s, vec_s) in enumerate(ranked[:top_k]):
             doc = self._index._docs.get(rid, {})
-            fields = doc.get("searchable_fields", {})
+            fields = {
+                key: doc.get(key, ())
+                for key in (
+                    "meal_tags",
+                    "population_tags",
+                    "dish_type_tags",
+                    "taste_tags",
+                    "cuisine_tags",
+                    "scenario_tags",
+                    "ingredient_names",
+                )
+                if doc.get(key)
+            }
             candidates.append(
                 RetrievalCandidate(
                     recipe_id=rid,
@@ -305,26 +329,16 @@ class RecipeRetrievalService:
             result.append(c)
         return result
 
-    def _apply_time_boost(
-        self, query: str, candidates: list[RetrievalCandidate], top_k: int
-    ) -> list[RetrievalCandidate]:
-        time_kws = ("快手", "半小时", "30分钟", "快速", "快一点", "时间短", "省时", "时间紧", "尽快")
-        if not any(kw in query for kw in time_kws):
-            return candidates
-        for c in candidates:
-            info = self._time_lookup.get(c.recipe_id)
-            if info and info.get("confidence") == "high" and (info.get("total_minutes") or 999) <= 30:
-                c.rerank_score = (c.rerank_score if c.rerank_score is not None else c.score) * 1.15
-        candidates.sort(
-            key=lambda x: -(x.rerank_score if x.rerank_score is not None else x.score)
-        )
-        return candidates[:top_k]
-
     def multi_person_retrieve(
-        self, shared_query: str, per_participant_prefs: list[list[str]], top_k: int = 50
+        self,
+        shared_query: str,
+        per_participant_prefs: list[list[str]],
+        *,
+        filters: RetrievalFilters,
+        top_k: int = 50,
     ) -> RetrievalResult:
         merged: dict[int, RetrievalCandidate] = {}
-        shared = self.retrieve(shared_query, top_k=min(top_k, 30))
+        shared = self.retrieve(shared_query, filters=filters, top_k=min(top_k, 30))
         for c in shared.candidates:
             c.source_paths = ["shared"]
             merged[c.recipe_id] = c
@@ -337,7 +351,11 @@ class RecipeRetrievalService:
             def _sub(task):
                 i, prefs = task
                 sub_query = f"{shared_query} {' '.join(prefs[:3])}".strip()
-                return i, self.retrieve(sub_query, top_k=min(top_k, 20))
+                return i, self.retrieve(
+                    sub_query,
+                    filters=filters,
+                    top_k=min(top_k, 20),
+                )
 
             with ThreadPoolExecutor(max_workers=min(len(tasks), 8)) as pool:
                 sub_results = pool.map(_sub, tasks)
@@ -359,11 +377,22 @@ class RecipeRetrievalService:
             source_paths=["shared"] + [f"participant_{i + 1}" for i in range(len(per_participant_prefs))],
         )
 
-    def expand_retrieval(self, original_result: RetrievalResult, query_plan: dict) -> RetrievalResult | None:
+    def expand_retrieval(
+        self,
+        original_result: RetrievalResult,
+        query_plan: dict,
+        *,
+        filters: RetrievalFilters,
+    ) -> RetrievalResult | None:
         self._ensure_loaded()
         original_ids = {c.recipe_id for c in original_result.candidates}
         relaxed_query = query_plan.get("relaxed_query", query_plan.get("query", ""))
-        result = self.retrieve(relaxed_query, top_k=30, exclude_ids=list(original_ids))
+        result = self.retrieve(
+            relaxed_query,
+            filters=filters,
+            top_k=30,
+            exclude_ids=original_ids,
+        )
         if result.total_candidates == 0:
             return None
         result.is_expansion = True

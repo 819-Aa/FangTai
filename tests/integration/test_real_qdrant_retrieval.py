@@ -5,6 +5,7 @@
 """
 
 from food_agent_v2.c1 import RecipeRetrievalService
+from food_agent_v2.c1.filters import RetrievalFilters
 from food_agent_v2.c1.qdrant_client import QdrantVectorStore
 from food_agent_v2.core.config import load_config
 
@@ -25,7 +26,7 @@ def test_qdrant_alias_exists() -> None:
 
 def test_real_vector_search_returns_ids() -> None:
     store = QdrantVectorStore()
-    results = store.search("红烧肉", top_k=5)
+    results = store.search("红烧肉", top_k=5, filters=RetrievalFilters())
     assert results, "真实向量检索应返回候选"
     assert all(isinstance(rid, int) for rid, _ in results)
 

@@ -53,7 +53,13 @@ async def lifespan(app: FastAPI):
     try:
         from food_agent_v2.c1 import get_retrieval_service
         print("[V2] Qdrant warmup: connecting + minimal retrieve...")
-        get_retrieval_service().retrieve("预热", top_k=5)
+        from food_agent_v2.c1.filters import RetrievalFilters
+
+        get_retrieval_service().retrieve(
+            "预热",
+            filters=RetrievalFilters(),
+            top_k=5,
+        )
         print("[V2] Qdrant warmup: done")
     except Exception as e:
         print(f"[V2] Qdrant warmup failed (continuing): {e}")

@@ -141,7 +141,7 @@ class QdrantVectorStore:
             "DIRECT_QDRANT_INDEX_REMOVED: use data-initialize for verified indexing"
         )
 
-    def search(self, query_text: str, top_k: int = 50) -> list[tuple[int, float]]:
+    def search(self, query_text: str, top_k: int = 50, *, filters=None) -> list[tuple[int, float]]:
         """向量检索（BGE-M3 嵌入 + Qdrant 搜索）。
 
         使用 qdrant-client >= 1.19 的 query_points 接口
@@ -160,6 +160,7 @@ class QdrantVectorStore:
         results = self._client.query_points(
             collection_name=self._collection,
             query=embedding.tolist(),
+            query_filter=filters.to_qdrant_filter() if filters is not None else None,
             limit=top_k,
         )
         return [(hit.id, hit.score) for hit in (results.points or [])]
@@ -188,7 +189,7 @@ class QdrantInitializationTarget:
         return collection_name not in self._collections() and collection_name not in self._aliases()
 
     def create_staging_collection(self, collection_name: str) -> None:
-        from qdrant_client.models import Distance, VectorParams
+        from qdrant_client.models import Distance, PayloadSchemaType, VectorParams
 
         if collection_name in self._collections() or collection_name in self._aliases():
             raise RuntimeError(f"staging collection already exists: {collection_name}")
@@ -196,6 +197,33 @@ class QdrantInitializationTarget:
             collection_name=collection_name,
             vectors_config=VectorParams(size=self._dim, distance=Distance.COSINE),
         )
+        for field in (
+            "label_tags",
+            "meal_tags",
+            "population_tags",
+            "dish_type_tags",
+            "taste_tags",
+            "cuisine_tags",
+            "cooking_method_tags",
+            "texture_tags",
+            "scenario_tags",
+            "ingredient_names",
+            "catalog_eligibility",
+            "build_id",
+        ):
+            self._client.create_payload_index(
+                collection_name=collection_name,
+                field_name=field,
+                field_schema=PayloadSchemaType.KEYWORD,
+                wait=True,
+            )
+        for field in ("recipe_id", "ingredient_ids"):
+            self._client.create_payload_index(
+                collection_name=collection_name,
+                field_name=field,
+                field_schema=PayloadSchemaType.INTEGER,
+                wait=True,
+            )
 
     def index_documents(self, collection_name: str, documents: list[dict]) -> int:
         # The verified manifest already supplies the exact RAG file content.  Reuse the
@@ -213,12 +241,23 @@ class QdrantInitializationTarget:
                     id=int(document["recipe_id"]),
                     vector=embedding.tolist(),
                     payload={
+                        "recipe_id": document["recipe_id"],
+                        "name": document["name"],
+                        "label_tags": document.get("label_tags", []),
+                        "meal_tags": document.get("meal_tags", []),
+                        "population_tags": document.get("population_tags", []),
+                        "dish_type_tags": document.get("dish_type_tags", []),
+                        "taste_tags": document.get("taste_tags", []),
+                        "cuisine_tags": document.get("cuisine_tags", []),
+                        "cooking_method_tags": document.get("cooking_method_tags", []),
+                        "texture_tags": document.get("texture_tags", []),
+                        "scenario_tags": document.get("scenario_tags", []),
+                        "ingredient_names": document.get("ingredient_names", []),
+                        "ingredient_ids": document.get("ingredient_ids", []),
+                        "catalog_eligibility": document["catalog_eligibility"],
                         "build_id": document["build_id"],
                         "source_manifest_hash": document["source_manifest_hash"],
-                        "document_id": document["document_id"],
-                        "name": document["name"],
-                        "searchable_fields": document.get("searchable_fields", {}),
-                        "step_summary": document.get("step_summary"),
+                        "source_row_sha256": document["source_row_sha256"],
                     },
                 )
                 for document, embedding in zip(batch, embeddings, strict=True)

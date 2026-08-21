@@ -157,6 +157,24 @@ def _coerce_uuid(value: Any) -> UUID | None:
 
 # ---- 真实工具实现 ----
 
+def _retrieval_filters_from_query_plan(query_plan):
+    from food_agent_v2.c1.filters import RetrievalFilters
+
+    return RetrievalFilters(
+        meal_tags=tuple(getattr(query_plan, "meal_types", ()) or ()),
+        population_tags=tuple(getattr(query_plan, "population_tags", ()) or ()),
+        dish_type_tags=tuple(getattr(query_plan, "dish_types", ()) or ()),
+        taste_tags=tuple(getattr(query_plan, "taste_tags", ()) or ()),
+        cuisine_tags=tuple(getattr(query_plan, "cuisine_tags", ()) or ()),
+        scenario_tags=tuple(getattr(query_plan, "scenario_tags", ()) or ()),
+        include_ingredients=tuple(
+            getattr(query_plan, "include_ingredients", ()) or ()
+        ),
+        exclude_ingredients=tuple(
+            getattr(query_plan, "exclude_ingredients", ()) or ()
+        ),
+    )
+
 def _retrieve_recipes(args: dict, ctx: ToolContext) -> dict:
     """C1 混合检索。多人场景自动使用多路合并（文档 07 §8.4）。
 
@@ -170,6 +188,9 @@ def _retrieve_recipes(args: dict, ctx: ToolContext) -> dict:
     # 系统保证候选充足（健康审查前提），模型传更小值也强制抬到 40。
     top_k = max(int(args.get("top_k", 40)), 40)
     svc = get_retrieval_service()
+    filters = _retrieval_filters_from_query_plan(
+        ctx.previous_results.get("query_plan")
+    )
 
     # 多人 → 共享查询 + 每参与者口味偏好子查询
     if len(ctx.participant_user_mapping) > 1:
@@ -187,13 +208,18 @@ def _retrieve_recipes(args: dict, ctx: ToolContext) -> dict:
         if any(prefs):
             # 仅检索算法自身失败可降级为共享普通检索；B2 加载已经在 try 外完成。
             try:
-                result = svc.multi_person_retrieve(query, prefs, top_k=max(top_k, 30))
+                result = svc.multi_person_retrieve(
+                    query,
+                    prefs,
+                    filters=filters,
+                    top_k=max(top_k, 30),
+                )
             except Exception:
-                result = svc.retrieve(query, top_k=top_k)
+                result = svc.retrieve(query, filters=filters, top_k=top_k)
         else:
-            result = svc.retrieve(query, top_k=top_k)
+            result = svc.retrieve(query, filters=filters, top_k=top_k)
     else:
-        result = svc.retrieve(query, top_k=top_k)
+        result = svc.retrieve(query, filters=filters, top_k=top_k)
 
     ctx.previous_results["retrieval"] = result
     return {
@@ -576,7 +602,14 @@ def _expand_retrieval(args: dict, ctx: ToolContext) -> dict:
     query = args.get("query", "")
     original_ids = args.get("original_ids", [])
 
-    result = svc.retrieve(query, top_k=30, exclude_ids=original_ids)
+    result = svc.retrieve(
+        query,
+        filters=_retrieval_filters_from_query_plan(
+            ctx.previous_results.get("query_plan")
+        ),
+        top_k=30,
+        exclude_ids=set(original_ids),
+    )
     if result.total_candidates == 0:
         return {"candidates": [], "count": 0, "note": "no additional candidates"}
     ctx.previous_results["retrieval_expanded"] = result

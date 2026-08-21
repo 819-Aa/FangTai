@@ -128,34 +128,16 @@ class TestC2:
             assert types.get(t, 0) <= 1, f"槽位超限: {types}"
 
 
-# ---- C1：time_boost ----
+# ---- C1：RAG 与时间解耦 ----
 
 class TestC1TimeBoost:
-    def test_trigger_and_boost(self):
-        from types import SimpleNamespace
-
+    def test_retrieval_service_has_no_time_boost_or_time_lookup(self):
         from food_agent_v2.c1 import RecipeRetrievalService
+
         svc = RecipeRetrievalService()
-        svc.load()
-        svc._time_lookup = {
-            1: {"total_minutes": 15, "confidence": "high"},
-            2: {"total_minutes": 90, "confidence": "high"},
-            3: {"total_minutes": 20, "confidence": "medium"},
-        }
-        candidates = [
-            SimpleNamespace(recipe_id=1, name="快菜a", score=0.5, rerank_score=0.5,
-                            searchable_fields={}),
-            SimpleNamespace(recipe_id=2, name="慢菜b", score=0.6, rerank_score=0.6,
-                            searchable_fields={}),
-        ]
-        # 无时间语义 → 不触发（顺序不变）
-        out = svc._apply_time_boost("家常菜", candidates, 5)
-        assert out[0].rerank_score == pytest.approx(0.5)
-        # 有"快手"语义 → 快菜(15min high) 分升到 1.15 倍，慢菜不变
-        out2 = svc._apply_time_boost("快手菜 半小时", candidates, 5)
-        boosted = {c.recipe_id: c.rerank_score for c in out2}
-        assert boosted[1] == pytest.approx(0.5 * 1.15)
-        assert boosted[2] == pytest.approx(0.6)
+
+        assert not hasattr(svc, "_time_lookup")
+        assert not hasattr(svc, "_apply_time_boost")
 
 
 # ---- C4：压缩保留精华 + 完整性 ----

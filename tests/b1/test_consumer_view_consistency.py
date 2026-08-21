@@ -115,6 +115,8 @@ def test_non_dish_never_enters_retrieval_documents() -> None:
     assert [document.recipe_id for document in documents] == [1]
     assert report["total_documents"] == 1
     assert "health" not in documents[0].model_dump_json().lower()
+    assert "step_summary" not in documents[0].model_dump()
+    assert "蒸10分钟" not in documents[0].searchable_text
     assert "nutrition" not in documents[0].model_dump_json().lower()
 
 

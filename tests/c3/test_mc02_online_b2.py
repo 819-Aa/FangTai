@@ -13,6 +13,7 @@ import ast
 import copy
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -195,6 +196,44 @@ class TestNoLlmWhenB2Unavailable:
         with pytest.raises(ProfileRepositoryError) as excinfo:
             _retrieve_recipes({"query": "清淡家常菜"}, ctx)
         assert excinfo.value.code == "B2_DATABASE_UNAVAILABLE"
+
+    def test_query_plan_is_the_only_retrieval_filter_source(self, monkeypatch) -> None:
+        captured = {}
+
+        class _RetrievalService:
+            def retrieve(self, query, **kwargs):
+                captured.update(kwargs)
+                return SimpleNamespace(total_candidates=0, candidates=[])
+
+        monkeypatch.setattr(
+            "food_agent_v2.c1.get_retrieval_service",
+            lambda: _RetrievalService(),
+        )
+        ctx = ToolContext(
+            request_id=RID,
+            build_id=BID,
+            participant_user_mapping={"p1": 1},
+        )
+        ctx.previous_results["query_plan"] = SimpleNamespace(
+            meal_types=("晚餐",),
+            population_tags=("老人",),
+            dish_types=(),
+            taste_tags=("清淡",),
+            cuisine_tags=(),
+            scenario_tags=(),
+            include_ingredients=("豆腐",),
+            exclude_ingredients=("辣椒",),
+        )
+
+        _retrieve_recipes(
+            {"query": "模型自由文本", "meal_types": ["早餐"]},
+            ctx,
+        )
+
+        filters = captured["filters"]
+        assert filters.meal_tags == ("晚餐",)
+        assert filters.population_tags == ("老人",)
+        assert filters.exclude_ingredients == ("辣椒",)
 
     def test_multiplayer_b2_failure_produces_failed_tool_receipt(self, monkeypatch) -> None:
         """真实 ToolHandler 边界把 B2 异常记录为失败回执，而不是成功检索。"""
