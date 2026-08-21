@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 from collections.abc import Iterable
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 
 from food_agent_v2.b1.schemas import StepAtom
 
@@ -36,7 +36,9 @@ _UNIT_SECONDS = {
 _NON_TASK_RE = re.compile(
     r"^(?:"
     r"准备好(?:所有|全部)?(?:的)?食材|"
+    r"食材准备|准备食材|"
     r"(?:放(?:在)?一旁)?备用|"
+    r"成品展示|尽情品尝吧?|烹饪(?:结束|完成)|制作完成|"
     r"装盘(?:即可)?(?:尽情)?享用|"
     r"尽情享用|即可享用|完成"
     r")$"
@@ -49,6 +51,7 @@ _DEVICE_COMPOUND_RE = re.compile(
 )
 _OUTER_PUNCTUATION_RE = re.compile(r"^[\s，,；;。.!！？?、]+|[\s，,；;。.!！？?、]+$")
 _SPACE_RE = re.compile(r"\s+")
+_CLAUSE_SPLIT_RE = re.compile(r"[，,；;]+")
 
 
 def parse_explicit_duration(text: str) -> int | None:
@@ -94,13 +97,24 @@ def atomize_step(*, recipe_id: int, source_step_index: int, text: str) -> tuple[
     normalized = _normalize_atom_text(text)
     if not normalized:
         return ()
-    clauses = _split_startup_and_unattended_run(normalized)
+    clauses = tuple(
+        sub_clause
+        for timed_clause in _split_timed_compound(normalized)
+        for sub_clause in _split_startup_and_unattended_run(timed_clause)
+    )
     atoms: list[StepAtom] = []
+    clause_counts: dict[str, int] = {}
     for clause in clauses:
+        clause_counts[clause] = clause_counts.get(clause, 0) + 1
         duration = 0 if is_non_task_text(clause) else parse_explicit_duration(clause)
         atoms.append(
             StepAtom(
-                atom_id=_atom_id(recipe_id, source_step_index, clause),
+                atom_id=_atom_id(
+                    recipe_id,
+                    source_step_index,
+                    clause,
+                    occurrence=clause_counts[clause],
+                ),
                 source_step_index=source_step_index,
                 text=clause,
                 explicit_duration_seconds=duration,
@@ -156,11 +170,31 @@ def _split_startup_and_unattended_run(text: str) -> tuple[str, ...]:
     )
 
 
+def _split_timed_compound(text: str) -> tuple[str, ...]:
+    """Split comma-separated work when one clause carries an explicit duration."""
+    clauses = tuple(
+        normalized
+        for clause in _CLAUSE_SPLIT_RE.split(text)
+        if (normalized := _normalize_atom_text(clause))
+    )
+    if len(clauses) <= 1 or not any(parse_explicit_duration(clause) is not None for clause in clauses):
+        return (text,)
+    return clauses
+
+
 def _normalize_atom_text(text: str) -> str:
     stripped = _OUTER_PUNCTUATION_RE.sub("", text or "")
     return _SPACE_RE.sub(" ", stripped).strip()
 
 
-def _atom_id(recipe_id: int, source_step_index: int, text: str) -> str:
+def _atom_id(
+    recipe_id: int,
+    source_step_index: int,
+    text: str,
+    *,
+    occurrence: int = 1,
+) -> str:
     material = f"{recipe_id}\x1f{source_step_index}\x1f{_normalize_atom_text(text)}"
+    if occurrence > 1:
+        material += f"\x1f{occurrence}"
     return "atom_" + hashlib.sha256(material.encode("utf-8")).hexdigest()[:24]

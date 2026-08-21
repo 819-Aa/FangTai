@@ -103,6 +103,15 @@ def test_one_whole_recipe_generation_then_independent_verification() -> None:
     assert profile.step_tasks[2].text == "烤30分钟"
 
 
+def test_manual_task_drops_device_occupancy_but_keeps_cook() -> None:
+    tasks = _valid_tasks()
+    tasks[0]["resources"] = ["cook", "oven"]
+
+    profile, _, _ = _profile(tasks)
+
+    assert profile.step_tasks[0].resources == ("cook",)
+
+
 def test_same_cache_key_does_not_repeat_either_model_call() -> None:
     cache = TimeGraphCache()
     first, generator, verifier = _profile(_valid_tasks(), cache=cache)
@@ -113,6 +122,20 @@ def test_same_cache_key_does_not_repeat_either_model_call() -> None:
     assert len(verifier.calls) == 1
     assert second_generator.calls == []
     assert second_verifier.calls == []
+
+
+def test_cache_put_many_is_persisted_as_one_reloadable_checkpoint(tmp_path) -> None:
+    cache_path = tmp_path / "time-cache.jsonl"
+    cache = TimeGraphCache(cache_path)
+    first, _, _ = _profile(_valid_tasks())
+    second = first.model_copy(update={"recipe_id": 12, "recipe_name": "烤南瓜"})
+
+    cache.put_many({"key-1": first, "key-2": second})
+    reloaded = TimeGraphCache(cache_path)
+
+    assert len(reloaded) == 2
+    assert reloaded.get("key-1") == first
+    assert reloaded.get("key-2") == second
 
 
 @pytest.mark.parametrize(
@@ -147,15 +170,15 @@ def test_program_rejects_dependency_cycle() -> None:
     assert "DEPENDENCY_CYCLE" in caught.value.codes
 
 
-def test_unattended_task_cannot_hold_cook_and_manual_must_hold_cook() -> None:
+def test_known_resource_noise_is_canonicalized_from_task_type() -> None:
     tasks = _valid_tasks()
     tasks[0]["resources"] = []
     tasks[2]["resources"] = ["cook", "oven"]
 
-    with pytest.raises(GraphValidationError) as caught:
-        _profile(tasks)
+    profile, _, _ = _profile(tasks)
 
-    assert "RESOURCE_TASK_TYPE_MISMATCH" in caught.value.codes
+    assert profile.step_tasks[0].resources == ("cook",)
+    assert profile.step_tasks[2].resources == ("oven",)
 
 
 def test_closed_verifier_issue_prevents_ready_profile_and_cache_write() -> None:

@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
+from collections.abc import Mapping
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
@@ -14,6 +17,7 @@ _SYSTEM_PROMPT = """你是家庭烹饪食材用量估算器。请基于整道菜
 为每个 occurrence_id 估算一个大于 0 的原始食材克重。只估算输入中列出的 occurrence，
 不补充新食材，不输出区间、置信度、来源或解释。输出严格 JSON：
 {"grams":{"occurrence_id":克重数值}}。"""
+QUANTITY_PROMPT_VERSION = "quantity-review-v1"
 
 
 @dataclass(frozen=True)
@@ -37,6 +41,76 @@ class QuantityReviewCandidate:
     candidate_grams: Decimal
     decision_grams: Decimal | None = None
     review_status: str = "pending"
+
+
+class QuantityEstimateCache:
+    """Regenerable exact-content cache for pending model estimates."""
+
+    def __init__(self, path: Path | None = None) -> None:
+        self.path = Path(path) if path is not None else None
+        self._entries: dict[str, dict[str, Decimal]] = {}
+        if self.path is not None and self.path.exists():
+            for line_number, line in enumerate(
+                self.path.read_text(encoding="utf-8").splitlines(), 1
+            ):
+                if not line.strip():
+                    continue
+                try:
+                    payload = json.loads(line)
+                    self._entries[str(payload["cache_key"])] = {
+                        str(key): Decimal(str(value))
+                        for key, value in payload["grams"].items()
+                    }
+                except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+                    raise ValueError(f"克重缓存第 {line_number} 行无效") from exc
+
+    def get(self, cache_key: str) -> dict[str, Decimal] | None:
+        value = self._entries.get(cache_key)
+        return dict(value) if value is not None else None
+
+    def put_many(self, entries: Mapping[str, dict[str, Decimal]]) -> None:
+        self._entries.update({key: dict(value) for key, value in entries.items()})
+        if self.path is None:
+            return
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = self.path.with_suffix(self.path.suffix + ".tmp")
+        with temporary.open("w", encoding="utf-8", newline="\n") as handle:
+            for cache_key in sorted(self._entries):
+                handle.write(json.dumps({
+                    "cache_key": cache_key,
+                    "grams": {
+                        key: str(value)
+                        for key, value in sorted(self._entries[cache_key].items())
+                    },
+                }, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n")
+        temporary.replace(self.path)
+
+
+def quantity_context_cache_key(
+    context: RecipeQuantityReviewContext,
+    model_id: str,
+) -> str:
+    material = {
+        "prompt_version": QUANTITY_PROMPT_VERSION,
+        "model_id": model_id,
+        "recipe_id": context.recipe_id,
+        "recipe_name": context.recipe_name,
+        "step_context": context.step_context,
+        "ingredients": [
+            {
+                "occurrence_id": item.occurrence_id,
+                "ingredient_name": item.ingredient_name,
+                "quantity_raw": item.quantity_raw,
+                "unit_raw": item.unit_raw,
+                "form": item.form,
+            }
+            for item in context.ingredients
+        ],
+    }
+    encoded = json.dumps(
+        material, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 class LLMQuantityEstimator:
@@ -111,15 +185,49 @@ def build_quantity_review_contexts(
     return tuple(contexts)
 
 
-def generate_quantity_candidates(contexts, estimator):
+def generate_quantity_candidates(
+    contexts,
+    estimator,
+    *,
+    cache: QuantityEstimateCache | None = None,
+    model_id: str = "unspecified",
+    max_workers: int = 1,
+    checkpoint_size: int = 25,
+):
+    contexts = tuple(contexts)
+    estimate_cache = cache or QuantityEstimateCache()
+    estimates: dict[int, dict[str, Decimal]] = {}
+    pending: list[tuple[int, RecipeQuantityReviewContext, str]] = []
+    for index, context in enumerate(contexts):
+        cache_key = quantity_context_cache_key(context, model_id)
+        cached = estimate_cache.get(cache_key)
+        if cached is None:
+            pending.append((index, context, cache_key))
+        else:
+            estimates[index] = _validate_estimate(context, cached)
+
+    checkpoint: dict[str, dict[str, Decimal]] = {}
+    with ThreadPoolExecutor(max_workers=max(1, max_workers)) as executor:
+        future_rows = {
+            executor.submit(estimator.estimate, context): (index, context, cache_key)
+            for index, context, cache_key in pending
+        }
+        for future in as_completed(future_rows):
+            index, context, cache_key = future_rows[future]
+            estimated = _validate_estimate(context, future.result())
+            estimates[index] = estimated
+            checkpoint[cache_key] = estimated
+            if len(checkpoint) >= max(1, checkpoint_size):
+                estimate_cache.put_many(checkpoint)
+                checkpoint.clear()
+    if checkpoint:
+        estimate_cache.put_many(checkpoint)
+
     candidates: list[QuantityReviewCandidate] = []
-    for context in contexts:
+    for index, context in enumerate(contexts):
         if not context.ingredients:
             continue
-        estimated = estimator.estimate(context)
-        expected_ids = {item.occurrence_id for item in context.ingredients}
-        if set(estimated) != expected_ids:
-            raise ValueError(f"整菜用量估算未完整覆盖 occurrence: recipe {context.recipe_id}")
+        estimated = estimates[index]
         for ingredient in context.ingredients:
             grams = Decimal(estimated[ingredient.occurrence_id])
             if grams <= 0:
@@ -138,6 +246,16 @@ def generate_quantity_candidates(contexts, estimator):
                 )
             )
     return tuple(candidates)
+
+
+def _validate_estimate(context, estimated) -> dict[str, Decimal]:
+    normalized = {str(key): Decimal(value) for key, value in estimated.items()}
+    expected_ids = {item.occurrence_id for item in context.ingredients}
+    if set(normalized) != expected_ids:
+        raise ValueError(f"整菜用量估算未完整覆盖 occurrence: recipe {context.recipe_id}")
+    if any(value <= 0 for value in normalized.values()):
+        raise ValueError(f"候选克重必须大于零: recipe {context.recipe_id}")
+    return normalized
 
 
 def write_quantity_candidates(candidates, output_path: Path) -> None:

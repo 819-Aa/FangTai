@@ -27,6 +27,7 @@ from food_agent_v2.b1.quantity_normalizer import (
 )
 from food_agent_v2.b1.quantity_review import (
     LLMQuantityEstimator,
+    QuantityEstimateCache,
     build_quantity_review_contexts,
     generate_quantity_candidates,
     write_quantity_candidates,
@@ -62,6 +63,7 @@ def main(argv: list[str] | None = None) -> int:
         required=True,
     )
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--workers", type=int, default=8)
     parser.add_argument(
         "--sample",
         type=int,
@@ -70,6 +72,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.sample is not None and args.sample <= 0:
         parser.error("--sample 必须大于 0")
+    if args.workers <= 0:
+        parser.error("--workers 必须大于 0")
 
     rows = tuple(load_verified_recipe_source(RECIPES_RAW, canonical_source_manifest()))
     classifications = tuple(
@@ -89,11 +93,15 @@ def main(argv: list[str] | None = None) -> int:
         write_profile_candidates(facts, args.output)
         count = len(facts)
     elif args.kind == "quantities":
-        count = _write_quantity_review(rows, facts, args.output, sample=args.sample)
+        count = _write_quantity_review(
+            rows, facts, args.output, sample=args.sample, workers=args.workers
+        )
     elif args.kind == "nutrition":
         count = _write_nutrition_review(rows, facts, args.output, sample=args.sample)
     else:
-        count = _write_time_graph_review(rows, facts, args.output, sample=args.sample)
+        count = _write_time_graph_review(
+            rows, facts, args.output, sample=args.sample, workers=args.workers
+        )
     print(
         json.dumps(
             {"status": "generated", "kind": args.kind, "count": count,
@@ -104,7 +112,9 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def _write_quantity_review(rows, facts, output: Path, *, sample: int | None) -> int:
+def _write_quantity_review(
+    rows, facts, output: Path, *, sample: int | None, workers: int
+) -> int:
     views = _build_review_views(rows, facts)
     contexts = build_quantity_review_contexts(
         views.nutrition_views,
@@ -115,10 +125,16 @@ def _write_quantity_review(rows, facts, output: Path, *, sample: int | None) -> 
     if sample is not None:
         contexts = contexts[:sample]
     from food_agent_v2.c3.llm_client import get_llm_client
+    from food_agent_v2.core.config import load_config
 
     candidates = generate_quantity_candidates(
         contexts,
         LLMQuantityEstimator(get_llm_client()),
+        cache=QuantityEstimateCache(
+            PROJECT_ROOT / "data" / "cache" / "recipe_quantity_estimates.jsonl"
+        ),
+        model_id=load_config().llm.model_for_role("quantity_estimation"),
+        max_workers=workers,
     )
     write_quantity_candidates(candidates, output)
     return len(candidates)
@@ -150,7 +166,9 @@ def _write_nutrition_review(rows, facts, output: Path, *, sample: int | None) ->
     return len(unique_rows)
 
 
-def _write_time_graph_review(rows, facts, output: Path, *, sample: int | None) -> int:
+def _write_time_graph_review(
+    rows, facts, output: Path, *, sample: int | None, workers: int
+) -> int:
     from food_agent_v2.b1.llm_time_profiler import generate_time_graph_review
 
     views = _build_review_views(rows, facts)
@@ -168,7 +186,7 @@ def _write_time_graph_review(rows, facts, output: Path, *, sample: int | None) -
     )
     if sample is not None:
         recipes = recipes[:sample]
-    result = generate_time_graph_review(recipes, output=output)
+    result = generate_time_graph_review(recipes, output=output, max_workers=workers)
     return int(result["conflicts"])
 
 

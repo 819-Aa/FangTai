@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from pydantic import BaseModel
@@ -14,7 +15,10 @@ from food_agent_v2.b1.time_graph_profiler import (
     RecipeTimeProfile,
     TimeGraphCache,
     VerifierResult,
+    load_cached_recipe_time_graph,
     profile_recipe_time_graph,
+    time_graph_cache_key,
+    time_graph_pipeline_model_id,
 )
 from food_agent_v2.core.config import load_config
 from food_agent_v2.core.paths import PROJECT_ROOT
@@ -26,15 +30,21 @@ task_type 仅可为 manual、attended_equipment、unattended_equipment、passive
 resource 仅可为 cook、burner、oven、steamer、microwave、blender、fridge、counter。
 manual 使用 cook；attended_equipment 使用 cook 和设备；unattended_equipment 只使用设备；
 passive 只可为空或 fridge/counter；non_task 必须为 0 且资源为空。
+资源组合必须严格遵守：manual 只能 ["cook"] 或 ["cook","counter"]；
+attended_equipment 必须含 "cook" 且另含 burner/oven/steamer/microwave/blender 中至少一个，不能含 counter；
+unattended_equipment 只能含上述设备且不能含 cook/counter；passive 只能是 []、["counter"] 或 ["fridge"]；
+只有输入 explicit_duration_seconds=0 的 atom 才能标 non_task，其他 atom 绝不能标 non_task。
 显式 duration_locked 步骤仍返回一个值，但程序会以原文解析值为准。缺失时长必须估算一个正整数秒数。
 manual/attended 估算不超过 21600 秒，unattended/passive 估算不超过 604800 秒。
-依赖必须表达真实先后关系，不能只为了顺序而阻止本可并行的任务。只输出给定 JSON Schema。"""
+依赖必须表达真实先后关系，不能只为了顺序而阻止本可并行的任务。
+顶层 JSON 必须且只能是 {"tasks":[任务对象,...]}，不得使用 atoms 等其他顶层键。"""
 
 VERIFIER_SYSTEM_PROMPT = """你是独立的菜谱时间任务图复核器。核对原始 atoms 与候选 step_tasks：
 是否忠实覆盖步骤、是否漏掉等待、任务类型/资源是否合理、依赖是否错误允许并行、时长是否明显失真。
 只能返回 issues；code 仅可为 STEP_MISMATCH、MISSING_WAIT、INVALID_PARALLELISM、
 TASK_TYPE_MISMATCH、RESOURCE_MISMATCH、DEPENDENCY_MISMATCH、DURATION_IMPLAUSIBLE；
-atom_ids 只填相关 atom ID。没有问题时返回空 issues。不得返回自由解释。"""
+atom_ids 只填相关 atom ID。没有问题时返回空 issues。不得返回自由解释。
+顶层 JSON 必须且只能是 {"issues":[问题对象,...]}。"""
 
 
 class LLMStructuredModel:
@@ -55,14 +65,9 @@ class LLMStructuredModel:
         self.role = role
         self.system_prompt = system_prompt
         self.output_model = output_model
-        self.response_format = {
-            "type": "json_schema",
-            "json_schema": {
-                "name": schema_name,
-                "strict": True,
-                "schema": output_model.model_json_schema(),
-            },
-        }
+        # DeepSeek's OpenAI-compatible endpoint supports JSON Object mode but rejects
+        # response_format=json_schema. Pydantic below remains the strict schema gate.
+        self.response_format = {"type": "json_object"}
 
     def generate(self, payload: dict) -> dict:
         response = self.client.invoke(
@@ -111,6 +116,8 @@ def generate_time_graph_review(
     cache_path: Path | None = None,
     generator=None,
     verifier=None,
+    max_workers: int = 8,
+    checkpoint_size: int = 25,
 ) -> dict:
     """生成/复用时间图缓存，仅将程序或 verifier 冲突写入审阅输出。"""
     if generator is None or verifier is None:
@@ -122,38 +129,67 @@ def generate_time_graph_review(
     )
     ready: list[RecipeTimeProfile] = []
     conflicts: list[dict] = []
+    pending: list[tuple[int, str, tuple[StepAtom, ...], str]] = []
+    pipeline_model_id = time_graph_pipeline_model_id(generator.model_id, verifier.model_id)
     for recipe_id, recipe_name, atoms in recipes:
+        cache_key = time_graph_cache_key(recipe_id, atoms, pipeline_model_id)
         try:
             ready.append(
-                profile_recipe_time_graph(
+                load_cached_recipe_time_graph(
                     recipe_id=recipe_id,
                     recipe_name=recipe_name,
                     atoms=atoms,
-                    model=generator,
-                    verifier=verifier,
+                    generator_model_id=generator.model_id,
+                    verifier_model_id=verifier.model_id,
                     cache=cache,
                 )
             )
-        except GraphValidationError as exc:
-            conflicts.append(
-                {
-                    "recipe_id": recipe_id,
-                    "recipe_name": recipe_name,
-                    "issues": [
-                        {"code": code, "atom_ids": list(atom_ids)}
-                        for code, atom_ids in exc.issues
-                    ],
-                }
-            )
+            continue
         except Exception as exc:
-            conflicts.append(
-                {
-                    "recipe_id": recipe_id,
-                    "recipe_name": recipe_name,
-                    "issues": [{"code": "MODEL_CALL_FAILED", "atom_ids": []}],
-                    "error_type": type(exc).__name__,
-                }
+            from food_agent_v2.b1.time_graph_profiler import TimeGraphCacheMiss
+
+            if not isinstance(exc, TimeGraphCacheMiss):
+                conflicts.append(_time_graph_conflict(recipe_id, recipe_name, exc))
+                continue
+        pending.append((recipe_id, recipe_name, atoms, cache_key))
+
+    checkpoint: dict[str, RecipeTimeProfile] = {}
+
+    def generate_one(recipe_id: int, recipe_name: str, atoms: tuple[StepAtom, ...]):
+        return profile_recipe_time_graph(
+            recipe_id=recipe_id,
+            recipe_name=recipe_name,
+            atoms=atoms,
+            model=generator,
+            verifier=verifier,
+            cache=TimeGraphCache(),
+        )
+
+    with ThreadPoolExecutor(max_workers=max(1, max_workers)) as executor:
+        future_rows = {
+            executor.submit(generate_one, recipe_id, recipe_name, atoms): (
+                recipe_id,
+                recipe_name,
+                cache_key,
             )
+            for recipe_id, recipe_name, atoms, cache_key in pending
+        }
+        for future in as_completed(future_rows):
+            recipe_id, recipe_name, cache_key = future_rows[future]
+            try:
+                profile = future.result()
+                ready.append(profile)
+                checkpoint[cache_key] = profile
+                if len(checkpoint) >= checkpoint_size:
+                    cache.put_many(checkpoint)
+                    checkpoint.clear()
+            except Exception as exc:
+                conflicts.append(_time_graph_conflict(recipe_id, recipe_name, exc))
+    if checkpoint:
+        cache.put_many(checkpoint)
+
+    conflicts.sort(key=lambda item: int(item["recipe_id"]))
+    ready.sort(key=lambda item: item.recipe_id)
 
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("w", encoding="utf-8", newline="\n") as handle:
@@ -165,6 +201,24 @@ def generate_time_graph_review(
         "conflicts": len(conflicts),
         "cache_entries": len(cache),
         "output": str(output),
+    }
+
+
+def _time_graph_conflict(recipe_id: int, recipe_name: str, exc: Exception) -> dict:
+    if isinstance(exc, GraphValidationError):
+        return {
+            "recipe_id": recipe_id,
+            "recipe_name": recipe_name,
+            "issues": [
+                {"code": code, "atom_ids": list(atom_ids)}
+                for code, atom_ids in exc.issues
+            ],
+        }
+    return {
+        "recipe_id": recipe_id,
+        "recipe_name": recipe_name,
+        "issues": [{"code": "MODEL_CALL_FAILED", "atom_ids": []}],
+        "error_type": type(exc).__name__,
     }
 
 

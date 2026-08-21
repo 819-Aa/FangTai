@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from food_agent_v2.b1.schemas import StepAtom, StepTask
 from food_agent_v2.b1.step_atomizer import is_non_task_text, ordered_atoms_hash
 
-TIME_GRAPH_PROMPT_VERSION = "time-graph-v1"
+TIME_GRAPH_PROMPT_VERSION = "time-graph-v4"
 ALLOWED_RESOURCES = frozenset(
     {"cook", "burner", "oven", "steamer", "microwave", "blender", "fridge", "counter"}
 )
@@ -133,7 +133,11 @@ class TimeGraphCache:
         return self._entries.get(cache_key)
 
     def put(self, cache_key: str, profile: RecipeTimeProfile) -> None:
-        self._entries[cache_key] = profile
+        self.put_many({cache_key: profile})
+
+    def put_many(self, entries: Mapping[str, RecipeTimeProfile]) -> None:
+        """Persist a batch in one atomic checkpoint instead of rewriting per recipe."""
+        self._entries.update(entries)
         if self.path is not None:
             self._write()
 
@@ -347,7 +351,7 @@ def _materialize_tasks(
             "text": atom.text,
             "duration_seconds": duration,
             "task_type": candidate.task_type,
-            "resources": candidate.resources,
+            "resources": _normalize_resources(candidate.task_type, candidate.resources),
             "depends_on": candidate.depends_on,
         }
         pre_issues = _raw_task_issues(atom, raw_task)
@@ -361,6 +365,24 @@ def _materialize_tasks(
     if issues:
         raise GraphValidationError(tuple(issues))
     return tuple(tasks)
+
+
+def _normalize_resources(task_type: str, resources: tuple[str, ...]) -> tuple[str, ...]:
+    """Canonicalize known resources after the model has chosen task semantics."""
+    if set(resources) - ALLOWED_RESOURCES:
+        return resources
+    if task_type == "manual":
+        return ("cook", "counter") if "counter" in resources else ("cook",)
+    if task_type == "attended_equipment":
+        devices = tuple(resource for resource in resources if resource in _CAPACITY_DEVICES)
+        return ("cook", *devices)
+    if task_type == "unattended_equipment":
+        return tuple(resource for resource in resources if resource in _CAPACITY_DEVICES)
+    if task_type == "passive":
+        return tuple(resource for resource in resources if resource in {"fridge", "counter"})
+    if task_type == "non_task":
+        return ()
+    return resources
 
 
 def _raw_task_issues(

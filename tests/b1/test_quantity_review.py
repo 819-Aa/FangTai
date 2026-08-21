@@ -9,6 +9,7 @@ from food_agent_v2.b1.consumer_views import (
 from food_agent_v2.b1.quantity_normalizer import MeasureRuleIndex, QuantityDecisionIndex
 from food_agent_v2.b1.quantity_review import (
     LLMQuantityEstimator,
+    QuantityEstimateCache,
     RecipeQuantityReviewContext,
     build_quantity_review_contexts,
     generate_quantity_candidates,
@@ -52,6 +53,43 @@ def test_one_recipe_uses_one_estimator_call_and_keeps_candidates_pending(tmp_pat
     assert [item.candidate_grams for item in candidates] == [Decimal("2"), Decimal("5")]
     assert {item.review_status for item in candidates} == {"pending"}
     assert ",pending" in output.read_text(encoding="utf-8")
+
+
+def test_quantity_estimates_resume_from_exact_content_cache(tmp_path) -> None:
+    class _Estimator:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def estimate(self, _context):
+            self.calls += 1
+            return {"1-1": Decimal("3")}
+
+    context = RecipeQuantityReviewContext(
+        recipe_id=1,
+        recipe_name="测试菜",
+        step_context="加入少许盐",
+        ingredients=(_pending("1-1", "盐"),),
+    )
+    cache_path = tmp_path / "quantity-cache.jsonl"
+    first_estimator = _Estimator()
+    generate_quantity_candidates(
+        (context,),
+        first_estimator,
+        cache=QuantityEstimateCache(cache_path),
+        model_id="model-v1",
+    )
+    second_estimator = _Estimator()
+
+    result = generate_quantity_candidates(
+        (context,),
+        second_estimator,
+        cache=QuantityEstimateCache(cache_path),
+        model_id="model-v1",
+    )
+
+    assert first_estimator.calls == 1
+    assert second_estimator.calls == 0
+    assert result[0].candidate_grams == Decimal("3")
 
 
 def test_review_contexts_only_include_unresolved_quantities() -> None:
