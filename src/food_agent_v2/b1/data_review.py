@@ -21,6 +21,13 @@ from food_agent_v2.b1.nutrition_reference import (
     nutrition_form_from_occurrence,
     write_nutrition_crosswalk_candidates,
 )
+from food_agent_v2.b1.profile_review import (
+    LLMProfileEstimator,
+    ProfileCandidateCache,
+    ProfileReviewInput,
+    generate_profile_candidates,
+    write_profile_candidate_records,
+)
 from food_agent_v2.b1.quantity_normalizer import (
     load_measure_rules,
     load_quantity_decisions,
@@ -37,7 +44,6 @@ from food_agent_v2.b1.review_inputs import (
     apply_condition_defaults,
     load_ingredient_condition_defaults,
     load_recipe_profile_enrichments,
-    write_profile_candidates,
 )
 from food_agent_v2.b1.source_manifest import canonical_source_manifest, load_verified_recipe_source
 from food_agent_v2.b1.step_atomizer import atomize_recipe_steps
@@ -90,8 +96,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     facts = recipe_facts_from_source(rows, classifications, profile_enrichments)
     if args.kind == "profiles":
-        write_profile_candidates(facts, args.output)
-        count = len(facts)
+        count = _write_profile_review(
+            rows,
+            facts,
+            args.output,
+            sample=args.sample,
+            workers=args.workers,
+        )
     elif args.kind == "quantities":
         count = _write_quantity_review(
             rows, facts, args.output, sample=args.sample, workers=args.workers
@@ -110,6 +121,41 @@ def main(argv: list[str] | None = None) -> int:
         )
     )
     return 0
+
+
+def _write_profile_review(
+    rows, facts, output: Path, *, sample: int | None, workers: int
+) -> int:
+    from food_agent_v2.c3.llm_client import get_llm_client
+    from food_agent_v2.core.config import load_config
+
+    selected_rows = rows[:sample] if sample is not None else rows
+    selected_ids = {row.recipe_id for row in selected_rows}
+    selected_facts = tuple(fact for fact in facts if fact.recipe_id in selected_ids)
+    fact_by_id = {fact.recipe_id: fact for fact in selected_facts}
+    inputs = tuple(
+        ProfileReviewInput(
+            recipe_id=row.recipe_id,
+            name=row.name,
+            record_type=str(fact_by_id[row.recipe_id].record_type),
+            ingredients_raw=row.ingredients_raw,
+            steps_raw=row.steps_raw,
+            label_tags=fact_by_id[row.recipe_id].label_tags,
+        )
+        for row in selected_rows
+    )
+    model_id = load_config().llm.model_for_role("profile_enrichment")
+    candidates = generate_profile_candidates(
+        inputs,
+        selected_facts,
+        LLMProfileEstimator(get_llm_client(), model_id=model_id),
+        cache=ProfileCandidateCache(
+            PROJECT_ROOT / "data" / "cache" / "recipe_profile_candidates.jsonl"
+        ),
+        max_workers=workers,
+    )
+    write_profile_candidate_records(candidates, output)
+    return len(candidates)
 
 
 def _write_quantity_review(
