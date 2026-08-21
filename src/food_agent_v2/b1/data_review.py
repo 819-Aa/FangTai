@@ -39,6 +39,7 @@ from food_agent_v2.b1.review_inputs import (
     write_profile_candidates,
 )
 from food_agent_v2.b1.source_manifest import canonical_source_manifest, load_verified_recipe_source
+from food_agent_v2.b1.step_atomizer import atomize_recipe_steps
 from food_agent_v2.contracts.build import source_manifest_hash
 from food_agent_v2.core.paths import PROJECT_ROOT, RECIPES_RAW
 
@@ -57,7 +58,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="food-agent-v2 data-review")
     parser.add_argument(
         "--kind",
-        choices=("profiles", "quantities", "nutrition"),
+        choices=("profiles", "quantities", "nutrition", "time-graphs"),
         required=True,
     )
     parser.add_argument("--output", type=Path, required=True)
@@ -89,8 +90,10 @@ def main(argv: list[str] | None = None) -> int:
         count = len(facts)
     elif args.kind == "quantities":
         count = _write_quantity_review(rows, facts, args.output, sample=args.sample)
-    else:
+    elif args.kind == "nutrition":
         count = _write_nutrition_review(rows, facts, args.output, sample=args.sample)
+    else:
+        count = _write_time_graph_review(rows, facts, args.output, sample=args.sample)
     print(
         json.dumps(
             {"status": "generated", "kind": args.kind, "count": count,
@@ -145,6 +148,28 @@ def _write_nutrition_review(rows, facts, output: Path, *, sample: int | None) ->
     )
     write_nutrition_crosswalk_candidates(unique_rows, references, output)
     return len(unique_rows)
+
+
+def _write_time_graph_review(rows, facts, output: Path, *, sample: int | None) -> int:
+    from food_agent_v2.b1.llm_time_profiler import generate_time_graph_review
+
+    views = _build_review_views(rows, facts)
+    name_by_id = {fact.recipe_id: fact.name for fact in facts}
+    recipes = tuple(
+        (
+            view.recipe_id,
+            name_by_id[view.recipe_id],
+            atomize_recipe_steps(
+                recipe_id=view.recipe_id,
+                steps=((step.step_index, step.raw_text) for step in view.steps),
+            ),
+        )
+        for view in views.step_views
+    )
+    if sample is not None:
+        recipes = recipes[:sample]
+    result = generate_time_graph_review(recipes, output=output)
+    return int(result["conflicts"])
 
 
 def _build_review_views(rows, facts):

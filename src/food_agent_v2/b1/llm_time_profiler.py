@@ -1,253 +1,180 @@
-"""B1 离线 LLM 时间补全 —— 用模型估算菜品制作时间。
-
-设计（2026-08-08 决策）：
-- 确定性任务图调度（B5）作为可靠基线（兜底）；
-- 本模块用 LLM 在离线阶段估算每道菜的主动/设备/被动分钟，校验后写回
-  time_profiles.jsonl 的 llm_estimate 字段，供 B5 在运行时有更高置信度的时长。
-- 运行时 B5 仍做确定性调度；LLM 只负责补数据，不参与运行时判断。
-- 时间不是健康事实，离线模型辅助数据处理不触碰健康/权限红线。
-
-用法：
-  uv run food-agent-v2 time-profiler --sample 50      # 小样本验证
-  uv run food-agent-v2 time-profiler                   # 全量（2000 道）
-"""
+"""离线整菜时间图模型适配器；运行时与普通 rebuild 均不调用模型。"""
 
 from __future__ import annotations
 
 import json
-import re
-import sys
+from pathlib import Path
 
-from food_agent_v2.core.paths import CLEANED_DIR, CLEANED_RECIPES
+from pydantic import BaseModel
 
-SYSTEM_PROMPT = (
-    "你是中餐菜品制作时间估算专家。根据菜品名称、食材清单和烹饪步骤，"
-    "估算一位普通家庭厨师制作这道菜需要的时间。\n"
-    "输出严格 JSON，不要输出其他文字：\n"
-    '{"active_minutes": <主动操作分钟：切洗拌腌等手工活>, '
-    '"equipment_minutes": <设备占用分钟：炒煮蒸烤炖等使用锅/烤箱/蒸箱的时间>, '
-    '"passive_minutes": <被动等待分钟：腌制/发酵/冷藏/浸泡等无需操作的时间>, '
-    '"total_minutes": <从开始到上桌的总耗时分钟>, '
-    '"confidence": "high|medium|low"}\n'
-    "要求：所有数值为非负整数；total_minutes 应大致等于主动+设备（被动等待可与其他工作并行，所以 total 可以小于三者和）；"
-    "没有把握时 confidence 给 low。\n\n"
-    "## 校准示例（参照这个量级，不要系统性高估）\n"
-    "西芹炒百合：{\"active_minutes\":5,\"equipment_minutes\":8,\"passive_minutes\":0,\"total_minutes\":13,\"confidence\":\"high\"}\n"
-    "蒜蓉塔菜：{\"active_minutes\":5,\"equipment_minutes\":6,\"passive_minutes\":0,\"total_minutes\":11,\"confidence\":\"high\"}\n"
-    "清蒸鲈鱼：{\"active_minutes\":8,\"equipment_minutes\":12,\"passive_minutes\":0,\"total_minutes\":20,\"confidence\":\"high\"}\n"
-    "番茄蛋汤：{\"active_minutes\":8,\"equipment_minutes\":10,\"passive_minutes\":0,\"total_minutes\":18,\"confidence\":\"high\"}\n"
-    "香菇鸡汤：{\"active_minutes\":10,\"equipment_minutes\":40,\"passive_minutes\":0,\"total_minutes\":50,\"confidence\":\"medium\"}\n"
-    "卤牛肉：{\"active_minutes\":10,\"equipment_minutes\":60,\"passive_minutes\":0,\"total_minutes\":70,\"confidence\":\"medium\"}\n"
-    "注意：简单快炒/清蒸类 10-20 分钟，炖煮类 40-70 分钟；主动备菜按实际切洗拌的分钟数，"
-    "简单菜备菜 3-8 分钟即可。"
+from food_agent_v2.b1.schemas import StepAtom
+from food_agent_v2.b1.time_graph_profiler import (
+    GeneratedTimeGraph,
+    GraphValidationError,
+    RecipeTimeProfile,
+    TimeGraphCache,
+    VerifierResult,
+    profile_recipe_time_graph,
 )
+from food_agent_v2.core.config import load_config
+from food_agent_v2.core.paths import PROJECT_ROOT
+
+GENERATOR_SYSTEM_PROMPT = """你是菜谱原子步骤时间图生成器。输入是一道菜的完整原子步骤。
+必须原样覆盖每个 atom_id，不能删除、合并、增加或改写步骤。对每个 atom 输出：
+duration_seconds、task_type、resources、depends_on。只给单一秒数，不给区间、置信度、来源或解释。
+task_type 仅可为 manual、attended_equipment、unattended_equipment、passive、non_task。
+resource 仅可为 cook、burner、oven、steamer、microwave、blender、fridge、counter。
+manual 使用 cook；attended_equipment 使用 cook 和设备；unattended_equipment 只使用设备；
+passive 只可为空或 fridge/counter；non_task 必须为 0 且资源为空。
+显式 duration_locked 步骤仍返回一个值，但程序会以原文解析值为准。缺失时长必须估算一个正整数秒数。
+manual/attended 估算不超过 21600 秒，unattended/passive 估算不超过 604800 秒。
+依赖必须表达真实先后关系，不能只为了顺序而阻止本可并行的任务。只输出给定 JSON Schema。"""
+
+VERIFIER_SYSTEM_PROMPT = """你是独立的菜谱时间任务图复核器。核对原始 atoms 与候选 step_tasks：
+是否忠实覆盖步骤、是否漏掉等待、任务类型/资源是否合理、依赖是否错误允许并行、时长是否明显失真。
+只能返回 issues；code 仅可为 STEP_MISMATCH、MISSING_WAIT、INVALID_PARALLELISM、
+TASK_TYPE_MISMATCH、RESOURCE_MISMATCH、DEPENDENCY_MISMATCH、DURATION_IMPLAUSIBLE；
+atom_ids 只填相关 atom ID。没有问题时返回空 issues。不得返回自由解释。"""
 
 
-def _extract_json(content: str) -> dict:
-    """从 LLM 输出中提取 JSON 对象。"""
-    content = (content or "").strip()
-    try:
-        data = json.loads(content)
-        if isinstance(data, dict):
-            return data
-    except json.JSONDecodeError:
-        pass
-    match = re.search(r"\{.*\}", content, re.DOTALL)
-    if match:
+class LLMStructuredModel:
+    """把现有 LLMClient 适配为一次整 JSON 对象调用。"""
+
+    def __init__(
+        self,
+        *,
+        client,
+        model_id: str,
+        role: str,
+        system_prompt: str,
+        output_model: type[BaseModel],
+        schema_name: str,
+    ):
+        self.client = client
+        self.model_id = model_id
+        self.role = role
+        self.system_prompt = system_prompt
+        self.output_model = output_model
+        self.response_format = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": schema_name,
+                "strict": True,
+                "schema": output_model.model_json_schema(),
+            },
+        }
+
+    def generate(self, payload: dict) -> dict:
+        response = self.client.invoke(
+            self.role,
+            self.system_prompt,
+            json.dumps(payload, ensure_ascii=False, sort_keys=True),
+            response_format=self.response_format,
+        )
+        content = response.get("content", "")
+        parsed = json.loads(content)
+        if not isinstance(parsed, dict):
+            raise ValueError("结构化模型必须返回 JSON 对象")
+        return parsed
+
+
+def create_time_graph_models(client=None) -> tuple[LLMStructuredModel, LLMStructuredModel]:
+    """创建提示词独立的 generator 与 verifier 调用器。"""
+    if client is None:
+        from food_agent_v2.c3.llm_client import get_llm_client
+
+        client = get_llm_client()
+    model_id = load_config().llm.model_for_role("unified_review") or "unconfigured"
+    generator = LLMStructuredModel(
+        client=client,
+        model_id=model_id,
+        role="unified_review",
+        system_prompt=GENERATOR_SYSTEM_PROMPT,
+        output_model=GeneratedTimeGraph,
+        schema_name="recipe_time_graph",
+    )
+    verifier = LLMStructuredModel(
+        client=client,
+        model_id=model_id,
+        role="unified_review",
+        system_prompt=VERIFIER_SYSTEM_PROMPT,
+        output_model=VerifierResult,
+        schema_name="recipe_time_graph_verification",
+    )
+    return generator, verifier
+
+
+def generate_time_graph_review(
+    recipes: tuple[tuple[int, str, tuple[StepAtom, ...]], ...],
+    *,
+    output: Path,
+    cache_path: Path | None = None,
+    generator=None,
+    verifier=None,
+) -> dict:
+    """生成/复用时间图缓存，仅将程序或 verifier 冲突写入审阅输出。"""
+    if generator is None or verifier is None:
+        default_generator, default_verifier = create_time_graph_models()
+        generator = generator or default_generator
+        verifier = verifier or default_verifier
+    cache = TimeGraphCache(
+        cache_path or PROJECT_ROOT / "data" / "cache" / "recipe_time_graphs.jsonl"
+    )
+    ready: list[RecipeTimeProfile] = []
+    conflicts: list[dict] = []
+    for recipe_id, recipe_name, atoms in recipes:
         try:
-            data = json.loads(match.group())
-            if isinstance(data, dict):
-                return data
-        except json.JSONDecodeError:
-            pass
-    return {}
+            ready.append(
+                profile_recipe_time_graph(
+                    recipe_id=recipe_id,
+                    recipe_name=recipe_name,
+                    atoms=atoms,
+                    model=generator,
+                    verifier=verifier,
+                    cache=cache,
+                )
+            )
+        except GraphValidationError as exc:
+            conflicts.append(
+                {
+                    "recipe_id": recipe_id,
+                    "recipe_name": recipe_name,
+                    "issues": [
+                        {"code": code, "atom_ids": list(atom_ids)}
+                        for code, atom_ids in exc.issues
+                    ],
+                }
+            )
+        except Exception as exc:
+            conflicts.append(
+                {
+                    "recipe_id": recipe_id,
+                    "recipe_name": recipe_name,
+                    "issues": [{"code": "MODEL_CALL_FAILED", "atom_ids": []}],
+                    "error_type": type(exc).__name__,
+                }
+            )
 
-
-def _validate_estimate(data: dict) -> dict | None:
-    """校验 LLM 估算结果。非法返回 None。"""
-    if not isinstance(data, dict):
-        return None
-    try:
-        active = int(float(data.get("active_minutes", -1)))
-        equip = int(float(data.get("equipment_minutes", -1)))
-        passive = int(float(data.get("passive_minutes", -1)))
-        total = int(float(data.get("total_minutes", -1)))
-    except (ValueError, TypeError):
-        return None
-    conf = data.get("confidence", "")
-    if conf not in ("high", "medium", "low"):
-        return None
-    if min(active, equip, passive, total) < 0:
-        return None
-    # 合理性范围：单道菜总耗时 2 分钟 ~ 6 小时
-    if not (2 <= total <= 360):
-        return None
-    if total < 1:
-        return None
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with output.open("w", encoding="utf-8", newline="\n") as handle:
+        for conflict in conflicts:
+            handle.write(json.dumps(conflict, ensure_ascii=False, sort_keys=True) + "\n")
     return {
-        "active_minutes": active,
-        "equipment_minutes": equip,
-        "passive_minutes": passive,
-        "total_minutes": total,
-        "confidence": conf,
+        "total": len(recipes),
+        "ready": len(ready),
+        "conflicts": len(conflicts),
+        "cache_entries": len(cache),
+        "output": str(output),
     }
 
 
-def _build_user_prompt(recipe: dict) -> str:
-    name = recipe.get("名称", "")
-    ingredients = recipe.get("食材清单", "")[:300]
-    steps = recipe.get("烹饪步骤", "")[:800]
-    return (
-        f"菜品：{name}\n"
-        f"食材：{ingredients}\n"
-        f"步骤：{steps}\n\n"
-        "请估算制作时间，只输出 JSON。"
-    )
-
-
-def profile_recipe(recipe: dict, llm_client) -> dict | None:
-    """估算单道菜的时间。返回 {'recipe_id', 'llm_estimate'} 或 None。"""
-    user = _build_user_prompt(recipe)
-    try:
-        resp = llm_client.invoke("time_profiling", SYSTEM_PROMPT, user)
-    except Exception:
-        return None
-    data = _extract_json(resp.get("content", ""))
-    est = _validate_estimate(data)
-    if est is None:
-        return None
-    return {"recipe_id": recipe["recipe_id"], "llm_estimate": est}
-
-
-# 进度/部分结果文件（支持实时进度汇报与断点续跑）
-PARTIAL_FILE = CLEANED_DIR / "llm_estimates_partial.jsonl"
-PROGRESS_FILE = CLEANED_DIR / "llm_time_profiler_progress.json"
-
-
-def _load_done() -> dict[int, dict]:
-    """加载已完成的部分估算（断点续跑）。"""
-    done: dict[int, dict] = {}
-    if PARTIAL_FILE.exists():
-        with PARTIAL_FILE.open("r", encoding="utf-8") as f:
-            for line in f:
-                if line.strip():
-                    rec = json.loads(line)
-                    done[rec["recipe_id"]] = rec["llm_estimate"]
-    return done
-
-
-def _save_done(done: dict[int, dict]) -> None:
-    """把部分估算写盘（增量）。"""
-    PARTIAL_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with PARTIAL_FILE.open("w", encoding="utf-8") as f:
-        for rid in sorted(done):
-            f.write(json.dumps({"recipe_id": rid, "llm_estimate": done[rid]},
-                               ensure_ascii=False) + "\n")
-
-
-def _write_progress(done: int, total: int, ok: int, failed: int) -> None:
-    """写进度文件（供外部实时读取）。"""
-    PROGRESS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    PROGRESS_FILE.write_text(json.dumps({
-        "done": done, "total": total, "success": ok, "failed": failed,
-    }, ensure_ascii=False, indent=2), encoding="utf-8")
-
-
-def merge_estimates() -> int:
-    """把 partial 估算文件合并回 time_profiles.jsonl。
-
-    data-rebuild 会重新生成 time_profiles（不含 llm_estimate），
-    重建后调用本函数恢复 LLM 时间估算。返回合并条数。
-    """
-    done = _load_done()
-    if not done:
-        return 0
-    profile_path = CLEANED_DIR / "time_profiles.jsonl"
-    if not profile_path.exists():
-        return 0
-    updated = 0
-    lines_out: list[str] = []
-    with profile_path.open("r", encoding="utf-8") as f:
-        for line in f:
-            if not line.strip():
-                continue
-            rec = json.loads(line)
-            rid = rec.get("recipe_id")
-            if rid in done:
-                rec["llm_estimate"] = done[rid]
-                updated += 1
-            lines_out.append(json.dumps(rec, ensure_ascii=False))
-    with profile_path.open("w", encoding="utf-8") as f:
-        f.write("\n".join(lines_out) + "\n")
-    return updated
-
-
-def run(sample: int | None = None, start: int = 1, end: int | None = None,
-        resume: bool = True) -> dict:
-    """批量补全时间画像（增量写盘，支持断点续跑）。"""
-    from food_agent_v2.c3.llm_client import get_llm_client
-
-    recipes: list[dict] = []
-    with CLEANED_RECIPES.open("r", encoding="utf-8") as f:
-        for line in f:
-            if line.strip():
-                recipes.append(json.loads(line))
-
-    # 范围过滤
-    if end is None:
-        end = len(recipes)
-    recipes = [r for r in recipes if start <= r["recipe_id"] <= end]
-    if sample:
-        recipes = recipes[:sample]
-
-    estimates = _load_done() if resume else {}
-    remaining = [r for r in recipes if r["recipe_id"] not in estimates]
-
-    client = get_llm_client()
-    ok = len(estimates)
-    failed = 0
-    done = len(estimates)
-
-    for i, recipe in enumerate(remaining):
-        result = profile_recipe(recipe, client)
-        if result:
-            estimates[result["recipe_id"]] = result["llm_estimate"]
-            ok += 1
-        else:
-            failed += 1
-        done = len(estimates)
-        if (i + 1) % 25 == 0 or i + 1 == len(remaining):
-            _save_done(estimates)
-            _write_progress(done, len(recipes), ok, failed)
-            print(f"  进度 {i + 1}/{len(remaining)}：累计成功 {ok}，失败 {failed}",
-                  flush=True)
-
-    _save_done(estimates)
-    _write_progress(done, len(recipes), ok, failed)
-
-    # 合并写回 time_profiles.jsonl
-    profile_path = CLEANED_DIR / "time_profiles.jsonl"
-    updated = 0
-    lines_out: list[str] = []
-    with profile_path.open("r", encoding="utf-8") as f:
-        for line in f:
-            if not line.strip():
-                continue
-            rec = json.loads(line)
-            rid = rec.get("recipe_id")
-            if rid in estimates:
-                rec["llm_estimate"] = estimates[rid]
-                updated += 1
-            lines_out.append(json.dumps(rec, ensure_ascii=False))
-    with profile_path.open("w", encoding="utf-8") as f:
-        f.write("\n".join(lines_out) + "\n")
-
-    print(f"\n完成：共 {len(recipes)} 道，成功 {ok}，失败 {failed}，写回 {updated} 条", flush=True)
-    return {"total": len(recipes), "success": ok, "failed": failed, "updated": updated}
-
-
-if __name__ == "__main__":
-    sample_arg = None
-    if "--sample" in sys.argv:
-        sample_arg = int(sys.argv[sys.argv.index("--sample") + 1])
-    run(sample=sample_arg)
+def run(*, sample: int | None = None, **_: object) -> dict:
+    """保留旧命令名的确定性迁移提示，避免继续写旧分钟画像。"""
+    return {
+        "status": "migrated",
+        "sample": sample,
+        "command": (
+            "food-agent-v2 data-review --kind time-graphs "
+            "--output reports/data_review/time_graph_conflicts.jsonl"
+        ),
+    }
