@@ -56,6 +56,10 @@ from food_agent_v2.b1.review_inputs import (
 )
 from food_agent_v2.b1.source_manifest import canonical_source_manifest, load_verified_recipe_source
 from food_agent_v2.b1.step_atomizer import atomize_recipe_steps
+from food_agent_v2.b1.time_review_decisions import (
+    apply_time_review_decisions,
+    load_time_review_decisions,
+)
 from food_agent_v2.b1.usda_crosswalk_review import (
     LLMUsdaCandidateSelector,
     LLMUsdaSearchTermEstimator,
@@ -424,13 +428,20 @@ def _write_time_graph_review(
 
     views = _build_review_views(rows, facts)
     name_by_id = {fact.recipe_id: fact.name for fact in facts}
+    time_decisions = load_time_review_decisions(
+        _REVIEW_DIR / "recipe_time_graph_decisions.csv"
+    )
     recipes = tuple(
         (
             view.recipe_id,
             name_by_id[view.recipe_id],
-            atomize_recipe_steps(
+            apply_time_review_decisions(
                 recipe_id=view.recipe_id,
-                steps=((step.step_index, step.raw_text) for step in view.steps),
+                atoms=atomize_recipe_steps(
+                    recipe_id=view.recipe_id,
+                    steps=((step.step_index, step.raw_text) for step in view.steps),
+                ),
+                decisions=time_decisions,
             ),
         )
         for view in views.step_views

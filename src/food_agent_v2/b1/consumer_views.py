@@ -449,13 +449,21 @@ def publish_downstream_build_views(
         TimeGraphCache,
         load_cached_recipe_time_graph,
     )
+    from food_agent_v2.b1.time_review_decisions import load_time_review_decisions
     from food_agent_v2.b5.scheduler import schedule_task_graphs
     from food_agent_v2.core.config import load_config
     from food_agent_v2.core.paths import PROJECT_ROOT
 
     del identities, food_composition_records
     staging = Path(staging_dir)
-    atom_profiles, atom_report = build_step_profiles_from_views(views.step_views)
+    review_dir = PROJECT_ROOT / "data" / "review"
+    time_decisions = load_time_review_decisions(
+        review_dir / "recipe_time_graph_decisions.csv"
+    )
+    atom_profiles, atom_report = build_step_profiles_from_views(
+        views.step_views,
+        time_decisions=time_decisions,
+    )
     cache = (
         time_graph_cache
         if time_graph_cache is not None
@@ -496,7 +504,6 @@ def publish_downstream_build_views(
         "stage": "validated_recipe_time_graphs",
         "ready_count": len(step_profiles),
     }
-    review_dir = PROJECT_ROOT / "data" / "review"
     nutrition_references = load_nutrition_references(
         PROJECT_ROOT / "data" / "reference" / "ingredient_nutrition.jsonl"
     )

@@ -1,4 +1,9 @@
-from food_agent_v2.b1.step_atomizer import atomize_step, is_non_task_text
+from food_agent_v2.b1.step_atomizer import (
+    atomize_step,
+    is_non_task_text,
+    is_passive_wait_text,
+    parse_explicit_duration,
+)
 
 
 def test_non_task_phrases_are_locked_to_zero() -> None:
@@ -91,3 +96,205 @@ def test_atom_id_changes_when_recipe_or_source_step_changes() -> None:
     other_step = atomize_step(recipe_id=9, source_step_index=3, text="切成细丝")[0]
 
     assert len({base.atom_id, other_recipe.atom_id, other_step.atom_id}) == 3
+
+
+def test_english_minute_is_duration_but_fill_fraction_is_not() -> None:
+    assert parse_explicit_duration("煎至两面微黄，约2min") == 120
+    assert parse_explicit_duration("倒入蛋挞液至9分满") is None
+    assert parse_explicit_duration("10分钟开始预热") is None
+
+
+def test_completion_transition_with_real_work_is_not_non_task() -> None:
+    text = "烹饪结束后取出鸡胸肉，起锅热油，放入鸡胸肉煎约2min"
+
+    atoms = atomize_step(recipe_id=65, source_step_index=3, text=text)
+
+    assert all(atom.explicit_duration_seconds != 0 for atom in atoms)
+    assert not any(is_non_task_text(atom.text) for atom in atoms)
+    assert any(atom.explicit_duration_seconds == 120 for atom in atoms)
+
+
+def test_manual_work_and_following_proof_are_separate_atoms() -> None:
+    atoms = atomize_step(
+        recipe_id=840,
+        source_step_index=3,
+        text="揉至面团光滑，装入盆内发酵至两倍大",
+    )
+
+    assert [atom.text for atom in atoms] == ["揉至面团光滑，装入盆内", "发酵至两倍大"]
+    assert not is_passive_wait_text(atoms[0].text)
+    assert is_passive_wait_text(atoms[1].text)
+
+
+def test_completed_cold_storage_is_manual_transition_not_passive_wait() -> None:
+    text = "冷藏结束后取出面团，在料理台上撒黄豆粉并擀成长方形"
+
+    assert not is_passive_wait_text(text)
+
+
+def test_wait_duration_suffix_stays_attached_to_the_wait() -> None:
+    atoms = atomize_step(
+        recipe_id=1944,
+        source_step_index=7,
+        text="排气整形切块，再次醒发成2倍大，用了1小时",
+    )
+
+    assert [atom.text for atom in atoms] == [
+        "排气整形切块",
+        "再次醒发成2倍大，用了1小时",
+    ]
+    assert atoms[1].explicit_duration_seconds == 3600
+    assert is_passive_wait_text(atoms[1].text)
+
+
+def test_approximate_duration_suffix_stays_attached_to_second_proof() -> None:
+    atoms = atomize_step(
+        recipe_id=1092,
+        source_step_index=9,
+        text="放蒸盘里进行二次发酵，10分钟左右",
+    )
+
+    assert [atom.text for atom in atoms] == ["放蒸盘里", "进行二次发酵，10分钟左右"]
+    assert atoms[1].explicit_duration_seconds == 600
+    assert is_passive_wait_text(atoms[1].text)
+
+
+def test_timed_cold_water_soak_is_passive() -> None:
+    atom = atomize_step(
+        recipe_id=1822,
+        source_step_index=1,
+        text="干荷叶用冷水泡10分钟",
+    )[0]
+
+    assert atom.explicit_duration_seconds == 600
+    assert is_passive_wait_text(atom.text)
+
+
+def test_chinese_ten_minutes_is_explicit_duration() -> None:
+    assert parse_explicit_duration("腌制十分钟") == 600
+
+
+def test_completed_fermentation_followed_by_manual_work_is_not_passive() -> None:
+    assert not is_passive_wait_text("把发酵好的面团揉面排气2分钟")
+    assert not is_passive_wait_text("发酵好的面团拉开里面如海绵")
+
+
+def test_prepared_ingredient_adjective_is_not_split_as_a_new_wait() -> None:
+    atoms = atomize_step(
+        recipe_id=1139,
+        source_step_index=6,
+        text="放上腌制好的带子",
+    )
+
+    assert [atom.text for atom in atoms] == ["放上腌制好的带子"]
+    assert not is_passive_wait_text(atoms[0].text)
+
+
+def test_shape_commentary_is_non_task() -> None:
+    assert is_non_task_text("发酵好后不至于变成没有嘴的小胖子")
+    assert is_non_task_text("影响造型")
+    assert is_non_task_text("还要移位，影响造型")
+
+
+def test_bare_proof_start_and_condition_are_passive() -> None:
+    assert is_passive_wait_text("进行发酵")
+    assert is_passive_wait_text("等面团大约膨胀到1.5倍")
+    assert is_passive_wait_text("面粉发酵约2倍大时")
+    assert is_passive_wait_text(
+        "进行发酵，发酵2.5倍大小，用手指戳一个洞不回缩，面团发酵好"
+    )
+
+
+def test_wait_completion_then_manual_work_is_split() -> None:
+    atoms = atomize_step(
+        recipe_id=860,
+        source_step_index=1,
+        text="用纯净水泡发后顺纹理撕开",
+    )
+
+    assert [atom.text for atom in atoms] == ["用纯净水泡发", "顺纹理撕开"]
+    assert is_passive_wait_text(atoms[0].text)
+    assert not is_passive_wait_text(atoms[1].text)
+
+
+def test_timed_wait_then_manual_work_is_split_without_losing_duration() -> None:
+    atoms = atomize_step(
+        recipe_id=675,
+        source_step_index=2,
+        text="浸泡2小时取出切块即可食用",
+    )
+
+    assert [atom.text for atom in atoms] == ["浸泡2小时", "取出切块即可食用"]
+    assert atoms[0].explicit_duration_seconds == 7200
+    assert is_passive_wait_text(atoms[0].text)
+    assert atoms[1].explicit_duration_seconds is None
+
+
+def test_duration_only_suffix_is_attached_to_preceding_active_task() -> None:
+    atoms = atomize_step(
+        recipe_id=65,
+        source_step_index=3,
+        text="放入鸡胸肉煎至两面微黄，约2min",
+    )
+
+    assert [atom.text for atom in atoms] == ["放入鸡胸肉煎至两面微黄，约2min"]
+    assert atoms[0].explicit_duration_seconds == 120
+
+
+def test_device_completion_wait_is_not_forced_to_counter_passive() -> None:
+    assert not is_passive_wait_text("待烹饪结束取出")
+    assert not is_passive_wait_text("预热结束后，将蒸烤盘放入第2层")
+
+
+def test_device_loading_and_unattended_run_are_separate_without_explicit_time() -> None:
+    atoms = atomize_step(
+        recipe_id=305,
+        source_step_index=6,
+        text="将炖盅放入一体机下层，开始蒸制",
+    )
+
+    assert [atom.text for atom in atoms] == ["将炖盅放入一体机下层", "开始蒸制"]
+    assert not is_passive_wait_text(atoms[1].text)
+
+
+def test_consecutive_setup_clauses_after_proof_remain_one_device_context() -> None:
+    atoms = atomize_step(
+        recipe_id=348,
+        source_step_index=9,
+        text=(
+            "将花卷摆在蒸格上进行二次发酵，放入智能烹饪设备第2层，"
+            "开启电源，取出水箱加满水，选择开始烹饪，按屏幕提示操作"
+        ),
+    )
+
+    assert [atom.text for atom in atoms] == [
+        "将花卷摆在蒸格上",
+        "进行二次发酵",
+        "放入智能烹饪设备第2层，开启电源，取出水箱加满水，选择开始烹饪，按屏幕提示操作",
+    ]
+
+
+def test_reviewed_semantic_split_does_not_invalidate_unreviewed_recipe_atoms() -> None:
+    atoms = atomize_step(
+        recipe_id=1,
+        source_step_index=9,
+        text="放蒸盘里进行二次发酵，10分钟左右",
+    )
+
+    assert [atom.text for atom in atoms] == ["放蒸盘里进行二次发酵", "10分钟左右"]
+
+
+def test_reviewed_parser_and_non_task_fix_do_not_change_unreviewed_atom_hash_inputs() -> None:
+    legacy_completion = atomize_step(
+        recipe_id=1,
+        source_step_index=3,
+        text="烹饪结束后取出食材，切片",
+    )
+    legacy_english_duration = atomize_step(
+        recipe_id=1,
+        source_step_index=4,
+        text="煎至两面微黄，约2min",
+    )
+
+    assert legacy_completion[0].explicit_duration_seconds == 0
+    assert legacy_english_duration[0].explicit_duration_seconds is None

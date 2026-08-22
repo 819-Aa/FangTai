@@ -15,6 +15,10 @@ from pydantic import BaseModel, ConfigDict
 from food_agent_v2.b1.consumer_views import RecipeStepBindingView
 from food_agent_v2.b1.schemas import StepAtom
 from food_agent_v2.b1.step_atomizer import atomize_recipe_steps
+from food_agent_v2.b1.time_review_decisions import (
+    TimeReviewDecision,
+    apply_time_review_decisions,
+)
 from food_agent_v2.core.paths import CLEANED_DIR, CLEANED_RECIPES, PIPELINE_REPORTS_DIR
 
 _NUMBERED_STEP_RE = re.compile(r"(?:第\s*\d+\s*步|步骤\s*\d+)\s*[：:]\s*")
@@ -46,6 +50,8 @@ def split_steps(steps_raw: str) -> list[str]:
 
 def build_step_profiles_from_views(
     views: tuple[RecipeStepBindingView, ...],
+    *,
+    time_decisions: tuple[TimeReviewDecision, ...] = (),
 ) -> tuple[list[RecipeStepAtomProfile], dict]:
     """把同一构建的步骤绑定视图转换为待补全的原子步骤画像。"""
     profiles: list[RecipeStepAtomProfile] = []
@@ -56,6 +62,11 @@ def build_step_profiles_from_views(
         atoms = atomize_recipe_steps(
             recipe_id=view.recipe_id,
             steps=((step.step_index, step.raw_text) for step in view.steps),
+        )
+        atoms = apply_time_review_decisions(
+            recipe_id=view.recipe_id,
+            atoms=atoms,
+            decisions=time_decisions,
         )
         locked_count += sum(atom.duration_locked for atom in atoms)
         unlocked_count += sum(not atom.duration_locked for atom in atoms)

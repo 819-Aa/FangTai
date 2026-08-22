@@ -73,6 +73,15 @@ class StepAtom(BaseModel):
     text: str
     explicit_duration_seconds: int | None
     duration_locked: bool
+    reviewed_task_type: Literal[
+        "manual",
+        "attended_equipment",
+        "unattended_equipment",
+        "passive",
+        "non_task",
+    ] | None = None
+    reviewed_resources: tuple[str, ...] | None = None
+    reviewed_depends_on: tuple[str, ...] | None = None
 
     @model_validator(mode="after")
     def validate_explicit_duration(self) -> StepAtom:
@@ -84,6 +93,13 @@ class StepAtom(BaseModel):
             raise ValueError("显式时长不得为负")
         if self.duration_locked != (self.explicit_duration_seconds is not None):
             raise ValueError("duration_locked 必须与显式时长是否存在一致")
+        if (self.reviewed_task_type is None) != (self.reviewed_resources is None):
+            raise ValueError("审核任务类型与资源必须同时存在或同时为空")
+        if self.reviewed_depends_on is not None:
+            if self.atom_id in self.reviewed_depends_on:
+                raise ValueError("审核依赖不得指向自身")
+            if len(set(self.reviewed_depends_on)) != len(self.reviewed_depends_on):
+                raise ValueError("审核依赖不得重复")
         return self
 
 

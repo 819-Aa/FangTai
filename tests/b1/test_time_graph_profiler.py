@@ -219,6 +219,43 @@ def test_known_non_task_atom_overrides_model_task_type_duration_and_resources() 
     assert profile.step_tasks[0].resources == ()
 
 
+def test_locked_zero_is_non_task_authority_even_if_classifier_rules_evolve() -> None:
+    atom = StepAtom(
+        atom_id="a-legacy-finish",
+        source_step_index=1,
+        text="烹饪结束后取出鸡胸肉，起锅热油",
+        explicit_duration_seconds=0,
+        duration_locked=True,
+    )
+    generator = FakeStructuredModel(
+        "generator-v1",
+        {
+            "tasks": [
+                {
+                    "atom_id": atom.atom_id,
+                    "duration_seconds": 30,
+                    "task_type": "manual",
+                    "resources": ["cook"],
+                    "depends_on": [],
+                }
+            ]
+        },
+    )
+    verifier = FakeStructuredModel("verifier-v1", {"issues": []})
+
+    profile = profile_recipe_time_graph(
+        recipe_id=1,
+        recipe_name="旧缓存兼容",
+        atoms=(atom,),
+        model=generator,
+        verifier=verifier,
+        cache=TimeGraphCache(),
+    )
+
+    assert profile.step_tasks[0].task_type == "non_task"
+    assert profile.step_tasks[0].duration_seconds == 0
+
+
 def test_known_passive_wait_overrides_invalid_equipment_resource_semantics() -> None:
     atom = StepAtom(
         atom_id="a-ferment",
@@ -254,6 +291,57 @@ def test_known_passive_wait_overrides_invalid_equipment_resource_semantics() -> 
 
     assert profile.step_tasks[0].task_type == "passive"
     assert profile.step_tasks[0].resources == ("counter",)
+
+
+def test_owner_reviewed_task_semantics_override_model_before_verification() -> None:
+    atoms = _atoms()
+    reviewed_atoms = (
+        atoms[0],
+        atoms[1].model_copy(
+            update={
+                "reviewed_task_type": "manual",
+                "reviewed_resources": ("cook",),
+                "reviewed_depends_on": (),
+            }
+        ),
+        atoms[2].model_copy(
+            update={
+                "reviewed_task_type": "unattended_equipment",
+                "reviewed_resources": ("oven",),
+                "reviewed_depends_on": ("a-place",),
+            }
+        ),
+    )
+    tasks = _valid_tasks()
+    tasks[1].update(
+        task_type="unattended_equipment",
+        resources=["oven"],
+        depends_on=["a-cut"],
+    )
+    tasks[2].update(
+        task_type="manual",
+        resources=["cook"],
+        depends_on=["a-cut"],
+    )
+    generator = FakeStructuredModel("generator-v1", {"tasks": tasks})
+    verifier = FakeStructuredModel("verifier-v1", {"issues": []})
+
+    profile = profile_recipe_time_graph(
+        recipe_id=11,
+        recipe_name="烤蔬菜",
+        atoms=reviewed_atoms,
+        model=generator,
+        verifier=verifier,
+        cache=TimeGraphCache(),
+    )
+
+    assert profile.step_tasks[1].task_type == "manual"
+    assert profile.step_tasks[1].resources == ("cook",)
+    assert profile.step_tasks[1].depends_on == ()
+    assert profile.step_tasks[2].task_type == "unattended_equipment"
+    assert profile.step_tasks[2].resources == ("oven",)
+    assert profile.step_tasks[2].depends_on == ("a-place",)
+    assert verifier.calls[0]["step_tasks"][2]["depends_on"] == ["a-place"]
 
 
 def test_closed_verifier_issue_prevents_ready_profile_and_cache_write() -> None:

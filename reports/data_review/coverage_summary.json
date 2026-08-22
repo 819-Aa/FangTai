@@ -1,0 +1,85 @@
+{
+  "automatic_approvals": 0,
+  "conditions": {
+    "one_of_multiple_defaults": 0
+  },
+  "food_origins": {
+    "candidate_distribution": {
+      "animal": 244,
+      "mixed": 49,
+      "plant": 606,
+      "unknown": 5
+    },
+    "candidate_rows": 904,
+    "duplicate_reference_ids": 0,
+    "invalid_candidate_values": 0,
+    "selected_reference_without_origin_candidate": 0,
+    "status_counts": {
+      "pending": 904
+    }
+  },
+  "nutrition_crosswalk": {
+    "candidate_rows": 2014,
+    "no_candidate_keys": 1392,
+    "non_unique_candidate_keys": 101,
+    "status_counts": {
+      "pending": 2014
+    },
+    "unique_ingredient_form_keys": 1790
+  },
+  "nutrition_references": {
+    "complete_nine_dimension": 6977,
+    "missing_by_nutrient": {
+      "calcium_mg": 191,
+      "carbohydrate_g": 155,
+      "cholesterol_mg": 2116,
+      "energy_kcal": 91,
+      "fat_g": 144,
+      "fiber_g": 1915,
+      "iron_mg": 185,
+      "protein_g": 123,
+      "sodium_mg": 252
+    },
+    "missing_source_url": 0,
+    "structural_zero_candidates": 0,
+    "structural_zero_misuse": 0,
+    "total": 9618,
+    "unknown_food_origin": 9618
+  },
+  "profiles": {
+    "recipe_coverage": 2000,
+    "sensitive_population_tags_not_in_source": 0,
+    "status_counts": {
+      "pending": 2000
+    },
+    "total_candidates": 2000
+  },
+  "quantities": {
+    "duplicate_occurrence_ids": 0,
+    "non_positive_candidates": 0,
+    "over_5000g_candidates": 0,
+    "recipe_coverage": 1501,
+    "status_counts": {
+      "pending": 4372
+    },
+    "total_candidates": 4372,
+    "unknown_unit_occurrences": 0
+  },
+  "time_graphs": {
+    "conflict_codes": {},
+    "conflict_recipes": 0,
+    "eligible_recipes": 1913,
+    "ready_recipes": 1913
+  },
+  "usda_fallback": {
+    "candidate_rows": 1392,
+    "combined_unresolved_keys": 656,
+    "duplicate_ingredient_form_keys": 0,
+    "no_exact_match": 656,
+    "selected_candidates": 736,
+    "selected_unknown_reference_ids": 0,
+    "status_counts": {
+      "pending": 1392
+    }
+  }
+}

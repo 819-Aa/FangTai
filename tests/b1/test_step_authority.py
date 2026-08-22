@@ -2,6 +2,7 @@ from uuid import UUID
 
 from food_agent_v2.b1.consumer_views import RecipeStepBindingView, StructuredStep
 from food_agent_v2.b1.step_time_builder import build_step_profiles_from_views
+from food_agent_v2.b1.time_review_decisions import TimeReviewDecision
 
 
 def _view(*steps: str) -> RecipeStepBindingView:
@@ -36,3 +37,27 @@ def test_missing_duration_remains_unlocked_for_whole_recipe_profiler() -> None:
     atom = profiles[0].atoms[0]
     assert atom.explicit_duration_seconds is None
     assert atom.duration_locked is False
+
+
+def test_step_profile_builder_applies_owner_approved_duration_before_cache_key() -> None:
+    decisions = (
+        TimeReviewDecision(
+            decision_id="d1",
+            recipe_id=7,
+            source_step_index=1,
+            atom_text="开始预热",
+            occurrence=1,
+            action="set_duration",
+            duration_seconds=300,
+            review_status="approved",
+        ),
+    )
+
+    profiles, _ = build_step_profiles_from_views(
+        (_view("开始预热"),),
+        time_decisions=decisions,
+    )
+
+    atom = profiles[0].atoms[0]
+    assert atom.explicit_duration_seconds == 300
+    assert atom.duration_locked is True

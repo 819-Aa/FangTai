@@ -14,7 +14,6 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 
 from food_agent_v2.b1.schemas import StepAtom, StepTask
 from food_agent_v2.b1.step_atomizer import (
-    is_non_task_text,
     is_passive_wait_text,
     ordered_atoms_hash,
 )
@@ -345,7 +344,9 @@ def _materialize_tasks(
     tasks: list[StepTask] = []
     for atom in atoms:
         candidate = candidate_by_id[atom.atom_id]
-        known_non_task = is_non_task_text(atom.text)
+        known_non_task = (
+            atom.duration_locked and atom.explicit_duration_seconds == 0
+        )
         known_passive = not known_non_task and is_passive_wait_text(atom.text)
         duration = 0 if known_non_task else (
             atom.explicit_duration_seconds
@@ -355,10 +356,14 @@ def _materialize_tasks(
         task_type = (
             "non_task"
             if known_non_task
+            else atom.reviewed_task_type
+            if atom.reviewed_task_type is not None
             else "passive" if known_passive else candidate.task_type
         )
         if known_non_task:
             resources = ()
+        elif atom.reviewed_resources is not None:
+            resources = atom.reviewed_resources
         elif known_passive:
             resources = (
                 ("fridge",)
@@ -373,7 +378,11 @@ def _materialize_tasks(
             "duration_seconds": duration,
             "task_type": task_type,
             "resources": resources,
-            "depends_on": candidate.depends_on,
+            "depends_on": (
+                atom.reviewed_depends_on
+                if atom.reviewed_depends_on is not None
+                else candidate.depends_on
+            ),
         }
         pre_issues = _raw_task_issues(atom, raw_task)
         if pre_issues:
@@ -421,7 +430,7 @@ def _raw_task_issues(
     if not isinstance(duration, int) or isinstance(duration, bool):
         issues.append(("INVALID_DURATION", atom_ids))
         return tuple(issues)
-    known_non_task = is_non_task_text(atom.text)
+    known_non_task = atom.duration_locked and atom.explicit_duration_seconds == 0
     if (task_type == "non_task") != known_non_task:
         issues.append(("NON_TASK_CLASSIFICATION_MISMATCH", atom_ids))
     if task_type == "non_task":

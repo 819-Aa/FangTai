@@ -1,0 +1,22 @@
+recipe_id,recipe_name,root_cause,proposed_fix,proposed_single_values_seconds,decision_group,review_status
+65,嫩蒸鸡胸肉,复合步骤以烹饪结束开头而被误判为non_task且min未识别,拆分取出煎制和切片并识别2min;设备预设单独建任务,device_cook=1800;sear=120,P1+P4,approved
+269,空气炸芝麻汤圆,12分钟被拆离预热动作且预热与裹糠依赖错误,把12分钟绑定为空气炸烹饪;预热单独估时;裹糠可在预热时进行,preheat=300;air_fry=720,P1+P4,approved
+305,南瓜百合汤,开始蒸制和按屏幕操作没有形成独立设备等待,把装载和加水保留为manual;增加steamer任务,steam=1800,P4,approved
+348,南瓜花卷馒头,揉面与一次发酵及整形与二次发酵混在同一原子,拆成manual和passive;缺失发酵及蒸制使用统一默认,first_proof=3600;second_proof=1800;steam=1200,P1+P3+P4,approved
+408,芝士烤馒头,原始步骤连续重复且烤制预设无时长,原始CSV不改;时间图忽略第二个完全重复步骤;补烤制任务,oven=600,P2+P4,approved
+621,无米“炒饭”,7分钟烤制内嵌一次翻拌且平底锅任务可并行,将烤制拆成前段翻拌后段;平底锅任务与烤箱并行但共享cook,oven_before_flip=210;flip=30;oven_after_flip=210;pan_fry=300,P5,approved
+659,开心果香草嫩烤小羊排,复合步骤以烹饪结束开头被误判为non_task且设备预设无时长,拆分设备烹饪煎制收汁和装盘;保留约2min煎制,device_cook=1800;sear=120;sauce_reduce_and_plate=480,P1+P4,approved
+675,澳洲红酒香梨,同一步骤重复盖锅盖且浸泡和切块混在一个原子,原始CSV不改;时间图忽略第二次连续重复盖锅盖;拆分浸泡和切块,cook=1200;soak=7200;cut=120,P1+P2,approved
+718,枣花馍馍,一次发酵完成条件和后续揉面整形混在同一原子,拆成passive与manual;显式蒸15分钟焖5分钟不变,first_proof=3600;steam=900;rest=300,P1+P3,approved
+840,胡萝卜羊肉包子,揉面与一次发酵混在同一原子且最终设备预设无时长,拆分manual与passive;显式醒发20分钟不变;补蒸制,first_proof=3600;second_proof=1200;steam=1200,P1+P3+P4,approved
+855,南瓜刺猬馒头,揉面与一次发酵混在同一原子且最终设备预设无时长,拆分manual与passive;显式二发30分钟不变;补蒸制,first_proof=3600;second_proof=1800;steam=1200,P1+P3+P4,approved
+860,鸡蛋牛奶炖燕窝,燕窝泡发未给单值时长,泡发作为counter passive并采用单值;显式蒸30分钟不变,soak=14400;steam=1800,P5,approved
+885,云朵馒头,造型与发酵至1.5倍混在同一原子且最终设备预设无时长,拆分manual与passive;补蒸制,proof=1800;steam=1200,P1+P3+P4,approved
+1039,酥皮蛋挞,9分满被误读成9分钟且预热与正式烤制边界缺失,禁止分满触发时长解析;倒液保留manual;预热和烤制分别建任务,fill=120;preheat=600;bake=1200,P1+P4,approved
+1092,蜜豆卷馒头,静止错别字未识别且揉面与一次发酵混在同一原子,识别静止为passive并拆分揉面和发酵;显式二发10分钟不变;补蒸制,yeast_rest=120;first_proof=3600;second_proof=600;steam=1200,P1+P3+P4,approved
+1139,芝士焗带子,设备名称碎片被当成任务且10分钟烹饪参数与预热边界不清,设备名称并回设置上下文;10分钟绑定正式烤制;预热单独估时,marinate=600;preheat=300;bake=600,P1+P4,approved
+1246,面包超人馒头,造型与发酵至1.5倍混在同一原子且最终设备预设无时长,拆分manual与passive;补蒸制,proof=1800;steam=1200,P1+P3+P4,approved
+1449,驴打滚,冷藏结束后的取出擀面被整体误判为fridge passive,把冷藏结束后识别为状态转换;该原子保持manual/cook/counter,post_chill_roll=600,P1,approved
+1814,肉末粉丝包,揉面与一次发酵混在同一原子,拆分manual与passive;显式醒发20分钟和蒸18分钟不变,first_proof=3600;second_proof=1200;steam=1080,P1+P3,approved
+1822,荷香叫花鸡,冷水泡10分钟未识别为passive且最终烤制预设无时长,荷叶泡发改为counter passive;补整鸡包面烤制任务,lotus_soak=600;oven=7200,P1+P4,approved
+1944,酒酿馒头,再次醒发与后置用了1小时被拆开且一次发酵至3倍无单值,把1小时绑定二次醒发;一次发酵采用3倍体积默认;补蒸制,first_proof=5400;second_proof=3600;steam=1200,P1+P3+P4,approved
