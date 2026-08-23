@@ -30,7 +30,6 @@ _FUZZY_TOKENS: tuple[tuple[str, FuzzyTokenClass], ...] = (
     ("若干", "several_count"),
     ("几滴", "few_drops"),
 )
-_COOKING_FAT_MARKERS = ("热锅", "下油", "炒", "煎", "炸", "爆")
 _LIQUID_NAME_MARKERS = ("汤", "水", "汁")
 _COOKING_OIL_IDENTITIES = frozenset({
     "油", "食用油", "植物油", "花生油", "菜籽油", "橄榄油", "玉米油", "大豆油", "葵花籽油", "猪油", "色拉油",
@@ -129,7 +128,7 @@ def derive_nutrition_usage(
     steps: tuple[StructuredStep, ...],
     decisions: NutritionUsageDecisionIndex,
 ) -> NutritionUsageResolution:
-    """Resolve from an effective decision or unambiguous category/bound-step evidence."""
+    """Resolve only effective decisions and conservative category evidence."""
     decision = decisions.get_effective(occurrence.occurrence_id)
     if decision is not None:
         if not _decision_matches(decision, occurrence, identity):
@@ -140,17 +139,7 @@ def derive_nutrition_usage(
             requires_review=False,
         )
 
-    bound_text = "\n".join(
-        step.raw_text
-        for step in steps
-        if occurrence.occurrence_id in step.bound_occurrence_ids
-    )
     if identity.name_canonical in _COOKING_OIL_IDENTITIES:
-        if (
-            occurrence.name_clean == identity.name_canonical
-            and any(marker in bound_text for marker in _COOKING_FAT_MARKERS)
-        ):
-            return NutritionUsageResolution("cooking_fat", True, False)
         return _requires_review()
     if any(marker in occurrence.name_clean for marker in _LIQUID_NAME_MARKERS):
         return _requires_review()

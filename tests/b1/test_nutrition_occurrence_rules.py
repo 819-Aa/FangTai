@@ -64,25 +64,17 @@ def test_fuzzy_token_and_usage_are_closed_and_deterministic() -> None:
     assert resolution.requires_review is False
 
 
-@pytest.mark.parametrize(
-    ("name", "step", "usage_code", "retained_in_dish"),
-    [
-        ("食用油", "热锅下食用油", "cooking_fat", True),
-    ],
-)
-def test_unambiguous_bound_evidence_resolves_usage_code(
-    name: str, step: str, usage_code: str, retained_in_dish: bool
-) -> None:
+def test_late_added_oil_does_not_inherit_heating_from_another_clause() -> None:
     resolution = derive_nutrition_usage(
-        occurrence=_occurrence(name=name),
-        identity=_identity(category="调料", name=name),
-        steps=_bound_steps(step),
+        occurrence=_occurrence(name="油"),
+        identity=_identity(category="调料", name="油"),
+        steps=_bound_steps("鸡肉炒熟后关火，淋入油拌匀"),
         decisions=NutritionUsageDecisionIndex(()),
     )
 
-    assert resolution.usage_code == usage_code
-    assert resolution.retained_in_dish is retained_in_dish
-    assert resolution.requires_review is False
+    assert resolution.usage_code is None
+    assert resolution.retained_in_dish is None
+    assert resolution.requires_review is True
 
 
 def test_liquid_without_occurrence_decision_requires_review_even_when_step_mentions_adding() -> None:
@@ -274,6 +266,23 @@ def test_effective_decision_is_applied_only_when_metadata_matches() -> None:
         decisions=NutritionUsageDecisionIndex((decision,)),
     )
     assert resolution.usage_code == "main"
+    assert resolution.requires_review is False
+
+
+@pytest.mark.parametrize("review_status", ["approved", "modified"])
+def test_matching_effective_decision_resolves_cooking_fat(review_status: str) -> None:
+    decision = NutritionUsageDecision(
+        "1-1", 1, 10, "油", "", "cooking_fat", True, review_status  # type: ignore[arg-type]
+    )
+    resolution = derive_nutrition_usage(
+        occurrence=_occurrence(name="油"),
+        identity=_identity(category="调料", name="油"),
+        steps=_bound_steps("鸡肉炒熟后关火，淋入油拌匀"),
+        decisions=NutritionUsageDecisionIndex((decision,)),
+    )
+
+    assert resolution.usage_code == "cooking_fat"
+    assert resolution.retained_in_dish is True
     assert resolution.requires_review is False
 
 
