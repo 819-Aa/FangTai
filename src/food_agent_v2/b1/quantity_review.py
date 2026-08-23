@@ -12,6 +12,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from food_agent_v2.b1.quantity_normalizer import normalize_quantity
+from food_agent_v2.core.paths import PROJECT_ROOT
 
 _SYSTEM_PROMPT = """你是家庭烹饪食材用量估算器。请基于整道菜的名称、全部待估食材和完整步骤，
 为每个 occurrence_id 估算一个大于 0 的原始食材克重。只估算输入中列出的 occurrence，
@@ -235,8 +236,8 @@ def generate_quantity_candidates(
         estimated = estimates[index]
         for ingredient in context.ingredients:
             grams = Decimal(estimated[ingredient.occurrence_id])
-            if grams <= 0:
-                raise ValueError(f"候选克重必须大于零: {ingredient.occurrence_id}")
+            if not _is_finite_positive_decimal(grams):
+                raise ValueError(f"候选克重必须为有限正数: {ingredient.occurrence_id}")
             candidates.append(
                 QuantityReviewCandidate(
                     occurrence_id=ingredient.occurrence_id,
@@ -263,13 +264,25 @@ def _validate_estimate(context, estimated) -> dict[str, Decimal]:
     expected_ids = {item.occurrence_id for item in context.ingredients}
     if set(normalized) != expected_ids:
         raise ValueError(f"整菜用量估算未完整覆盖 occurrence: recipe {context.recipe_id}")
-    if any(value <= 0 for value in normalized.values()):
-        raise ValueError(f"候选克重必须大于零: recipe {context.recipe_id}")
+    if any(not _is_finite_positive_decimal(value) for value in normalized.values()):
+        raise ValueError(f"候选克重必须为有限正数: recipe {context.recipe_id}")
     return normalized
 
 
 def write_quantity_candidates(candidates, output_path: Path) -> None:
     path = Path(output_path)
+    if _is_formal_measure_rule_path(path):
+        raise ValueError("数量候选不得写入正式计量规则文件")
+    candidate_rows = tuple(candidates)
+    for item in candidate_rows:
+        if item.review_status != "pending":
+            raise ValueError("数量候选必须保持 pending")
+        if not _is_finite_positive_decimal(item.candidate_grams):
+            raise ValueError("候选克重必须为有限正数")
+        if item.decision_grams is not None and not _is_finite_positive_decimal(
+            item.decision_grams
+        ):
+            raise ValueError("决定克重必须为有限正数")
     path.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = (
         "occurrence_id",
@@ -292,26 +305,53 @@ def write_quantity_candidates(candidates, output_path: Path) -> None:
     with path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
-        for item in candidates:
+        for item in candidate_rows:
             writer.writerow(
                 {
-                    "occurrence_id": item.occurrence_id,
+                    "occurrence_id": _safe_csv_text(item.occurrence_id),
                     "recipe_id": item.recipe_id,
-                    "recipe_name": item.recipe_name,
+                    "recipe_name": _safe_csv_text(item.recipe_name),
                     "ingredient_id": item.ingredient_id if item.ingredient_id is not None else "",
-                    "ingredient_name": item.ingredient_name,
-                    "normalized_form": item.normalized_form,
-                    "normalized_unit": item.normalized_unit or "",
-                    "usage_code": item.usage_code or "",
-                    "fuzzy_token_class": item.fuzzy_token_class or "",
-                    "raw_quantity": item.raw_quantity,
-                    "step_context": item.step_context,
-                    "deterministic_calculation": item.deterministic_calculation,
-                    "candidate_basis": item.candidate_basis,
+                    "ingredient_name": _safe_csv_text(item.ingredient_name),
+                    "normalized_form": _safe_csv_text(item.normalized_form),
+                    "normalized_unit": _safe_csv_text(item.normalized_unit),
+                    "usage_code": _safe_csv_text(item.usage_code),
+                    "fuzzy_token_class": _safe_csv_text(item.fuzzy_token_class),
+                    "raw_quantity": _safe_csv_text(item.raw_quantity),
+                    "step_context": _safe_csv_text(item.step_context),
+                    "deterministic_calculation": _safe_csv_text(
+                        item.deterministic_calculation
+                    ),
+                    "candidate_basis": _safe_csv_text(item.candidate_basis),
                     "candidate_grams": str(item.candidate_grams),
                     "decision_grams": (
                         str(item.decision_grams) if item.decision_grams is not None else ""
                     ),
-                    "review_status": item.review_status,
+                    "review_status": _safe_csv_text(item.review_status),
                 }
             )
+
+
+def _is_finite_positive_decimal(value: object) -> bool:
+    return isinstance(value, Decimal) and value.is_finite() and value > 0
+
+
+def _safe_csv_text(value: str | None) -> str:
+    text = value or ""
+    if text.lstrip(" \t\r\n").startswith(("=", "+", "-", "@")):
+        return "'" + text
+    return text
+
+
+def _is_formal_measure_rule_path(path: Path) -> bool:
+    formal = PROJECT_ROOT / "data" / "review" / "ingredient_measure_rules.csv"
+    if path.name.casefold() == formal.name.casefold():
+        return True
+    try:
+        if str(path.resolve(strict=False)).casefold() == str(
+            formal.resolve(strict=False)
+        ).casefold():
+            return True
+        return path.exists() and formal.exists() and path.samefile(formal)
+    except OSError:
+        return True

@@ -1,6 +1,11 @@
+import csv
+from dataclasses import replace
 from decimal import Decimal
 from uuid import UUID
 
+import pytest
+
+import food_agent_v2.b1.quantity_review as quantity_review
 from food_agent_v2.b1.consumer_views import (
     NutritionOccurrenceInput,
     RecipeFact,
@@ -164,3 +169,87 @@ def test_llm_estimator_requests_strict_whole_recipe_json_once() -> None:
     assert result == {"1-1": Decimal("2.5"), "1-2": Decimal("4")}
     assert len(llm.calls) == 1
     assert llm.calls[0][0] == "quantity_estimation"
+
+
+@pytest.mark.parametrize("grams", ("NaN", "Infinity", "-Infinity"))
+def test_model_quantity_candidates_reject_non_finite_grams(grams: str) -> None:
+    class _Estimator:
+        def estimate(self, _context):
+            return {"1-1": Decimal(grams)}
+
+    context = RecipeQuantityReviewContext(
+        recipe_id=1,
+        recipe_name="测试菜",
+        step_context="加入少许盐",
+        ingredients=(_pending("1-1", "盐"),),
+    )
+
+    with pytest.raises(ValueError, match="候选克重必须为有限正数"):
+        generate_quantity_candidates((context,), _Estimator())
+
+
+def test_model_candidate_writer_validates_pending_status_before_truncation(tmp_path) -> None:
+    candidate = generate_quantity_candidates(
+        (
+            RecipeQuantityReviewContext(
+                recipe_id=1,
+                recipe_name="测试菜",
+                step_context="加入少许盐",
+                ingredients=(_pending("1-1", "盐"),),
+            ),
+        ),
+        type("Estimator", (), {"estimate": lambda _self, _context: {"1-1": Decimal("2")}})(),
+    )[0]
+    output = tmp_path / "model-candidates.csv"
+    output.write_text("preserve me", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="pending"):
+        write_quantity_candidates((replace(candidate, review_status="approved"),), output)
+
+    assert output.read_text(encoding="utf-8") == "preserve me"
+
+
+def test_model_candidate_writer_escapes_formula_text_fields(tmp_path) -> None:
+    candidate = generate_quantity_candidates(
+        (
+            RecipeQuantityReviewContext(
+                recipe_id=1,
+                recipe_name="\n@formula",
+                step_context="加入少许盐",
+                ingredients=(_pending("1-1", "盐"),),
+            ),
+        ),
+        type("Estimator", (), {"estimate": lambda _self, _context: {"1-1": Decimal("2")}})(),
+    )[0]
+    output = tmp_path / "model-candidates.csv"
+
+    write_quantity_candidates((candidate,), output)
+
+    with output.open(encoding="utf-8", newline="") as handle:
+        row = next(csv.DictReader(handle))
+    assert row["recipe_name"] == "'\n@formula"
+
+
+def test_model_candidate_writer_refuses_formal_rule_target_before_opening(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setattr(quantity_review, "PROJECT_ROOT", tmp_path)
+    formal = tmp_path / "data" / "review" / "ingredient_measure_rules.csv"
+    formal.parent.mkdir(parents=True)
+    formal.write_text("preserve formal", encoding="utf-8")
+    candidate = generate_quantity_candidates(
+        (
+            RecipeQuantityReviewContext(
+                recipe_id=1,
+                recipe_name="测试菜",
+                step_context="加入少许盐",
+                ingredients=(_pending("1-1", "盐"),),
+            ),
+        ),
+        type("Estimator", (), {"estimate": lambda _self, _context: {"1-1": Decimal("2")}})(),
+    )[0]
+
+    with pytest.raises(ValueError, match="正式计量规则文件"):
+        write_quantity_candidates((candidate,), formal)
+
+    assert formal.read_text(encoding="utf-8") == "preserve formal"

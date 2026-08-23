@@ -1,11 +1,16 @@
+import csv
+import os
+from dataclasses import replace
 from decimal import Decimal
 
 import pytest
 
+import food_agent_v2.b1.quantity_rule_review as quantity_rule_review
 from food_agent_v2.b1.quantity_normalizer import MeasureRule, MeasureRuleIndex
 from food_agent_v2.b1.quantity_review import QuantityReviewCandidate
 from food_agent_v2.b1.quantity_rule_review import (
     generate_quantity_rule_candidates,
+    nearest_rank,
     write_quantity_rule_candidates,
 )
 
@@ -19,6 +24,7 @@ def _candidate(
     unit: str | None = None,
     usage: str = "supporting",
     fuzzy: str | None = "small_amount",
+    raw_quantity: str | None = None,
 ) -> QuantityReviewCandidate:
     return QuantityReviewCandidate(
         occurrence_id=f"r-{ingredient_id}-{form}-{unit}-{usage}-{fuzzy}-{value}",
@@ -30,7 +36,9 @@ def _candidate(
         normalized_unit=unit,
         usage_code=usage,
         fuzzy_token_class=fuzzy,
-        raw_quantity="少许" if fuzzy else f"1{unit or ''}",
+        raw_quantity=("少许" if fuzzy else f"1{unit or ''}")
+        if raw_quantity is None
+        else raw_quantity,
         step_context="",
         deterministic_calculation="not_available",
         candidate_basis="whole_recipe_context_model",
@@ -131,3 +139,137 @@ def test_rule_candidate_writer_refuses_the_formal_measure_rule_filename(tmp_path
 
     with pytest.raises(ValueError, match="正式计量规则文件"):
         write_quantity_rule_candidates(candidates, tmp_path / "ingredient_measure_rules.csv")
+
+
+@pytest.mark.parametrize("bad_value", ("0", "-1", "NaN", "Infinity", "-Infinity"))
+def test_rule_candidates_reject_non_positive_or_non_finite_model_grams(
+    bad_value: str,
+) -> None:
+    with pytest.raises(ValueError, match="candidate_grams"):
+        generate_quantity_rule_candidates(
+            (_candidate(bad_value),), MeasureRuleIndex(())
+        )
+
+
+def test_nearest_rank_rejects_non_finite_percentile() -> None:
+    with pytest.raises(ValueError, match="分位数"):
+        nearest_rank((Decimal("1"),), Decimal("NaN"))
+
+
+def test_count_range_uses_its_validated_midpoint() -> None:
+    result = generate_quantity_rule_candidates(
+        (
+            _candidate(
+                "150",
+                fuzzy=None,
+                unit="个",
+                raw_quantity="10-20个",
+            ),
+        ),
+        MeasureRuleIndex(()),
+    )
+
+    assert result[0].to_grams == Decimal("10")
+
+
+def test_count_expression_with_trailing_measurement_fails_closed() -> None:
+    result = generate_quantity_rule_candidates(
+        (
+            _candidate(
+                "2",
+                fuzzy=None,
+                unit="个",
+                raw_quantity="1个2克",
+            ),
+        ),
+        MeasureRuleIndex(()),
+    )
+
+    assert result == ()
+
+
+def test_writer_checks_every_status_before_truncating_existing_output(tmp_path) -> None:
+    output = tmp_path / "review.csv"
+    output.write_text("preserve me", encoding="utf-8")
+    candidate = generate_quantity_rule_candidates(
+        tuple(_candidate("2") for _ in range(5)), MeasureRuleIndex(())
+    )[0]
+
+    with pytest.raises(ValueError, match="pending"):
+        write_quantity_rule_candidates((replace(candidate, review_status="approved"),), output)
+
+    assert output.read_text(encoding="utf-8") == "preserve me"
+
+
+def test_writer_refuses_case_variant_of_formal_rule_file_before_opening(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setattr(quantity_rule_review, "PROJECT_ROOT", tmp_path)
+    formal = tmp_path / "data" / "review" / "ingredient_measure_rules.csv"
+    formal.parent.mkdir(parents=True)
+    formal.write_text("preserve formal", encoding="utf-8")
+    candidates = generate_quantity_rule_candidates(
+        tuple(_candidate("2") for _ in range(5)), MeasureRuleIndex(())
+    )
+
+    with pytest.raises(ValueError, match="正式计量规则文件"):
+        write_quantity_rule_candidates(
+            candidates, formal.with_name("INGREDIENT_MEASURE_RULES.CSV")
+        )
+
+    assert formal.read_text(encoding="utf-8") == "preserve formal"
+
+
+def test_writer_refuses_hard_link_to_formal_rule_file_before_opening(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setattr(quantity_rule_review, "PROJECT_ROOT", tmp_path)
+    formal = tmp_path / "data" / "review" / "ingredient_measure_rules.csv"
+    formal.parent.mkdir(parents=True)
+    formal.write_text("preserve formal", encoding="utf-8")
+    hard_link = tmp_path / "rule-alias.csv"
+    os.link(formal, hard_link)
+    candidates = generate_quantity_rule_candidates(
+        tuple(_candidate("2") for _ in range(5)), MeasureRuleIndex(())
+    )
+
+    with pytest.raises(ValueError, match="正式计量规则文件"):
+        write_quantity_rule_candidates(candidates, hard_link)
+
+    assert formal.read_text(encoding="utf-8") == "preserve formal"
+
+
+def test_writer_refuses_resolved_symlink_to_formal_rule_file_before_opening(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setattr(quantity_rule_review, "PROJECT_ROOT", tmp_path)
+    formal = tmp_path / "data" / "review" / "ingredient_measure_rules.csv"
+    formal.parent.mkdir(parents=True)
+    formal.write_text("preserve formal", encoding="utf-8")
+    alias = tmp_path / "resolved-alias.csv"
+    try:
+        alias.symlink_to(formal)
+    except OSError as exc:
+        pytest.skip(f"symlink creation unavailable: {exc}")
+    candidates = generate_quantity_rule_candidates(
+        tuple(_candidate("2") for _ in range(5)), MeasureRuleIndex(())
+    )
+
+    with pytest.raises(ValueError, match="正式计量规则文件"):
+        write_quantity_rule_candidates(candidates, alias)
+
+    assert formal.read_text(encoding="utf-8") == "preserve formal"
+
+
+def test_writer_escapes_formula_text_fields(tmp_path) -> None:
+    candidate = generate_quantity_rule_candidates(
+        tuple(_candidate("2", ingredient_name="\t=1+1") for _ in range(5)),
+        MeasureRuleIndex(()),
+    )[0]
+    output = tmp_path / "review.csv"
+
+    write_quantity_rule_candidates((candidate,), output)
+
+    with output.open(encoding="utf-8", newline="") as handle:
+        row = next(csv.DictReader(handle))
+    assert row["ingredient_name"] == "'\t=1+1"

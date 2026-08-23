@@ -12,6 +12,7 @@ from typing import Literal
 
 from food_agent_v2.b1.quantity_normalizer import MeasureRuleIndex
 from food_agent_v2.b1.quantity_review import QuantityReviewCandidate
+from food_agent_v2.core.paths import PROJECT_ROOT
 
 QuantityRuleType = Literal["unit_weight", "density", "fuzzy_single_value"]
 
@@ -30,8 +31,13 @@ _UNIT_ALIASES = {
     "l": "升",
     "公斤": "千克",
 }
-_AMOUNT_PATTERN = re.compile(
-    r"^(?:大约|约)?(?P<amount>\d+(?:\.\d+)?(?:/\d+(?:\.\d+)?)?|半|一|二|两)"
+_QUANTITY_EXPRESSION = re.compile(
+    r"^(?:大约|约)?"
+    r"(?P<first>\d+(?:\.\d+)?(?:/\d+(?:\.\d+)?)?|半|一|二|两)"
+    r"(?:(?:-|–|—|~|～|至|到)"
+    r"(?P<second>\d+(?:\.\d+)?(?:/\d+(?:\.\d+)?)?))?"
+    r"(?P<unit>千克|公斤|毫升|kg|ml|克|升|l|个|片|根|勺)(?:左右)?$",
+    re.IGNORECASE,
 )
 
 
@@ -65,6 +71,7 @@ def coefficient_of_variation(values: tuple[Decimal, ...]) -> Decimal:
     """Return sample-CV, retaining Decimal precision throughout."""
     if len(values) < 2:
         raise ValueError("至少需要两个样本计算变异系数")
+    _validate_positive_values(values, "统计样本")
     mean = sum(values, Decimal("0")) / Decimal(len(values))
     if mean <= 0:
         raise ValueError("样本均值必须大于零")
@@ -78,8 +85,9 @@ def nearest_rank(values: tuple[Decimal, ...], p: Decimal) -> Decimal:
     """Return a nearest-rank percentile without converting to float."""
     if not values:
         raise ValueError("空样本不能计算分位数")
-    if not Decimal("0") < p <= Decimal("1"):
+    if not isinstance(p, Decimal) or not p.is_finite() or not Decimal("0") < p <= Decimal("1"):
         raise ValueError("分位数必须在 (0, 1] 内")
+    _validate_positive_values(values, "统计样本")
     ordered = sorted(values)
     rank = (p * Decimal(len(ordered))).to_integral_value(rounding=ROUND_CEILING)
     return ordered[max(1, int(rank)) - 1]
@@ -100,6 +108,7 @@ def generate_quantity_rule_candidates(
         defaultdict(set)
     )
     for candidate in candidates:
+        _validate_model_candidate(candidate)
         observation = _rule_observation(candidate)
         if observation is None:
             continue
@@ -149,8 +158,11 @@ def write_quantity_rule_candidates(
 ) -> None:
     """Write review data only, refusing any status that could become effective."""
     path = Path(output_path)
-    if path.name == "ingredient_measure_rules.csv":
+    if _is_formal_measure_rule_path(path):
         raise ValueError("数量规则候选不得写入正式计量规则文件")
+    candidate_rows = tuple(candidates)
+    for candidate in candidate_rows:
+        _validate_output_candidate(candidate)
     path.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = (
         "rule_type",
@@ -177,18 +189,18 @@ def write_quantity_rule_candidates(
     with path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
-        for candidate in candidates:
-            if candidate.review_status != "pending":
-                raise ValueError("数量规则候选必须保持 pending")
+        for candidate in candidate_rows:
             writer.writerow(
                 {
-                    "rule_type": candidate.rule_type,
+                    "rule_type": _safe_csv_text(candidate.rule_type),
                     "ingredient_id": candidate.ingredient_id,
-                    "ingredient_name": candidate.ingredient_name,
-                    "normalized_form": candidate.normalized_form,
-                    "normalized_unit": candidate.normalized_unit or "",
-                    "usage_code": candidate.usage_code or "",
-                    "fuzzy_token_class": candidate.fuzzy_token_class or "",
+                    "ingredient_name": _safe_csv_text(candidate.ingredient_name),
+                    "normalized_form": _safe_csv_text(candidate.normalized_form),
+                    "normalized_unit": _safe_csv_text(candidate.normalized_unit),
+                    "usage_code": _safe_csv_text(candidate.usage_code),
+                    "fuzzy_token_class": _safe_csv_text(
+                        candidate.fuzzy_token_class
+                    ),
                     "to_grams": _decimal_text(candidate.to_grams),
                     "mass_density_g_per_ml": _decimal_text(
                         candidate.mass_density_g_per_ml
@@ -202,8 +214,10 @@ def write_quantity_rule_candidates(
                     "iqr": candidate.iqr,
                     "has_iqr_outlier": str(candidate.has_iqr_outlier).lower(),
                     "is_stable": str(candidate.is_stable).lower(),
-                    "exception_codes": "|".join(candidate.exception_codes),
-                    "review_status": "pending",
+                    "exception_codes": _safe_csv_text(
+                        "|".join(candidate.exception_codes)
+                    ),
+                    "review_status": _safe_csv_text(candidate.review_status),
                 }
             )
 
@@ -290,8 +304,11 @@ def _rule_observation(
     unit = _normalized_unit(candidate.normalized_unit)
     if candidate.fuzzy_token_class is not None and candidate.usage_code is not None:
         return "fuzzy_single_value", candidate.candidate_grams
-    amount = _quantity_amount(candidate.raw_quantity)
-    if amount is None:
+    parsed = _quantity_amount(candidate.raw_quantity)
+    if parsed is None:
+        return None
+    amount, parsed_unit = parsed
+    if unit != parsed_unit:
         return None
     if unit in _COUNT_UNITS:
         return "unit_weight", candidate.candidate_grams / amount
@@ -301,19 +318,35 @@ def _rule_observation(
     return None
 
 
-def _quantity_amount(raw_quantity: str) -> Decimal | None:
-    match = _AMOUNT_PATTERN.match((raw_quantity or "").strip())
+def _quantity_amount(raw_quantity: str) -> tuple[Decimal, str] | None:
+    match = _QUANTITY_EXPRESSION.fullmatch((raw_quantity or "").strip())
     if match is None:
         return None
-    text = match.group("amount")
-    chinese = {"半": Decimal("0.5"), "一": Decimal("1"), "二": Decimal("2"), "两": Decimal("2")}
-    if text in chinese:
-        return chinese[text]
+    first = _parse_quantity_number(match.group("first"))
+    second_text = match.group("second")
+    second = _parse_quantity_number(second_text) if second_text is not None else None
+    if first is None or (second_text is not None and second is None):
+        return None
+    if first <= 0 or (second is not None and (second <= 0 or first > second)):
+        return None
+    amount = first if second is None else (first + second) / Decimal("2")
+    return amount, _normalized_unit(match.group("unit")) or ""
+
+
+def _parse_quantity_number(value: str) -> Decimal | None:
+    chinese = {
+        "半": Decimal("0.5"),
+        "一": Decimal("1"),
+        "二": Decimal("2"),
+        "两": Decimal("2"),
+    }
+    if value in chinese:
+        return chinese[value]
     try:
-        if "/" in text:
-            numerator, denominator = text.split("/", 1)
+        if "/" in value:
+            numerator, denominator = value.split("/", 1)
             return Decimal(numerator) / Decimal(denominator)
-        return Decimal(text)
+        return Decimal(value)
     except (InvalidOperation, ZeroDivisionError):
         return None
 
@@ -350,3 +383,89 @@ def _sort_group_key(key: tuple) -> tuple[str, ...]:
 
 def _decimal_text(value: Decimal | None) -> str:
     return "" if value is None else str(value)
+
+
+def _validate_model_candidate(candidate: QuantityReviewCandidate) -> None:
+    if type(candidate.ingredient_id) is not int or candidate.ingredient_id < 1:
+        raise ValueError("ingredient_id 必须为正整数")
+    _require_positive_decimal(candidate.candidate_grams, "candidate_grams")
+
+
+def _validate_output_candidate(candidate: QuantityRuleCandidate) -> None:
+    if candidate.review_status != "pending":
+        raise ValueError("数量规则候选必须保持 pending")
+    if candidate.rule_type not in {
+        "unit_weight",
+        "density",
+        "fuzzy_single_value",
+    }:
+        raise ValueError("数量规则候选 rule_type 非法")
+    if type(candidate.ingredient_id) is not int or candidate.ingredient_id < 1:
+        raise ValueError("数量规则候选 ingredient_id 非法")
+    _require_positive_decimal(candidate.mean, "mean")
+    _require_positive_decimal(candidate.q1, "q1")
+    _require_positive_decimal(candidate.q3, "q3")
+    _require_nonnegative_decimal(candidate.sample_standard_deviation, "sample_standard_deviation")
+    _require_nonnegative_decimal(candidate.coefficient_of_variation, "coefficient_of_variation")
+    _require_nonnegative_decimal(candidate.iqr, "iqr")
+    if candidate.sample_count < 1:
+        raise ValueError("数量规则候选 sample_count 非法")
+    if candidate.rule_type == "density":
+        if candidate.to_grams is not None:
+            raise ValueError("density 候选不得包含 to_grams")
+        _require_positive_decimal(
+            candidate.mass_density_g_per_ml, "mass_density_g_per_ml"
+        )
+    else:
+        if candidate.mass_density_g_per_ml is not None:
+            raise ValueError("非 density 候选不得包含 mass_density_g_per_ml")
+        _require_positive_decimal(candidate.to_grams, "to_grams")
+    for value in (
+        candidate.rule_type,
+        candidate.ingredient_name,
+        candidate.normalized_form,
+        candidate.normalized_unit,
+        candidate.usage_code,
+        candidate.fuzzy_token_class,
+        candidate.review_status,
+    ):
+        if value is not None and not isinstance(value, str):
+            raise ValueError("数量规则候选文本字段非法")
+
+
+def _validate_positive_values(values: tuple[Decimal, ...], name: str) -> None:
+    for value in values:
+        _require_positive_decimal(value, name)
+
+
+def _require_positive_decimal(value: object, name: str) -> Decimal:
+    if not isinstance(value, Decimal) or not value.is_finite() or value <= 0:
+        raise ValueError(f"{name} 必须为有限正 Decimal")
+    return value
+
+
+def _require_nonnegative_decimal(value: object, name: str) -> Decimal:
+    if not isinstance(value, Decimal) or not value.is_finite() or value < 0:
+        raise ValueError(f"{name} 必须为有限非负 Decimal")
+    return value
+
+
+def _is_formal_measure_rule_path(path: Path) -> bool:
+    formal = PROJECT_ROOT / "data" / "review" / "ingredient_measure_rules.csv"
+    if path.name.casefold() == formal.name.casefold():
+        return True
+    try:
+        if str(path.resolve(strict=False)).casefold() == str(
+            formal.resolve(strict=False)
+        ).casefold():
+            return True
+        return path.exists() and formal.exists() and path.samefile(formal)
+    except OSError:
+        return True
+
+
+def _safe_csv_text(value: str | None) -> str:
+    text = value or ""
+    if text.lstrip(" \t\r\n").startswith(("=", "+", "-", "@")):
+        return "'" + text
+    return text
