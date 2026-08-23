@@ -147,22 +147,26 @@ git commit -m "feat: verify runtime artifact build readiness"
 
 **Interfaces:**
 - Consumes: 最终 `.staging/h06-nutrition-complete/build_manifest.json` 和环境中的数据库凭据/API key。
-- Produces: 仅支持 `Preflight/StartStores/Initialize/StartApi/Verify` 的非破坏式H06操作。
+- Produces: 仅支持 `Preflight/StartStores/Initialize/StartApi/Verify` 的非破坏式H06操作；`Preflight` 支持 `-DryRun` 返回结构化检查结果且不启动进程或容器。
 
-- [ ] **Step 1: 写发布契约失败测试**
+- [ ] **Step 1: 写Preflight行为失败测试**
 
 ```python
-def test_h06_script_uses_only_isolated_resources() -> None:
-    text = Path("scripts/publish_h06.ps1").read_text(encoding="utf-8")
-    for required in ("food_agent_v2_h06", "3309", "6339", "6340", "6382", "8002"):
-        assert required in text
-    assert "down -v" not in text
-    assert not re.search(
-        r"(?i)(down|rm|remove|stop).{0,80}food_agent_v2_h05", text
-    )
+def test_h06_preflight_dry_run_is_isolated_and_non_mutating(tmp_path) -> None:
+    manifest = write_valid_manifest(tmp_path)
+    before = docker_resource_snapshot()
+    result = run_h06_script("Preflight", manifest, dry_run=True)
+    after = docker_resource_snapshot()
+    assert result.returncode == 0
+    assert result.json["compose_project"] == "food_agent_v2_h06"
+    assert result.json["ports"] == {
+        "mysql": 3309, "qdrant_rest": 6339, "qdrant_grpc": 6340,
+        "redis": 6382, "api": 8002,
+    }
+    assert after == before
 ```
 
-同时检查manifest必须显式传入、目标路径必须位于项目 `.staging/h06-nutrition-complete`、后台API使用 `-WindowStyle Hidden`。
+同时以真实进程退出码覆盖：manifest未传入、路径越出项目 `.staging/h06-nutrition-complete`、端口被占用时fail-closed；受控fake process runner验证StartApi请求hidden window。不得通过grep脚本文本完成验收。
 
 - [ ] **Step 2: 运行失败测试**
 
