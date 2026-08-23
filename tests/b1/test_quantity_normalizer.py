@@ -22,6 +22,8 @@ def _occurrence(
     form: str = "raw",
     usage: str | None = "seasoning",
     token: str | None = None,
+    retained: bool | None = True,
+    requires_review: bool = False,
 ) -> NutritionOccurrenceInput:
     return NutritionOccurrenceInput(
         occurrence_id=occurrence_id,
@@ -33,6 +35,8 @@ def _occurrence(
         normalized_form=form,
         usage_code=usage,  # type: ignore[arg-type]
         fuzzy_token_class=token,  # type: ignore[arg-type]
+        retained_in_dish=retained,
+        requires_review=requires_review,
     )
 
 
@@ -240,3 +244,149 @@ def test_measure_rule_index_rejects_duplicate_v2_keys() -> None:
 
     with pytest.raises(ValueError, match="重复计量规则"):
         MeasureRuleIndex((rule, duplicate))
+
+
+@pytest.mark.parametrize(
+    ("usage", "retained", "requires_review"),
+    [
+        ("seasoning", True, True),
+        (None, True, False),
+        ("seasoning", None, False),
+    ],
+)
+def test_unresolved_task1_occurrence_cannot_be_overridden_by_quantity_decision(
+    usage, retained, requires_review
+) -> None:
+    decisions = QuantityDecisionIndex(
+        (
+            QuantityDecision(
+                occurrence_id="1-1",
+                decision_grams=Decimal("3.5"),
+                review_status="approved",
+            ),
+        )
+    )
+
+    result = normalize_quantity(
+        _occurrence(
+            "100克",
+            "克",
+            usage=usage,
+            retained=retained,
+            requires_review=requires_review,
+        ),
+        MeasureRuleIndex(()),
+        decisions,
+    )
+
+    assert result.standardized_grams is None
+    assert result.requires_review is True
+
+
+@pytest.mark.parametrize(
+    "raw,unit",
+    [("两根", "根"), ("两根", None), ("两片", None), ("两个", None), ("两勺", None)],
+)
+def test_chinese_two_uses_the_explicit_count_unit_not_mass_liang(raw, unit) -> None:
+    rules = MeasureRuleIndex(
+        (
+            _rule(rule_id="root", rule_type="unit_weight", unit="根", grams="10"),
+            _rule(rule_id="slice", rule_type="unit_weight", unit="片", grams="10"),
+            _rule(rule_id="piece", rule_type="unit_weight", unit="个", grams="10"),
+            _rule(rule_id="spoon", rule_type="unit_weight", unit="勺", grams="10"),
+        )
+    )
+
+    result = normalize_quantity(_occurrence(raw, unit), rules, QuantityDecisionIndex(()))
+
+    assert result.standardized_grams == Decimal("20")
+
+
+@pytest.mark.parametrize("raw,unit", [("-100克", "克"), ("100克（2人份）", "克"), ("100克2", "克")])
+def test_quantity_parser_rejects_negative_and_extra_numbers(raw, unit) -> None:
+    result = normalize_quantity(
+        _occurrence(raw, unit), MeasureRuleIndex(()), QuantityDecisionIndex(())
+    )
+
+    assert result.standardized_grams is None
+    assert result.requires_review is True
+
+
+def test_quantity_parser_accepts_only_one_anchored_range_or_fraction() -> None:
+    rules = MeasureRuleIndex(
+        (_rule(rule_type="unit_weight", unit="个", grams="50"),)
+    )
+
+    ranged = normalize_quantity(
+        _occurrence("30-40克", "克"), MeasureRuleIndex(()), QuantityDecisionIndex(())
+    )
+    fraction = normalize_quantity(
+        _occurrence("1/2个", "个"), rules, QuantityDecisionIndex(())
+    )
+
+    assert ranged.standardized_grams == Decimal("35")
+    assert fraction.standardized_grams == Decimal("25")
+
+
+@pytest.mark.parametrize("value", ["NaN", "Infinity", "0", "-1"])
+def test_rules_and_quantity_decisions_require_finite_positive_decimals(value) -> None:
+    with pytest.raises(ValueError, match="克重"):
+        MeasureRuleIndex(
+            (_rule(rule_type="unit_weight", unit="个", grams=value),)
+        )
+    with pytest.raises(ValueError, match="必须大于零"):
+        QuantityDecisionIndex(
+            (
+                QuantityDecision(
+                    occurrence_id="1-1",
+                    decision_grams=Decimal(value),
+                    review_status="approved",
+                ),
+            )
+        )
+
+
+@pytest.mark.parametrize("ingredient_id", [True, 10.0, 0, -1])
+def test_measure_rule_requires_a_true_positive_integer_ingredient_id(ingredient_id) -> None:
+    with pytest.raises(ValueError, match="ingredient_id"):
+        MeasureRuleIndex(
+            (
+                _rule(
+                    rule_type="unit_weight",
+                    ingredient_id=ingredient_id,
+                    unit="个",
+                    grams="50",
+                ),
+            )
+        )
+
+
+def test_measure_rule_rejects_surrounding_rule_id_whitespace() -> None:
+    with pytest.raises(ValueError, match="rule_id"):
+        MeasureRuleIndex(
+            (_rule(rule_id=" rule-1 ", rule_type="unit_weight", unit="个", grams="50"),)
+        )
+
+
+@pytest.mark.parametrize(
+    ("row", "message"),
+    [
+        ("2.0.0,bad,unit_weight,10.5,蛋,raw,个,,,50,,pending", "ingredient_id"),
+        ("2.0.0,egg,unit_weight,10,蛋,raw,个,,,50,,pending", "rule_id"),
+        ("2.0.0,bad,unit_weight,10,蛋,raw,个,,,NaN,,rejected", "克重"),
+    ],
+)
+def test_inactive_measure_rows_are_fully_validated_before_being_ignored(
+    tmp_path, row, message
+) -> None:
+    path = tmp_path / "measures.csv"
+    path.write_text(
+        "schema_version,rule_id,rule_type,ingredient_id,ingredient_name,normalized_form,"
+        "normalized_unit,usage_code,fuzzy_token_class,to_grams,mass_density_g_per_ml,review_status\n"
+        "2.0.0,egg,unit_weight,10,蛋,raw,个,,,50,,approved\n"
+        f"{row}\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match=message):
+        load_measure_rules(path)

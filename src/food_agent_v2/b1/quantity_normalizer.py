@@ -75,7 +75,7 @@ class MeasureRule:
 class MeasureRuleIndex:
     """Indexes approved V2 rules at their only valid matching granularity."""
 
-    def __init__(self, rules) -> None:
+    def __init__(self, rules, *, _allow_inactive: bool = False) -> None:
         self._unit_weights: dict[tuple[int, str, str], MeasureRule] = {}
         self._densities: dict[tuple[int, str], MeasureRule] = {}
         self._fuzzy_single_values: dict[
@@ -92,6 +92,8 @@ class MeasureRuleIndex:
                 self._add_fuzzy_single_value(rule)
             else:
                 raise ValueError(f"不支持的 rule_type: {rule.rule_type}")
+            if rule.review_status != "approved" and not _allow_inactive:
+                raise ValueError(f"计量规则未批准: {rule.rule_id}")
 
     def get_unit_weight(
         self, ingredient_id: int, normalized_form: str, normalized_unit: str
@@ -124,23 +126,26 @@ class MeasureRuleIndex:
     def _validate_common(self, rule: MeasureRule, rule_ids: set[str]) -> None:
         if rule.schema_version != "2.0.0":
             raise ValueError(f"计量规则 schema_version 非法: {rule.rule_id}")
-        if not rule.rule_id.strip() or rule.rule_id in rule_ids:
+        if (
+            not isinstance(rule.rule_id, str)
+            or not rule.rule_id
+            or rule.rule_id != rule.rule_id.strip()
+            or rule.rule_id in rule_ids
+        ):
             raise ValueError(f"重复或为空的计量规则 rule_id: {rule.rule_id}")
         rule_ids.add(rule.rule_id)
-        if rule.ingredient_id < 1:
+        if type(rule.ingredient_id) is not int or rule.ingredient_id < 1:
             raise ValueError(f"计量规则 ingredient_id 必须为正整数: {rule.rule_id}")
         if not rule.ingredient_name.strip():
             raise ValueError(f"计量规则 ingredient_name 不能为空: {rule.rule_id}")
         if rule.review_status not in _REVIEW_STATUSES:
             raise ValueError(f"计量规则 review_status 非法: {rule.rule_id}")
-        if rule.review_status != "approved":
-            raise ValueError(f"计量规则未批准: {rule.rule_id}")
 
     def _add_unit_weight(self, rule: MeasureRule) -> None:
         unit = _normalize_unit(rule.normalized_unit or "")
         if unit not in _COUNT_UNITS:
             raise ValueError(f"单位重量规则单位非法: {rule.rule_id}")
-        if rule.to_grams is None or rule.to_grams <= 0:
+        if not _is_finite_positive_decimal(rule.to_grams):
             raise ValueError(f"单位重量规则无合法克重: {rule.rule_id}")
         if any(
             value is not None
@@ -159,7 +164,7 @@ class MeasureRuleIndex:
     def _add_density(self, rule: MeasureRule) -> None:
         if _normalize_unit(rule.normalized_unit or "") != "毫升":
             raise ValueError(f"密度规则单位必须为毫升: {rule.rule_id}")
-        if rule.mass_density_g_per_ml is None or rule.mass_density_g_per_ml <= 0:
+        if not _is_finite_positive_decimal(rule.mass_density_g_per_ml):
             raise ValueError(f"密度规则无合法密度: {rule.rule_id}")
         if any(
             value is not None
@@ -174,7 +179,7 @@ class MeasureRuleIndex:
     def _add_fuzzy_single_value(self, rule: MeasureRule) -> None:
         if rule.normalized_unit is not None and rule.normalized_unit.strip():
             raise ValueError(f"模糊单值规则不得包含单位: {rule.rule_id}")
-        if rule.to_grams is None or rule.to_grams <= 0:
+        if not _is_finite_positive_decimal(rule.to_grams):
             raise ValueError(f"模糊单值规则无合法克重: {rule.rule_id}")
         if rule.mass_density_g_per_ml is not None:
             raise ValueError(f"模糊单值规则不得包含密度: {rule.rule_id}")
@@ -208,7 +213,7 @@ class QuantityDecisionIndex:
                 raise ValueError(f"用量决定 review_status 非法: {decision.occurrence_id}")
             if decision.occurrence_id in self._decisions:
                 raise ValueError(f"重复用量决定: {decision.occurrence_id}")
-            if decision.decision_grams <= 0:
+            if not _is_finite_positive_decimal(decision.decision_grams):
                 raise ValueError(f"用量决定必须大于零: {decision.occurrence_id}")
             self._decisions[decision.occurrence_id] = decision
 
@@ -256,8 +261,6 @@ def load_measure_rules(path: Path) -> MeasureRuleIndex:
     rules: list[MeasureRule] = []
     for row in _read_review_csv(path, _MEASURE_HEADERS):
         status = _review_status(row, path)
-        if status != "approved":
-            continue
         rule_type = _required(row, "rule_type")
         if rule_type not in {"unit_weight", "density", "fuzzy_single_value"}:
             raise ValueError(f"不支持的 rule_type: {rule_type}")
@@ -276,10 +279,11 @@ def load_measure_rules(path: Path) -> MeasureRuleIndex:
                 mass_density_g_per_ml=_optional_decimal(
                     row, "mass_density_g_per_ml"
                 ),
-                review_status="approved",
+                review_status=status,
             )
         )
-    return MeasureRuleIndex(rules)
+    MeasureRuleIndex(rules, _allow_inactive=True)
+    return MeasureRuleIndex(rule for rule in rules if rule.review_status == "approved")
 
 
 def load_quantity_decisions(path: Path) -> QuantityDecisionIndex:
@@ -324,6 +328,12 @@ class QuantityNormalizationResult:
 
 def normalize_quantity(occurrence, measure_rules, decisions) -> QuantityNormalizationResult:
     """Apply the V2 priority order without broadening a rule's scope."""
+    if (
+        occurrence.requires_review
+        or occurrence.usage_code is None
+        or occurrence.retained_in_dish is None
+    ):
+        return _pending()
     decision = decisions.get_effective(occurrence.occurrence_id)
     if decision is not None:
         return QuantityNormalizationResult(
@@ -333,8 +343,11 @@ def normalize_quantity(occurrence, measure_rules, decisions) -> QuantityNormaliz
         )
 
     raw = (occurrence.quantity_raw or "").strip()
-    unit = _normalize_unit(occurrence.unit_raw or _unit_from_text(raw))
-    amount = _deterministic_amount(raw)
+    parsed = _parse_deterministic_quantity(raw)
+    amount, unit = parsed if parsed is not None else (None, "")
+    input_unit = _normalize_unit(occurrence.unit_raw or "")
+    if input_unit and unit and input_unit != unit:
+        return _pending()
     if amount is not None and unit in _MASS_FACTORS:
         return _resolved(amount * _MASS_FACTORS[unit])
 
@@ -374,6 +387,10 @@ _MASS_FACTORS = {
 }
 
 
+def _is_finite_positive_decimal(value: object) -> bool:
+    return isinstance(value, Decimal) and value.is_finite() and value > 0
+
+
 def _resolved(grams: Decimal | None) -> QuantityNormalizationResult:
     if grams is None:
         raise ValueError("有效规则缺少克重")
@@ -399,62 +416,47 @@ def _normalize_unit(unit: str) -> str:
     }.get(normalized, normalized)
 
 
-def _unit_from_text(raw: str) -> str:
-    known_units = (
-        "千克",
-        "公斤",
-        "毫升",
-        "茶匙",
-        "汤匙",
-        "克",
-        "斤",
-        "两",
-        "升",
-        "kg",
-        "ml",
-        "g",
-        "l",
-        "个",
-        "片",
-        "根",
-        "勺",
-    )
-    lowered = raw.lower()
-    return next((unit for unit in known_units if unit in lowered), "")
+_QUANTITY_EXPRESSION = re.compile(
+    r"^(?:大约|约)?"
+    r"(?P<first>\d+(?:\.\d+)?(?:/\d+(?:\.\d+)?)?|半|一|二|两)"
+    r"(?:(?:-|–|—|~|～|至|到)(?P<second>\d+(?:\.\d+)?(?:/\d+(?:\.\d+)?)?))?"
+    r"(?P<unit>千克|公斤|毫升|茶匙|汤匙|kg|ml|克|斤|两|升|g|l|个|片|根|勺)"
+    r"(?:左右)?$",
+    re.IGNORECASE,
+)
 
 
-def _deterministic_amount(raw: str) -> Decimal | None:
-    cleaned = raw.replace("大约", "").replace("约", "").replace("左右", "").strip()
-    if not cleaned or any(marker in cleaned for marker in ("适量", "少许", "若干", "数", "几")):
+def _parse_deterministic_quantity(raw: str) -> tuple[Decimal, str] | None:
+    match = _QUANTITY_EXPRESSION.fullmatch(raw)
+    if match is None:
         return None
-    values = _numbers(cleaned)
-    if values:
-        return sum(values[:2], Decimal("0")) / Decimal(len(values[:2]))
-    chinese_match = re.search(
-        r"(半|一|二|两)(?=(?:千克|公斤|毫升|个|片|根|勺|克|斤|两|升))",
-        cleaned,
-    )
-    if chinese_match is None:
+    first = _parse_quantity_number(match.group("first"))
+    second_text = match.group("second")
+    second = _parse_quantity_number(second_text) if second_text is not None else None
+    if first is None or (second_text is not None and second is None):
         return None
-    return {"半": Decimal("0.5"), "一": Decimal("1"), "二": Decimal("2"), "两": Decimal("2")}[
-        chinese_match.group(1)
-    ]
+    amount = first if second is None else (first + second) / Decimal("2")
+    if not _is_finite_positive_decimal(amount):
+        return None
+    return amount, _normalize_unit(match.group("unit"))
 
 
-def _numbers(raw: str) -> list[Decimal]:
-    tokens = re.findall(r"\d+(?:\.\d+)?(?:/\d+(?:\.\d+)?)?", raw)
-    values: list[Decimal] = []
-    for token in tokens:
-        try:
-            if "/" in token:
-                numerator, denominator = token.split("/", 1)
-                value = Decimal(numerator) / Decimal(denominator)
-            else:
-                value = Decimal(token)
-        except (InvalidOperation, ZeroDivisionError):
-            return []
-        values.append(value)
-    return values
+def _parse_quantity_number(value: str) -> Decimal | None:
+    chinese_values = {
+        "半": Decimal("0.5"),
+        "一": Decimal("1"),
+        "二": Decimal("2"),
+        "两": Decimal("2"),
+    }
+    if value in chinese_values:
+        return chinese_values[value]
+    try:
+        if "/" in value:
+            numerator, denominator = value.split("/", 1)
+            return Decimal(numerator) / Decimal(denominator)
+        return Decimal(value)
+    except (InvalidOperation, ZeroDivisionError):
+        return None
 
 
 def _read_review_csv(path: Path, expected_headers: tuple[str, ...]):
