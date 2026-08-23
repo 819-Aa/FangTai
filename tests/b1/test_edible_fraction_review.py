@@ -1,5 +1,6 @@
 from decimal import Decimal
 from pathlib import Path
+from typing import get_type_hints
 
 import pytest
 
@@ -40,15 +41,18 @@ def _rule(ingredient_id: int, normalized_form: str, edible_fraction: str) -> Edi
 
 
 def _decision(
-    occurrence_id: str, edible_fraction: str, review_status: str
+    occurrence_id: str,
+    edible_fraction: str,
+    review_status: str,
+    *,
+    decision_form: str = "带皮",
 ) -> EdibleFractionDecision:
     return EdibleFractionDecision(
         occurrence_id=occurrence_id,
         recipe_id=1,
         ingredient_id=7,
         ingredient_name="苹果",
-        normalized_form="带皮",
-        decision_form="带皮",
+        decision_form=decision_form,
         edible_fraction=Decimal(edible_fraction),
         review_status=review_status,
     )
@@ -100,7 +104,6 @@ def test_active_decision_metadata_drift_fails_closed_without_generic_fallback() 
         recipe_id=9,
         ingredient_id=7,
         ingredient_name="苹果",
-        normalized_form="带皮",
         decision_form="带皮",
         edible_fraction=Decimal("0.65"),
         review_status="approved",
@@ -132,8 +135,8 @@ def test_loaders_require_the_formal_headers_and_reject_cooking_yield_fields(
     )
     decisions = tmp_path / "decisions.csv"
     decisions.write_text(
-        "occurrence_id,recipe_id,ingredient_id,ingredient_name,normalized_form,decision_form,edible_fraction,review_status\n"
-        "1-1,1,7,苹果,带皮,带皮,0.65,modified\n",
+        "occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fraction,review_status\n"
+        "1-1,1,7,苹果,带皮,0.65,modified\n",
         encoding="utf-8",
     )
 
@@ -141,3 +144,54 @@ def test_loaders_require_the_formal_headers_and_reject_cooking_yield_fields(
         load_edible_fraction_rules(rules)
     index = load_edible_fraction_decisions(decisions)
     assert index.get_effective("1-1") is not None
+
+    stale_decisions = tmp_path / "stale-decisions.csv"
+    stale_decisions.write_text(
+        "occurrence_id,recipe_id,ingredient_id,ingredient_name,normalized_form,decision_form,edible_fraction,review_status\n"
+        "1-1,1,7,苹果,带皮,带皮,0.65,modified\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="表头非法"):
+        load_edible_fraction_decisions(stale_decisions)
+
+
+def test_resolver_accepts_the_frozen_occurrence_input_type() -> None:
+    assert get_type_hints(resolve_edible_fraction)["occurrence"] is NutritionOccurrenceInput
+
+
+def test_decision_form_completes_a_blank_source_form() -> None:
+    resolution = resolve_edible_fraction(
+        _occurrence(form=""),
+        EdibleFractionRuleIndex(()),
+        EdibleFractionDecisionIndex((_decision("1-1", "0.65", "approved", decision_form="去皮"),)),
+    )
+
+    assert resolution.edible_fraction == Decimal("0.65")
+    assert resolution.requires_review is False
+
+
+def test_nonblank_source_form_conflicting_with_decision_fails_closed() -> None:
+    resolution = resolve_edible_fraction(
+        _occurrence(form="带皮"),
+        EdibleFractionRuleIndex((_rule(7, "带皮", "0.8"),)),
+        EdibleFractionDecisionIndex((_decision("1-1", "0.65", "approved", decision_form="去皮"),)),
+    )
+
+    assert resolution.edible_fraction is None
+    assert resolution.requires_review is True
+
+
+@pytest.mark.parametrize(
+    ("first_status", "second_status"),
+    [("pending", "pending"), ("approved", "pending"), ("rejected", "modified")],
+)
+def test_decision_occurrence_id_is_unique_across_all_review_statuses(
+    first_status: str, second_status: str
+) -> None:
+    with pytest.raises(ValueError, match="重复"):
+        EdibleFractionDecisionIndex(
+            (
+                _decision("1-1", "0.65", first_status),
+                _decision("1-1", "0.8", second_status),
+            )
+        )

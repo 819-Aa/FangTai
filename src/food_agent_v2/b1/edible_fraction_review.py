@@ -8,6 +8,8 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Literal
 
+from food_agent_v2.b1.consumer_views import NutritionOccurrenceInput
+
 ReviewStatus = Literal["pending", "approved", "modified", "rejected"]
 _STATUSES = frozenset({"pending", "approved", "modified", "rejected"})
 _ACTIVE = frozenset({"approved", "modified"})
@@ -23,7 +25,6 @@ _DECISION_HEADERS = (
     "recipe_id",
     "ingredient_id",
     "ingredient_name",
-    "normalized_form",
     "decision_form",
     "edible_fraction",
     "review_status",
@@ -72,7 +73,6 @@ class EdibleFractionDecision:
     recipe_id: int
     ingredient_id: int
     ingredient_name: str
-    normalized_form: str
     decision_form: str
     edible_fraction: Decimal
     review_status: ReviewStatus
@@ -85,10 +85,14 @@ class EdibleFractionDecisionIndex:
         self._effective: dict[str, EdibleFractionDecision] = {}
         for decision in decisions:
             _validate_decision(decision)
-            if decision.review_status in _ACTIVE:
-                if decision.occurrence_id in self._effective:
-                    raise ValueError("同一 occurrence 存在重复有效可食比例决定")
-                self._effective[decision.occurrence_id] = decision
+            if decision.occurrence_id in self._effective:
+                raise ValueError("同一 occurrence 存在重复可食比例决定")
+            self._effective[decision.occurrence_id] = decision
+        self._effective = {
+            occurrence_id: decision
+            for occurrence_id, decision in self._effective.items()
+            if decision.review_status in _ACTIVE
+        }
 
     def get_effective(self, occurrence_id: str) -> EdibleFractionDecision | None:
         return self._effective.get(occurrence_id)
@@ -101,7 +105,9 @@ class EdibleFractionResolution:
 
 
 def resolve_edible_fraction(
-    occurrence, rules: EdibleFractionRuleIndex, decisions: EdibleFractionDecisionIndex
+    occurrence: NutritionOccurrenceInput,
+    rules: EdibleFractionRuleIndex,
+    decisions: EdibleFractionDecisionIndex,
 ) -> EdibleFractionResolution:
     """Prefer a matching occurrence decision and fail closed on any drift."""
     decision = decisions.get_effective(occurrence.occurrence_id)
@@ -125,13 +131,15 @@ def load_edible_fraction_decisions(path: Path) -> EdibleFractionDecisionIndex:
     )
 
 
-def _decision_matches(decision: EdibleFractionDecision, occurrence) -> bool:
+def _decision_matches(
+    decision: EdibleFractionDecision, occurrence: NutritionOccurrenceInput
+) -> bool:
+    source_form = _form(occurrence.normalized_form)
     return (
         decision.recipe_id == _recipe_id(occurrence.occurrence_id)
         and decision.ingredient_id == occurrence.ingredient_id
         and decision.ingredient_name == occurrence.ingredient_name
-        and _form(decision.normalized_form) == _form(occurrence.normalized_form)
-        and _form(decision.decision_form) == _form(occurrence.normalized_form)
+        and (not source_form or _form(decision.decision_form) == source_form)
     )
 
 
@@ -154,8 +162,7 @@ def _validate_decision(decision: EdibleFractionDecision) -> None:
     _positive_id(decision.recipe_id, "可食比例决定 recipe_id")
     _positive_id(decision.ingredient_id, "可食比例决定 ingredient_id")
     _nonblank(decision.ingredient_name, "可食比例决定 ingredient_name")
-    if not isinstance(decision.normalized_form, str) or not isinstance(decision.decision_form, str):
-        raise ValueError("可食比例决定形态必须为字符串")
+    _nonblank(decision.decision_form, "可食比例决定 decision_form")
     _fraction(decision.edible_fraction)
     _status(decision.review_status, "可食比例决定")
 
@@ -219,8 +226,7 @@ def _parse_decision(row: dict[str, str], line_number: int) -> EdibleFractionDeci
             _int(row, "recipe_id"),
             _int(row, "ingredient_id"),
             _text(row, "ingredient_name"),
-            _form(row["normalized_form"]),
-            _form(row["decision_form"]),
+            _text(row, "decision_form"),
             _decimal(row, "edible_fraction"),
             _text(row, "review_status"),  # type: ignore[arg-type]
         )

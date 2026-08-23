@@ -69,19 +69,22 @@ def calculate_raw_recipe_nutrition(
     if not view.ingredients:
         return _unavailable(view, "no_nutrition_ingredients")
 
+    if any(
+        occurrence.requires_review
+        or occurrence.usage_code is None
+        or occurrence.retained_in_dish is None
+        for occurrence in view.ingredients
+    ):
+        return _unavailable(view, "usage_unresolved")
+    retained_occurrences = tuple(
+        occurrence for occurrence in view.ingredients if occurrence.retained_in_dish
+    )
+    if not retained_occurrences:
+        return _unavailable(view, "no_retained_ingredients")
+
     total_edible_g = Decimal("0")
     totals = {field: Decimal("0") for field in NUTRIENT_FIELDS}
-    retained_occurrence_count = 0
-    for occurrence in view.ingredients:
-        if (
-            occurrence.requires_review
-            or occurrence.usage_code is None
-            or occurrence.retained_in_dish is None
-        ):
-            return _unavailable(view, "usage_unresolved")
-        if occurrence.retained_in_dish is False:
-            continue
-        retained_occurrence_count += 1
+    for occurrence in retained_occurrences:
         normalized = normalize_quantity(occurrence, measure_rules, quantity_decisions)
         if normalized.standardized_grams is None or normalized.requires_review:
             return _unavailable(view, "quantity_unapproved")
@@ -107,8 +110,6 @@ def calculate_raw_recipe_nutrition(
             nutrient = getattr(reference.per_100g, field)
             totals[field] += edible_g / Decimal("100") * nutrient
 
-    if retained_occurrence_count == 0:
-        return _unavailable(view, "no_retained_ingredients")
     if total_edible_g <= 0:
         return _unavailable(view, "quantity_unapproved")
     per_100g = {field: value / total_edible_g * Decimal("100") for field, value in totals.items()}

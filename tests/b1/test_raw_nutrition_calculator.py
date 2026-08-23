@@ -155,8 +155,7 @@ def test_calculator_uses_occurrence_fraction_decision_before_generic_rule() -> N
                     recipe_id=1,
                     ingredient_id=10,
                     ingredient_name="甲",
-                    normalized_form="",
-                    decision_form="",
+                    decision_form="去皮",
                     edible_fraction=Decimal("0.5"),
                     review_status="approved",
                 ),
@@ -168,6 +167,24 @@ def test_calculator_uses_occurrence_fraction_decision_before_generic_rule() -> N
     assert result.available is True
     assert result.raw_edible_input_weight_g == Decimal("50.00")
     assert result.raw_nutrition_total.energy_kcal == Decimal("5.00")
+
+
+def test_unresolved_usage_in_any_occurrence_precedes_other_prerequisite_failures() -> None:
+    view = _view(
+        _ingredient("1-1", 10, "甲", "少许"),
+        _ingredient("1-2", 20, "乙", "100克", requires_review=True),
+    )
+
+    result = calculate_raw_recipe_nutrition(
+        view,
+        measure_rules=MeasureRuleIndex(()),
+        quantity_decisions=QuantityDecisionIndex(()),
+        edible_fractions=EdibleFractionRuleIndex(()),
+        nutrition_crosswalk=NutritionCrosswalkIndex((), NutritionReferenceIndex(())),
+    )
+
+    assert result.available is False
+    assert result.reason == "usage_unresolved"
 
 
 @pytest.mark.parametrize(
