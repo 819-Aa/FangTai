@@ -253,3 +253,73 @@ def test_model_candidate_writer_refuses_formal_rule_target_before_opening(
         write_quantity_candidates((candidate,), formal)
 
     assert formal.read_text(encoding="utf-8") == "preserve formal"
+
+
+@pytest.mark.parametrize(
+    "field",
+    (
+        "occurrence_id",
+        "recipe_name",
+        "ingredient_name",
+        "normalized_form",
+        "normalized_unit",
+        "usage_code",
+        "fuzzy_token_class",
+        "raw_quantity",
+        "step_context",
+        "deterministic_calculation",
+        "candidate_basis",
+        "review_status",
+    ),
+)
+def test_model_writer_rejects_non_string_text_fields_before_opening(tmp_path, field) -> None:
+    output = tmp_path / "model-candidates.csv"
+    output.write_text("preserve me", encoding="utf-8")
+    candidate = generate_quantity_candidates(
+        (
+            RecipeQuantityReviewContext(
+                recipe_id=1,
+                recipe_name="测试菜",
+                step_context="加入少许盐",
+                ingredients=(_pending("1-1", "盐"),),
+            ),
+        ),
+        type("Estimator", (), {"estimate": lambda _self, _context: {"1-1": Decimal("2")}})(),
+    )[0]
+
+    with pytest.raises(ValueError, match="文本字段"):
+        write_quantity_candidates((replace(candidate, **{field: 1}),), output)
+
+    assert output.read_text(encoding="utf-8") == "preserve me"
+
+
+def test_model_writer_keeps_existing_queue_when_serialization_fails(tmp_path, monkeypatch) -> None:
+    output = tmp_path / "model-candidates.csv"
+    output.write_text("preserve me", encoding="utf-8")
+    candidate = generate_quantity_candidates(
+        (
+            RecipeQuantityReviewContext(
+                recipe_id=1,
+                recipe_name="测试菜",
+                step_context="加入少许盐",
+                ingredients=(_pending("1-1", "盐"),),
+            ),
+        ),
+        type("Estimator", (), {"estimate": lambda _self, _context: {"1-1": Decimal("2")}})(),
+    )[0]
+    original = csv.DictWriter.writerow
+    calls = 0
+
+    def fail_on_data_row(writer, row):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise RuntimeError("injected serialization failure")
+        return original(writer, row)
+
+    monkeypatch.setattr(csv.DictWriter, "writerow", fail_on_data_row)
+
+    with pytest.raises(RuntimeError, match="injected serialization failure"):
+        write_quantity_candidates((candidate,), output)
+
+    assert output.read_text(encoding="utf-8") == "preserve me"

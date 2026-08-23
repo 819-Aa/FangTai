@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 
 from food_agent_v2.b1.quantity_normalizer import normalize_quantity
 from food_agent_v2.core.paths import PROJECT_ROOT
@@ -275,6 +276,7 @@ def write_quantity_candidates(candidates, output_path: Path) -> None:
         raise ValueError("数量候选不得写入正式计量规则文件")
     candidate_rows = tuple(candidates)
     for item in candidate_rows:
+        _validate_candidate_text_fields(item)
         if item.review_status != "pending":
             raise ValueError("数量候选必须保持 pending")
         if not _is_finite_positive_decimal(item.candidate_grams):
@@ -302,38 +304,83 @@ def write_quantity_candidates(candidates, output_path: Path) -> None:
         "decision_grams",
         "review_status",
     )
-    with path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        writer.writeheader()
-        for item in candidate_rows:
-            writer.writerow(
-                {
-                    "occurrence_id": _safe_csv_text(item.occurrence_id),
-                    "recipe_id": item.recipe_id,
-                    "recipe_name": _safe_csv_text(item.recipe_name),
-                    "ingredient_id": item.ingredient_id if item.ingredient_id is not None else "",
-                    "ingredient_name": _safe_csv_text(item.ingredient_name),
-                    "normalized_form": _safe_csv_text(item.normalized_form),
-                    "normalized_unit": _safe_csv_text(item.normalized_unit),
-                    "usage_code": _safe_csv_text(item.usage_code),
-                    "fuzzy_token_class": _safe_csv_text(item.fuzzy_token_class),
-                    "raw_quantity": _safe_csv_text(item.raw_quantity),
-                    "step_context": _safe_csv_text(item.step_context),
-                    "deterministic_calculation": _safe_csv_text(
-                        item.deterministic_calculation
-                    ),
-                    "candidate_basis": _safe_csv_text(item.candidate_basis),
-                    "candidate_grams": str(item.candidate_grams),
-                    "decision_grams": (
-                        str(item.decision_grams) if item.decision_grams is not None else ""
-                    ),
-                    "review_status": _safe_csv_text(item.review_status),
-                }
-            )
+    temporary_path: Path | None = None
+    try:
+        with NamedTemporaryFile(
+            "w",
+            encoding="utf-8",
+            newline="",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temporary_path = Path(handle.name)
+            writer = csv.DictWriter(handle, fieldnames=fieldnames)
+            writer.writeheader()
+            for item in candidate_rows:
+                writer.writerow(
+                    {
+                        "occurrence_id": _safe_csv_text(item.occurrence_id),
+                        "recipe_id": item.recipe_id,
+                        "recipe_name": _safe_csv_text(item.recipe_name),
+                        "ingredient_id": (
+                            item.ingredient_id if item.ingredient_id is not None else ""
+                        ),
+                        "ingredient_name": _safe_csv_text(item.ingredient_name),
+                        "normalized_form": _safe_csv_text(item.normalized_form),
+                        "normalized_unit": _safe_csv_text(item.normalized_unit),
+                        "usage_code": _safe_csv_text(item.usage_code),
+                        "fuzzy_token_class": _safe_csv_text(item.fuzzy_token_class),
+                        "raw_quantity": _safe_csv_text(item.raw_quantity),
+                        "step_context": _safe_csv_text(item.step_context),
+                        "deterministic_calculation": _safe_csv_text(
+                            item.deterministic_calculation
+                        ),
+                        "candidate_basis": _safe_csv_text(item.candidate_basis),
+                        "candidate_grams": str(item.candidate_grams),
+                        "decision_grams": (
+                            str(item.decision_grams)
+                            if item.decision_grams is not None
+                            else ""
+                        ),
+                        "review_status": _safe_csv_text(item.review_status),
+                    }
+                )
+        if _is_formal_measure_rule_path(path):
+            raise ValueError("数量候选不得写入正式计量规则文件")
+        temporary_path.replace(path)
+    except BaseException:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+        raise
 
 
 def _is_finite_positive_decimal(value: object) -> bool:
     return isinstance(value, Decimal) and value.is_finite() and value > 0
+
+
+def _validate_candidate_text_fields(candidate: QuantityReviewCandidate) -> None:
+    required = (
+        candidate.occurrence_id,
+        candidate.recipe_name,
+        candidate.ingredient_name,
+        candidate.raw_quantity,
+        candidate.step_context,
+        candidate.deterministic_calculation,
+        candidate.candidate_basis,
+        candidate.review_status,
+    )
+    optional = (
+        candidate.normalized_form,
+        candidate.normalized_unit,
+        candidate.usage_code,
+        candidate.fuzzy_token_class,
+    )
+    if any(not isinstance(value, str) for value in required) or any(
+        value is not None and not isinstance(value, str) for value in optional
+    ):
+        raise ValueError("数量候选文本字段非法")
 
 
 def _safe_csv_text(value: str | None) -> str:

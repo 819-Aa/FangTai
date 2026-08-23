@@ -273,3 +273,92 @@ def test_writer_escapes_formula_text_fields(tmp_path) -> None:
     with output.open(encoding="utf-8", newline="") as handle:
         row = next(csv.DictReader(handle))
     assert row["ingredient_name"] == "'\t=1+1"
+
+
+def test_single_sample_rule_candidate_has_blank_cv_and_remains_writable(tmp_path) -> None:
+    candidate = generate_quantity_rule_candidates(
+        (_candidate("2"),), MeasureRuleIndex(())
+    )[0]
+    output = tmp_path / "review.csv"
+
+    write_quantity_rule_candidates((candidate,), output)
+
+    with output.open(encoding="utf-8", newline="") as handle:
+        row = next(csv.DictReader(handle))
+    assert candidate.coefficient_of_variation is None
+    assert candidate.is_stable is False
+    assert row["coefficient_of_variation"] == ""
+    assert row["review_status"] == "pending"
+
+
+@pytest.mark.parametrize(
+    "codes",
+    (
+        ("QTY_RULE_IQR_OUTLIER", "QTY_MAIN_UNRESOLVED"),
+        ("QTY_RULE_IQR_OUTLIER", "QTY_RULE_IQR_OUTLIER"),
+        ("QTY_UNKNOWN",),
+        (1,),
+    ),
+)
+def test_rule_writer_rejects_noncanonical_exception_codes_before_opening(
+    tmp_path, codes
+) -> None:
+    output = tmp_path / "review.csv"
+    output.write_text("preserve me", encoding="utf-8")
+    candidate = generate_quantity_rule_candidates(
+        tuple(_candidate("2") for _ in range(5)), MeasureRuleIndex(())
+    )[0]
+
+    with pytest.raises(ValueError, match="exception_codes"):
+        write_quantity_rule_candidates((replace(candidate, exception_codes=codes),), output)
+
+    assert output.read_text(encoding="utf-8") == "preserve me"
+
+
+@pytest.mark.parametrize(
+    "field",
+    (
+        "rule_type",
+        "ingredient_name",
+        "normalized_form",
+        "normalized_unit",
+        "usage_code",
+        "fuzzy_token_class",
+        "review_status",
+    ),
+)
+def test_rule_writer_rejects_non_string_text_fields_before_opening(tmp_path, field) -> None:
+    output = tmp_path / "review.csv"
+    output.write_text("preserve me", encoding="utf-8")
+    candidate = generate_quantity_rule_candidates(
+        tuple(_candidate("2") for _ in range(5)), MeasureRuleIndex(())
+    )[0]
+
+    with pytest.raises(ValueError, match="文本字段"):
+        write_quantity_rule_candidates((replace(candidate, **{field: 1}),), output)
+
+    assert output.read_text(encoding="utf-8") == "preserve me"
+
+
+def test_rule_writer_keeps_existing_queue_when_serialization_fails(tmp_path, monkeypatch) -> None:
+    output = tmp_path / "review.csv"
+    output.write_text("preserve me", encoding="utf-8")
+    candidate = generate_quantity_rule_candidates(
+        tuple(_candidate("2") for _ in range(5)), MeasureRuleIndex(())
+    )[0]
+    original = csv.DictWriter.writerow
+    calls = 0
+
+    def fail_on_data_row(writer, row):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise RuntimeError("injected serialization failure")
+        return original(writer, row)
+
+    monkeypatch.setattr(csv.DictWriter, "writerow", fail_on_data_row)
+
+    with pytest.raises(RuntimeError, match="injected serialization failure"):
+        write_quantity_rule_candidates((candidate,), output)
+
+    assert output.read_text(encoding="utf-8") == "preserve me"

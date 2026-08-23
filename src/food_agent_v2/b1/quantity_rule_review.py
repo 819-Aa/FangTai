@@ -8,6 +8,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from decimal import ROUND_CEILING, Decimal, InvalidOperation
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Literal
 
 from food_agent_v2.b1.quantity_normalizer import MeasureRuleIndex
@@ -57,7 +58,7 @@ class QuantityRuleCandidate:
     sample_count: int
     mean: Decimal
     sample_standard_deviation: Decimal
-    coefficient_of_variation: Decimal
+    coefficient_of_variation: Decimal | None
     q1: Decimal
     q3: Decimal
     iqr: Decimal
@@ -186,40 +187,60 @@ def write_quantity_rule_candidates(
         "exception_codes",
         "review_status",
     )
-    with path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        writer.writeheader()
-        for candidate in candidate_rows:
-            writer.writerow(
-                {
-                    "rule_type": _safe_csv_text(candidate.rule_type),
-                    "ingredient_id": candidate.ingredient_id,
-                    "ingredient_name": _safe_csv_text(candidate.ingredient_name),
-                    "normalized_form": _safe_csv_text(candidate.normalized_form),
-                    "normalized_unit": _safe_csv_text(candidate.normalized_unit),
-                    "usage_code": _safe_csv_text(candidate.usage_code),
-                    "fuzzy_token_class": _safe_csv_text(
-                        candidate.fuzzy_token_class
-                    ),
-                    "to_grams": _decimal_text(candidate.to_grams),
-                    "mass_density_g_per_ml": _decimal_text(
-                        candidate.mass_density_g_per_ml
-                    ),
-                    "sample_count": candidate.sample_count,
-                    "mean": candidate.mean,
-                    "sample_standard_deviation": candidate.sample_standard_deviation,
-                    "coefficient_of_variation": candidate.coefficient_of_variation,
-                    "q1": candidate.q1,
-                    "q3": candidate.q3,
-                    "iqr": candidate.iqr,
-                    "has_iqr_outlier": str(candidate.has_iqr_outlier).lower(),
-                    "is_stable": str(candidate.is_stable).lower(),
-                    "exception_codes": _safe_csv_text(
-                        "|".join(candidate.exception_codes)
-                    ),
-                    "review_status": _safe_csv_text(candidate.review_status),
-                }
-            )
+    temporary_path: Path | None = None
+    try:
+        with NamedTemporaryFile(
+            "w",
+            encoding="utf-8",
+            newline="",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temporary_path = Path(handle.name)
+            writer = csv.DictWriter(handle, fieldnames=fieldnames)
+            writer.writeheader()
+            for candidate in candidate_rows:
+                writer.writerow(
+                    {
+                        "rule_type": _safe_csv_text(candidate.rule_type),
+                        "ingredient_id": candidate.ingredient_id,
+                        "ingredient_name": _safe_csv_text(candidate.ingredient_name),
+                        "normalized_form": _safe_csv_text(candidate.normalized_form),
+                        "normalized_unit": _safe_csv_text(candidate.normalized_unit),
+                        "usage_code": _safe_csv_text(candidate.usage_code),
+                        "fuzzy_token_class": _safe_csv_text(
+                            candidate.fuzzy_token_class
+                        ),
+                        "to_grams": _decimal_text(candidate.to_grams),
+                        "mass_density_g_per_ml": _decimal_text(
+                            candidate.mass_density_g_per_ml
+                        ),
+                        "sample_count": candidate.sample_count,
+                        "mean": candidate.mean,
+                        "sample_standard_deviation": candidate.sample_standard_deviation,
+                        "coefficient_of_variation": _decimal_text(
+                            candidate.coefficient_of_variation
+                        ),
+                        "q1": candidate.q1,
+                        "q3": candidate.q3,
+                        "iqr": candidate.iqr,
+                        "has_iqr_outlier": str(candidate.has_iqr_outlier).lower(),
+                        "is_stable": str(candidate.is_stable).lower(),
+                        "exception_codes": _safe_csv_text(
+                            "|".join(candidate.exception_codes)
+                        ),
+                        "review_status": _safe_csv_text(candidate.review_status),
+                    }
+                )
+        if _is_formal_measure_rule_path(path):
+            raise ValueError("数量规则候选不得写入正式计量规则文件")
+        temporary_path.replace(path)
+    except BaseException:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+        raise
 
 
 def _build_rule_candidate(
@@ -237,9 +258,7 @@ def _build_rule_candidate(
 ) -> QuantityRuleCandidate:
     mean = sum(values, Decimal("0")) / Decimal(len(values))
     standard_deviation = _sample_standard_deviation(values, mean)
-    cv = (
-        standard_deviation / mean if len(values) >= 2 and mean > 0 else Decimal("Infinity")
-    )
+    cv = standard_deviation / mean if len(values) >= 2 else None
     q1 = nearest_rank(values, Decimal("0.25"))
     q3 = nearest_rank(values, Decimal("0.75"))
     iqr = q3 - q1
@@ -286,7 +305,9 @@ def _build_rule_candidate(
         q3=q3,
         iqr=iqr,
         has_iqr_outlier=has_iqr_outlier,
-        is_stable=len(values) >= 5 and cv <= Decimal("0.15"),
+        is_stable=(
+            len(values) >= 5 and cv is not None and cv <= Decimal("0.15")
+        ),
         exception_codes=tuple(code for code in _EXCEPTION_CODES if code in codes),
     )
 
@@ -392,6 +413,7 @@ def _validate_model_candidate(candidate: QuantityReviewCandidate) -> None:
 
 
 def _validate_output_candidate(candidate: QuantityRuleCandidate) -> None:
+    _validate_rule_text_fields(candidate)
     if candidate.review_status != "pending":
         raise ValueError("数量规则候选必须保持 pending")
     if candidate.rule_type not in {
@@ -406,10 +428,19 @@ def _validate_output_candidate(candidate: QuantityRuleCandidate) -> None:
     _require_positive_decimal(candidate.q1, "q1")
     _require_positive_decimal(candidate.q3, "q3")
     _require_nonnegative_decimal(candidate.sample_standard_deviation, "sample_standard_deviation")
-    _require_nonnegative_decimal(candidate.coefficient_of_variation, "coefficient_of_variation")
-    _require_nonnegative_decimal(candidate.iqr, "iqr")
     if candidate.sample_count < 1:
         raise ValueError("数量规则候选 sample_count 非法")
+    if candidate.sample_count < 2:
+        if candidate.coefficient_of_variation is not None:
+            raise ValueError("单样本候选 coefficient_of_variation 必须为空")
+    else:
+        _require_nonnegative_decimal(
+            candidate.coefficient_of_variation, "coefficient_of_variation"
+        )
+    _require_nonnegative_decimal(candidate.iqr, "iqr")
+    if type(candidate.has_iqr_outlier) is not bool or type(candidate.is_stable) is not bool:
+        raise ValueError("数量规则候选布尔字段非法")
+    _validate_exception_codes(candidate.exception_codes)
     if candidate.rule_type == "density":
         if candidate.to_grams is not None:
             raise ValueError("density 候选不得包含 to_grams")
@@ -420,6 +451,9 @@ def _validate_output_candidate(candidate: QuantityRuleCandidate) -> None:
         if candidate.mass_density_g_per_ml is not None:
             raise ValueError("非 density 候选不得包含 mass_density_g_per_ml")
         _require_positive_decimal(candidate.to_grams, "to_grams")
+
+
+def _validate_rule_text_fields(candidate: QuantityRuleCandidate) -> None:
     for value in (
         candidate.rule_type,
         candidate.ingredient_name,
@@ -431,6 +465,14 @@ def _validate_output_candidate(candidate: QuantityRuleCandidate) -> None:
     ):
         if value is not None and not isinstance(value, str):
             raise ValueError("数量规则候选文本字段非法")
+
+
+def _validate_exception_codes(codes: object) -> None:
+    if not isinstance(codes, tuple) or any(type(code) is not str for code in codes):
+        raise ValueError("exception_codes 非法")
+    canonical = tuple(code for code in _EXCEPTION_CODES if code in codes)
+    if codes != canonical:
+        raise ValueError("exception_codes 必须去重并按固定顺序排列")
 
 
 def _validate_positive_values(values: tuple[Decimal, ...], name: str) -> None:
