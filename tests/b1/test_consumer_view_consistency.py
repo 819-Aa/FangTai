@@ -16,6 +16,10 @@ from food_agent_v2.b1.consumer_views import (
     publish_downstream_build_views,
 )
 from food_agent_v2.b1.ingredient_identity import rebuild_ingredient_identities
+from food_agent_v2.b1.nutrition_occurrence_rules import (
+    NutritionUsageDecision,
+    NutritionUsageDecisionIndex,
+)
 from food_agent_v2.b1.rag_document_builder import build_rag_documents_from_views
 from food_agent_v2.b1.rebuild import prepare_reviewed_consumer_inputs
 from food_agent_v2.b1.recipe_classifier import classify_all, load_overrides
@@ -215,6 +219,23 @@ def test_ambiguous_nutrition_usage_is_published_as_review_required() -> None:
     assert ingredient.usage_code is None
     assert ingredient.retained_in_dish is None
     assert ingredient.requires_review is True
+
+
+def test_nutrition_usage_decision_is_applied_through_consumer_projection() -> None:
+    views = build_consumer_views(
+        build=BUILD,
+        recipes=(RecipeFact(1, "测试菜", "dish", ("加入鸡肉",)),),
+        occurrences=(IngredientOccurrenceFact("1-1", 1, "鸡肉块", "鸡肉", 10, "edible", form="块"),),
+        identities=(IngredientIdentityFact(10, "鸡肉", 1, category="肉禽"),),
+        nutrition_usage_decisions=NutritionUsageDecisionIndex(
+            (NutritionUsageDecision("1-1", 1, 10, "鸡肉", "块", "main", True, "approved"),)
+        ),
+    )
+
+    ingredient = views.nutrition_views[0].ingredients[0]
+    assert ingredient.usage_code == "main"
+    assert ingredient.retained_in_dish is True
+    assert ingredient.requires_review is False
 
 
 def test_publish_rejects_cross_build_consumer_view(tmp_path) -> None:

@@ -1,3 +1,5 @@
+from typing import get_type_hints
+
 import pytest
 
 from food_agent_v2.b1.consumer_views import (
@@ -63,25 +65,18 @@ def test_fuzzy_token_and_usage_are_closed_and_deterministic() -> None:
 
 
 @pytest.mark.parametrize(
-    ("category", "step", "usage_code", "retained_in_dish"),
+    ("name", "step", "usage_code", "retained_in_dish"),
     [
-        ("肉禽", "炒熟鸡肉", "main", True),
-        ("蔬菜", "加入葱花拌匀", "supporting", True),
-        ("调料", "热锅下油", "cooking_fat", True),
-        ("调料", "加入高汤煮开", "retained_liquid", True),
+        ("食用油", "热锅下食用油", "cooking_fat", True),
+        ("高汤", "加入高汤煮开", "retained_liquid", True),
     ],
 )
-def test_category_and_bound_step_resolve_each_usage_code(
-    category: str, step: str, usage_code: str, retained_in_dish: bool
+def test_unambiguous_bound_evidence_resolves_usage_code(
+    name: str, step: str, usage_code: str, retained_in_dish: bool
 ) -> None:
     resolution = derive_nutrition_usage(
-        occurrence=_occurrence(
-            name="鸡肉" if category == "肉禽" else "高汤" if usage_code == "retained_liquid" else "油"
-        ),
-        identity=_identity(
-            category=category,
-            name="鸡肉" if category == "肉禽" else "高汤" if usage_code == "retained_liquid" else "油",
-        ),
+        occurrence=_occurrence(name=name),
+        identity=_identity(category="调料", name=name),
         steps=_bound_steps(step),
         decisions=NutritionUsageDecisionIndex(()),
     )
@@ -89,6 +84,67 @@ def test_category_and_bound_step_resolve_each_usage_code(
     assert resolution.usage_code == usage_code
     assert resolution.retained_in_dish is retained_in_dish
     assert resolution.requires_review is False
+
+
+@pytest.mark.parametrize(("category", "name"), [("肉禽", "鸡肉"), ("蔬菜", "葱花")])
+def test_category_alone_does_not_guess_main_or_supporting(category: str, name: str) -> None:
+    resolution = derive_nutrition_usage(
+        occurrence=_occurrence(name=name),
+        identity=_identity(category=category, name=name),
+        steps=_bound_steps(f"加入{name}"),
+        decisions=NutritionUsageDecisionIndex(()),
+    )
+
+    assert resolution.usage_code is None
+    assert resolution.requires_review is True
+
+
+@pytest.mark.parametrize("name", ["生抽", "蚝油"])
+def test_sauce_with_heating_evidence_is_not_cooking_fat(name: str) -> None:
+    resolution = derive_nutrition_usage(
+        occurrence=_occurrence(name=name),
+        identity=_identity(category="调料", name=name),
+        steps=_bound_steps(f"热锅下{name}翻炒"),
+        decisions=NutritionUsageDecisionIndex(()),
+    )
+
+    assert resolution.usage_code == "seasoning"
+    assert resolution.requires_review is False
+
+
+@pytest.mark.parametrize("step", ["焯水后倒掉", "浸泡后沥干", "过滤后弃去汤汁"])
+def test_discarded_liquid_is_explicitly_non_retained(step: str) -> None:
+    resolution = derive_nutrition_usage(
+        occurrence=_occurrence(name="高汤"),
+        identity=_identity(category="调料", name="高汤"),
+        steps=_bound_steps(step),
+        decisions=NutritionUsageDecisionIndex(()),
+    )
+
+    assert resolution.usage_code == "retained_liquid"
+    assert resolution.retained_in_dish is False
+    assert resolution.requires_review is False
+
+
+@pytest.mark.parametrize(
+    ("raw", "fragment", "expected"),
+    [
+        ("适量", "盐适量", "as_needed"),
+        ("少许", "盐少许", "small_amount"),
+        ("数个", "红枣数个", "several_count"),
+        ("几滴", "香油几滴", "few_drops"),
+        ("100克", "盐少许", None),
+        ("适中", "适中", None),
+    ],
+)
+def test_fuzzy_token_uses_only_local_evidence_and_explicit_amount_wins(
+    raw: str, fragment: str, expected: str | None
+) -> None:
+    assert classify_fuzzy_token(raw, fragment) == expected
+
+
+def test_fuzzy_token_does_not_leak_from_another_ingredient_in_shared_step() -> None:
+    assert classify_fuzzy_token("100克", "盐100克") is None
 
 
 def test_ambiguous_usage_requires_an_effective_occurrence_decision() -> None:
@@ -108,6 +164,10 @@ def test_ambiguous_usage_requires_an_effective_occurrence_decision() -> None:
             (
                 NutritionUsageDecision(
                     occurrence_id="1-1",
+                    recipe_id=1,
+                    ingredient_id=10,
+                    ingredient_name="水",
+                    normalized_form="",
                     usage_code="retained_liquid",
                     retained_in_dish=True,
                     review_status="modified",
@@ -125,25 +185,25 @@ def test_ambiguous_usage_requires_an_effective_occurrence_decision() -> None:
 
 
 def test_decision_index_rejects_duplicate_effective_decisions_and_illegal_enums() -> None:
-    decision = NutritionUsageDecision("1-1", "main", True, "approved")
+    decision = NutritionUsageDecision("1-1", 1, 10, "盐", "", "main", True, "approved")
     with pytest.raises(ValueError, match="重复"):
         NutritionUsageDecisionIndex((decision, decision))
     with pytest.raises(ValueError, match="usage_code"):
         NutritionUsageDecisionIndex(
-            (NutritionUsageDecision("1-1", "garnish", True, "approved"),)
+            (NutritionUsageDecision("1-1", 1, 10, "盐", "", "garnish", True, "approved"),)
         )
     with pytest.raises(ValueError, match="review_status"):
         NutritionUsageDecisionIndex(
-            (NutritionUsageDecision("1-1", "main", True, "autopassed"),)
+            (NutritionUsageDecision("1-1", 1, 10, "盐", "", "main", True, "autopassed"),)
         )
 
 
 def test_usage_decision_loader_keeps_only_approved_or_modified_rows_effective(tmp_path) -> None:
     path = tmp_path / "nutrition-usage.csv"
     path.write_text(
-        "occurrence_id,usage_code,retained_in_dish,review_status\n"
-        "1-1,seasoning,true,approved\n"
-        "1-2,main,true,pending\n",
+        "occurrence_id,recipe_id,ingredient_id,ingredient_name,normalized_form,usage_code,retained_in_dish,review_status\n"
+        "1-1,1,10,盐,,seasoning,true,approved\n"
+        "1-2,1,20,葱,,main,true,pending\n",
         encoding="utf-8",
     )
 
@@ -151,3 +211,50 @@ def test_usage_decision_loader_keeps_only_approved_or_modified_rows_effective(tm
 
     assert decisions.get_effective("1-1").usage_code == "seasoning"
     assert decisions.get_effective("1-2") is None
+
+
+def test_usage_decision_rejects_invalid_boolean_and_metadata_drift(tmp_path) -> None:
+    path = tmp_path / "nutrition-usage.csv"
+    path.write_text(
+        "occurrence_id,recipe_id,ingredient_id,ingredient_name,normalized_form,usage_code,retained_in_dish,review_status\n"
+        "1-1,1,10,盐,粉,seasoning,yes,approved\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="retained_in_dish"):
+        load_nutrition_usage_decisions(path)
+
+    drifted = NutritionUsageDecisionIndex(
+        (NutritionUsageDecision("1-1", 1, 11, "盐", "粉", "seasoning", True, "approved"),)
+    )
+    resolution = derive_nutrition_usage(
+        occurrence=IngredientOccurrenceFact(
+            "1-1", 1, "盐粉", "盐", 10, "edible", form="粉"
+        ),
+        identity=_identity(category="其他"),
+        steps=_bound_steps("加入盐粉"),
+        decisions=drifted,
+    )
+    assert resolution.requires_review is True
+
+
+def test_effective_decision_is_applied_only_when_metadata_matches() -> None:
+    decision = NutritionUsageDecision(
+        "1-1", 1, 10, "鸡肉", "块", "main", True, "approved"
+    )
+    resolution = derive_nutrition_usage(
+        occurrence=IngredientOccurrenceFact(
+            "1-1", 1, "鸡肉块", "鸡肉", 10, "edible", form="块"
+        ),
+        identity=_identity(category="肉禽", name="鸡肉"),
+        steps=_bound_steps("加入鸡肉块"),
+        decisions=NutritionUsageDecisionIndex((decision,)),
+    )
+    assert resolution.usage_code == "main"
+    assert resolution.requires_review is False
+
+
+def test_nutrition_occurrence_input_type_hints_are_resolvable() -> None:
+    from food_agent_v2.b1.consumer_views import NutritionOccurrenceInput
+
+    hints = get_type_hints(NutritionOccurrenceInput)
+    assert hints["usage_code"] is not None

@@ -11,18 +11,18 @@ import re
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 from uuid import UUID
 
+from food_agent_v2.b1.nutrition_occurrence_rules import (
+    FuzzyTokenClass,
+    NutritionUsageDecisionIndex,
+    UsageCode,
+    classify_fuzzy_token,
+    derive_nutrition_usage,
+)
 from food_agent_v2.b1.review_inputs import RecipeProfileEnrichment
 from food_agent_v2.b1.schemas import RecipeClassification, RecordType, SourceRecipeRow
-
-if TYPE_CHECKING:
-    from food_agent_v2.b1.nutrition_occurrence_rules import (
-        FuzzyTokenClass,
-        NutritionUsageDecisionIndex,
-        UsageCode,
-    )
 
 CatalogEligibility = Literal["eligible", "ineligible"]
 ConsumptionRole = Literal["edible", "non_edible"]
@@ -596,8 +596,6 @@ def build_consumer_views(
     nutrition_usage_decisions: NutritionUsageDecisionIndex | None = None,
 ) -> ConsumerViewSet:
     """投影同构建的 B4/B5/B6/C1 视图；仅发布 eligible dish。"""
-    from food_agent_v2.b1.nutrition_occurrence_rules import NutritionUsageDecisionIndex
-
     _validate_build_identity(build)
     recipe_by_id = _unique_by(recipes, "recipe_id")
     identity_by_id = _unique_by(identities, "ingredient_id")
@@ -846,11 +844,6 @@ def _nutrition_inputs(
     steps: tuple[StructuredStep, ...],
     decisions: NutritionUsageDecisionIndex,
 ) -> tuple[NutritionOccurrenceInput, ...]:
-    from food_agent_v2.b1.nutrition_occurrence_rules import (
-        classify_fuzzy_token,
-        derive_nutrition_usage,
-    )
-
     inputs: list[NutritionOccurrenceInput] = []
     for occurrence in occurrences:
         if occurrence.ingredient_id is None:
@@ -861,11 +854,6 @@ def _nutrition_inputs(
             identity=identity,
             steps=steps,
             decisions=decisions,
-        )
-        bound_text = "\n".join(
-            step.raw_text
-            for step in steps
-            if occurrence.occurrence_id in step.bound_occurrence_ids
         )
         inputs.append(
             NutritionOccurrenceInput(
@@ -879,7 +867,7 @@ def _nutrition_inputs(
                 quantity_status=_quantity_status(occurrence.quantity_raw),
                 usage_code=resolution.usage_code,
                 fuzzy_token_class=classify_fuzzy_token(
-                    occurrence.quantity_raw, bound_text
+                    occurrence.quantity_raw, occurrence.source_fragment
                 ),
                 retained_in_dish=resolution.retained_in_dish,
                 requires_review=resolution.requires_review,

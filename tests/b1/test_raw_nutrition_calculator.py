@@ -32,7 +32,15 @@ def _view(*ingredients: NutritionOccurrenceInput) -> RecipeNutritionInputView:
     )
 
 
-def _ingredient(occurrence_id: str, ingredient_id: int, name: str, raw: str):
+def _ingredient(
+    occurrence_id: str,
+    ingredient_id: int,
+    name: str,
+    raw: str,
+    *,
+    retained_in_dish: bool | None = True,
+    requires_review: bool = False,
+):
     return NutritionOccurrenceInput(
         occurrence_id=occurrence_id,
         ingredient_id=ingredient_id,
@@ -40,6 +48,8 @@ def _ingredient(occurrence_id: str, ingredient_id: int, name: str, raw: str):
         unit_raw="克",
         quantity_status="explicit",
         ingredient_name=name,
+        retained_in_dish=retained_in_dish,
+        requires_review=requires_review,
     )
 
 
@@ -177,3 +187,38 @@ def test_any_missing_prerequisite_returns_no_partial_nutrition(
     assert result.raw_edible_input_weight_g is None
     assert result.raw_nutrition_total is None
     assert result.raw_nutrition_per_100g is None
+
+
+def test_review_required_occurrence_makes_nutrition_unavailable() -> None:
+    view = _view(_ingredient("1-1", 10, "甲", "100克", requires_review=True))
+
+    result = calculate_raw_recipe_nutrition(
+        view,
+        measure_rules=MeasureRuleIndex(()),
+        quantity_decisions=QuantityDecisionIndex(()),
+        edible_fractions=EdibleFractionRuleIndex(()),
+        nutrition_crosswalk=NutritionCrosswalkIndex((), NutritionReferenceIndex(())),
+    )
+
+    assert result.available is False
+    assert result.reason == "usage_unresolved"
+
+
+def test_non_retained_occurrence_does_not_contribute_to_raw_nutrition() -> None:
+    view = _view(
+        _ingredient("1-1", 10, "甲", "100克"),
+        _ingredient("1-2", 20, "乙", "50克", retained_in_dish=False),
+    )
+    result = calculate_raw_recipe_nutrition(
+        view,
+        measure_rules=MeasureRuleIndex(()),
+        quantity_decisions=QuantityDecisionIndex(()),
+        edible_fractions=EdibleFractionRuleIndex(
+            (EdibleFractionRule("甲", "", Decimal("1"), "approved"),)
+        ),
+        nutrition_crosswalk=_references((10, "甲", "ref-a", "10")),
+    )
+
+    assert result.available is True
+    assert result.raw_edible_input_weight_g == Decimal("100.00")
+    assert result.raw_nutrition_total.energy_kcal == Decimal("10.00")

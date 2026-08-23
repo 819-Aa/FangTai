@@ -15,6 +15,7 @@ from food_agent_v2.b1.nutrition_reference import (
 from food_agent_v2.b1.quantity_normalizer import normalize_quantity
 
 NutritionUnavailableReason = Literal[
+    "usage_unresolved",
     "quantity_unapproved",
     "edible_fraction_missing",
     "mapping_missing",
@@ -65,6 +66,10 @@ def calculate_raw_recipe_nutrition(
     total_edible_g = Decimal("0")
     totals = {field: Decimal("0") for field in NUTRIENT_FIELDS}
     for occurrence in view.ingredients:
+        if occurrence.requires_review:
+            return _unavailable(view, "usage_unresolved")
+        if occurrence.retained_in_dish is False:
+            continue
         normalized = normalize_quantity(occurrence, measure_rules, quantity_decisions)
         if normalized.standardized_grams is None or normalized.requires_review:
             return _unavailable(view, "quantity_unapproved")

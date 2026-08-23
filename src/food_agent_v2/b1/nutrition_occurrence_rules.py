@@ -30,14 +30,19 @@ _FUZZY_TOKENS: tuple[tuple[str, FuzzyTokenClass], ...] = (
     ("若干", "several_count"),
     ("几滴", "few_drops"),
 )
-_MAIN_CATEGORIES = frozenset({"肉禽", "水产", "谷物", "蛋奶", "豆制品", "水果"})
-_SUPPORTING_CATEGORIES = frozenset({"蔬菜", "菌菇", "坚果"})
 _COOKING_FAT_MARKERS = ("热锅", "下油", "炒", "煎", "炸", "爆")
 _RETAINED_LIQUID_MARKERS = ("加入", "倒入", "煮", "炖", "焖", "烧", "煨")
+_DISCARDED_LIQUID_MARKERS = ("焯", "浸泡", "沥", "过滤", "滤", "倒掉", "弃", "捞出")
 _LIQUID_NAME_MARKERS = ("汤", "水", "汁")
-_COOKING_FAT_NAME_MARKERS = ("油",)
+_COOKING_OIL_IDENTITIES = frozenset({
+    "食用油", "植物油", "花生油", "菜籽油", "橄榄油", "玉米油", "大豆油", "葵花籽油", "猪油", "色拉油",
+})
 _DECISION_FIELDS = (
     "occurrence_id",
+    "recipe_id",
+    "ingredient_id",
+    "ingredient_name",
+    "normalized_form",
     "usage_code",
     "retained_in_dish",
     "review_status",
@@ -47,6 +52,10 @@ _DECISION_FIELDS = (
 @dataclass(frozen=True)
 class NutritionUsageDecision:
     occurrence_id: str
+    recipe_id: int
+    ingredient_id: int
+    ingredient_name: str
+    normalized_form: str
     usage_code: UsageCode
     retained_in_dish: bool
     review_status: ReviewStatus
@@ -60,6 +69,10 @@ class NutritionUsageDecisionIndex:
         for decision in decisions:
             if not decision.occurrence_id:
                 raise ValueError("occurrence_id 不能为空")
+            if decision.recipe_id < 1 or decision.ingredient_id < 1:
+                raise ValueError("recipe_id/ingredient_id 必须为正整数")
+            if not decision.ingredient_name.strip():
+                raise ValueError("ingredient_name 不能为空")
             if decision.usage_code not in _USAGE_CODES:
                 raise ValueError("usage_code 越出封闭词表")
             if decision.review_status not in _REVIEW_STATUSES:
@@ -98,10 +111,13 @@ class NutritionUsageResolution:
 
 
 def classify_fuzzy_token(
-    quantity_raw: str | None, step_text: str | None
+    quantity_raw: str | None, occurrence_evidence: str | None
 ) -> FuzzyTokenClass | None:
-    """Map only explicit, closed fuzzy quantity expressions to stable classes."""
-    material = f"{quantity_raw or ''}\n{step_text or ''}"
+    """Map only occurrence-local fuzzy evidence; an explicit number wins."""
+    raw = quantity_raw or ""
+    if any(character.isdigit() for character in raw):
+        return None
+    material = f"{raw}\n{occurrence_evidence or ''}"
     for token, token_class in _FUZZY_TOKENS:
         if token in material:
             return token_class
@@ -117,7 +133,7 @@ def derive_nutrition_usage(
 ) -> NutritionUsageResolution:
     """Resolve from an effective decision or unambiguous category/bound-step evidence."""
     decision = decisions.get_effective(occurrence.occurrence_id)
-    if decision is not None:
+    if decision is not None and _decision_matches(decision, occurrence, identity):
         return NutritionUsageResolution(
             usage_code=decision.usage_code,
             retained_in_dish=decision.retained_in_dish,
@@ -129,30 +145,40 @@ def derive_nutrition_usage(
         for step in steps
         if occurrence.occurrence_id in step.bound_occurrence_ids
     )
-    category = identity.category
-    if category in _MAIN_CATEGORIES:
-        return NutritionUsageResolution("main", True, False)
-    if category in _SUPPORTING_CATEGORIES:
-        return NutritionUsageResolution("supporting", True, False)
     if (
-        any(marker in occurrence.name_clean for marker in _COOKING_FAT_NAME_MARKERS)
+        identity.name_canonical in _COOKING_OIL_IDENTITIES
+        and occurrence.name_clean == identity.name_canonical
         and any(marker in bound_text for marker in _COOKING_FAT_MARKERS)
     ):
         return NutritionUsageResolution("cooking_fat", True, False)
     if (
         any(marker in occurrence.name_clean for marker in _LIQUID_NAME_MARKERS)
-        and any(marker in bound_text for marker in _RETAINED_LIQUID_MARKERS)
     ):
-        return NutritionUsageResolution("retained_liquid", True, False)
-    if category == "调料":
-        if any(marker in occurrence.name_clean for marker in _COOKING_FAT_NAME_MARKERS):
-            return _requires_review()
+        if any(marker in bound_text for marker in _DISCARDED_LIQUID_MARKERS):
+            return NutritionUsageResolution("retained_liquid", False, False)
+        if any(marker in bound_text for marker in _RETAINED_LIQUID_MARKERS):
+            return NutritionUsageResolution("retained_liquid", True, False)
+        return _requires_review()
+    if identity.category == "调料":
         return NutritionUsageResolution("seasoning", True, False)
     return _requires_review()
 
 
 def _requires_review() -> NutritionUsageResolution:
     return NutritionUsageResolution(None, None, True)
+
+
+def _decision_matches(
+    decision: NutritionUsageDecision,
+    occurrence: IngredientOccurrenceFact,
+    identity: IngredientIdentityFact,
+) -> bool:
+    return (
+        decision.recipe_id == occurrence.recipe_id
+        and decision.ingredient_id == occurrence.ingredient_id
+        and decision.ingredient_name == identity.name_canonical
+        and decision.normalized_form == (occurrence.form or "").strip()
+    )
 
 
 def _parse_decision_row(
@@ -166,9 +192,13 @@ def _parse_decision_row(
             raise ValueError("retained_in_dish 必须为 true 或 false")
         return NutritionUsageDecision(
             occurrence_id=row["occurrence_id"].strip(),
+            recipe_id=int(row["recipe_id"]),
+            ingredient_id=int(row["ingredient_id"]),
+            ingredient_name=row["ingredient_name"].strip(),
+            normalized_form=row["normalized_form"].strip(),
             usage_code=row["usage_code"].strip(),  # type: ignore[arg-type]
             retained_in_dish=retained == "true",
             review_status=row["review_status"].strip(),  # type: ignore[arg-type]
         )
     except (AttributeError, KeyError, TypeError, ValueError) as exc:
-        raise ValueError(f"营养用途决定 CSV 第 {line_number} 行非法") from exc
+        raise ValueError(f"营养用途决定 CSV 第 {line_number} 行非法: {exc}") from exc
