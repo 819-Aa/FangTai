@@ -387,6 +387,8 @@ def test_rule_writer_keeps_existing_queue_when_serialization_fails(tmp_path, mon
         ("is_stable", 1),
         ("exception_codes", ("QTY_UNKNOWN",)),
         ("review_status", "approved"),
+        ("existing_rule_value", Decimal("0")),
+        ("form_usage_ambiguous", 1),
     ),
 )
 def test_rule_writer_rejects_every_invalid_dataclass_field_before_opening(
@@ -401,6 +403,56 @@ def test_rule_writer_rejects_every_invalid_dataclass_field_before_opening(
 
     with pytest.raises(ValueError):
         write_quantity_rule_candidates((replace(candidate, **{field: value}),), output)
+
+    assert output.read_bytes() == original
+
+
+def test_rule_writer_rejects_missing_iqr_exception_code_before_opening(tmp_path) -> None:
+    output = tmp_path / "review.csv"
+    original = b"preserve me\r\n"
+    output.write_bytes(original)
+    candidate = generate_quantity_rule_candidates(
+        tuple(_candidate(value) for value in ("9", "10", "10", "10", "30")),
+        MeasureRuleIndex(()),
+    )[0]
+
+    with pytest.raises(ValueError, match="exception_codes"):
+        write_quantity_rule_candidates(
+            (replace(candidate, exception_codes=()),), output
+        )
+
+    assert output.read_bytes() == original
+
+
+def test_rule_writer_rejects_missing_main_exception_code_before_opening(tmp_path) -> None:
+    output = tmp_path / "review.csv"
+    original = b"preserve me\r\n"
+    output.write_bytes(original)
+    candidate = generate_quantity_rule_candidates(
+        tuple(_candidate(value, usage="main") for value in ("9", "9.5", "10", "10.5", "11")),
+        MeasureRuleIndex(()),
+    )[0]
+
+    with pytest.raises(ValueError, match="exception_codes"):
+        write_quantity_rule_candidates(
+            (replace(candidate, exception_codes=(), is_stable=True),), output
+        )
+
+    assert output.read_bytes() == original
+
+
+def test_rule_writer_rejects_nonzero_iqr_when_standard_deviation_is_zero(tmp_path) -> None:
+    output = tmp_path / "review.csv"
+    original = b"preserve me\r\n"
+    output.write_bytes(original)
+    candidate = generate_quantity_rule_candidates(
+        tuple(_candidate("2") for _ in range(5)), MeasureRuleIndex(())
+    )[0]
+
+    with pytest.raises(ValueError, match="零标准差"):
+        write_quantity_rule_candidates(
+            (replace(candidate, q3=Decimal("3"), iqr=Decimal("1")),), output
+        )
 
     assert output.read_bytes() == original
 

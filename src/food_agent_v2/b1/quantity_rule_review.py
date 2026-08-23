@@ -72,6 +72,8 @@ class QuantityRuleCandidate:
     is_stable: bool
     exception_codes: tuple[str, ...]
     review_status: Literal["pending"] = "pending"
+    existing_rule_value: Decimal | None = None
+    form_usage_ambiguous: bool = False
 
 
 def coefficient_of_variation(values: tuple[Decimal, ...]) -> Decimal:
@@ -192,6 +194,8 @@ def write_quantity_rule_candidates(
         "is_stable",
         "exception_codes",
         "review_status",
+        "existing_rule_value",
+        "form_usage_ambiguous",
     )
     temporary_path: Path | None = None
     try:
@@ -238,6 +242,12 @@ def write_quantity_rule_candidates(
                             "|".join(candidate.exception_codes)
                         ),
                         "review_status": _safe_csv_text(candidate.review_status),
+                        "existing_rule_value": _decimal_text(
+                            candidate.existing_rule_value
+                        ),
+                        "form_usage_ambiguous": str(
+                            candidate.form_usage_ambiguous
+                        ).lower(),
                     }
                 )
         if _is_formal_measure_rule_path(path):
@@ -280,19 +290,15 @@ def _build_rule_candidate(
         usage_code,
         fuzzy_token_class,
     )
-    codes: set[str] = set()
-    if usage_code == "main":
-        codes.add("QTY_MAIN_UNRESOLVED")
-    if fuzzy_token_class is not None and any(
-        marker in ingredient_name for marker in ("盐", "油", "糖")
-    ):
-        codes.add("QTY_HIGH_IMPACT_FUZZY")
-    if existing is not None and abs(mean - existing) / existing > Decimal("0.30"):
-        codes.add("QTY_RULE_DEVIATION_GT_30PCT")
-    if has_iqr_outlier:
-        codes.add("QTY_RULE_IQR_OUTLIER")
-    if form_usage_ambiguous:
-        codes.add("QTY_FORM_USAGE_AMBIGUOUS")
+    exception_codes = expected_exception_codes(
+        ingredient_name=ingredient_name,
+        usage_code=usage_code,
+        fuzzy_token_class=fuzzy_token_class,
+        mean=mean,
+        existing_rule_value=existing,
+        has_iqr_outlier=has_iqr_outlier,
+        form_usage_ambiguous=form_usage_ambiguous,
+    )
     return QuantityRuleCandidate(
         rule_type=rule_type,
         ingredient_id=ingredient_id,
@@ -315,10 +321,42 @@ def _build_rule_candidate(
             len(values) >= 5
             and cv is not None
             and cv <= Decimal("0.15")
-            and not codes
+            and not exception_codes
         ),
-        exception_codes=tuple(code for code in _EXCEPTION_CODES if code in codes),
+        exception_codes=exception_codes,
+        existing_rule_value=existing,
+        form_usage_ambiguous=form_usage_ambiguous,
     )
+
+
+def expected_exception_codes(
+    *,
+    ingredient_name: str,
+    usage_code: str | None,
+    fuzzy_token_class: str | None,
+    mean: Decimal,
+    existing_rule_value: Decimal | None,
+    has_iqr_outlier: bool,
+    form_usage_ambiguous: bool,
+) -> tuple[str, ...]:
+    """Return the canonical exception tuple from review evidence only."""
+    codes: set[str] = set()
+    if usage_code == "main":
+        codes.add("QTY_MAIN_UNRESOLVED")
+    if fuzzy_token_class is not None and any(
+        marker in ingredient_name for marker in ("盐", "油", "糖")
+    ):
+        codes.add("QTY_HIGH_IMPACT_FUZZY")
+    if (
+        existing_rule_value is not None
+        and abs(mean - existing_rule_value) / existing_rule_value > Decimal("0.30")
+    ):
+        codes.add("QTY_RULE_DEVIATION_GT_30PCT")
+    if has_iqr_outlier:
+        codes.add("QTY_RULE_IQR_OUTLIER")
+    if form_usage_ambiguous:
+        codes.add("QTY_FORM_USAGE_AMBIGUOUS")
+    return tuple(code for code in _EXCEPTION_CODES if code in codes)
 
 
 def _sample_standard_deviation(values: tuple[Decimal, ...], mean: Decimal) -> Decimal:
@@ -437,6 +475,9 @@ def _validate_output_candidate(candidate: QuantityRuleCandidate) -> None:
     _require_positive_decimal(candidate.q1, "q1")
     _require_positive_decimal(candidate.q3, "q3")
     _require_nonnegative_decimal(candidate.sample_standard_deviation, "sample_standard_deviation")
+    _require_optional_positive_decimal(
+        candidate.existing_rule_value, "existing_rule_value"
+    )
     if type(candidate.sample_count) is not int or candidate.sample_count < 1:
         raise ValueError("数量规则候选 sample_count 非法")
     if candidate.sample_count < 2:
@@ -459,14 +500,35 @@ def _validate_output_candidate(candidate: QuantityRuleCandidate) -> None:
     _require_nonnegative_decimal(candidate.iqr, "iqr")
     if candidate.q1 > candidate.q3 or candidate.iqr != candidate.q3 - candidate.q1:
         raise ValueError("数量规则候选分位数与 IQR 不一致")
-    if type(candidate.has_iqr_outlier) is not bool or type(candidate.is_stable) is not bool:
+    if candidate.sample_standard_deviation == Decimal("0") and (
+        candidate.mean != candidate.q1
+        or candidate.mean != candidate.q3
+        or candidate.iqr != Decimal("0")
+    ):
+        raise ValueError("零标准差候选必须具有相同均值和分位数")
+    if (
+        type(candidate.has_iqr_outlier) is not bool
+        or type(candidate.is_stable) is not bool
+        or type(candidate.form_usage_ambiguous) is not bool
+    ):
         raise ValueError("数量规则候选布尔字段非法")
     _validate_exception_codes(candidate.exception_codes)
+    expected_codes = expected_exception_codes(
+        ingredient_name=candidate.ingredient_name,
+        usage_code=candidate.usage_code,
+        fuzzy_token_class=candidate.fuzzy_token_class,
+        mean=candidate.mean,
+        existing_rule_value=candidate.existing_rule_value,
+        has_iqr_outlier=candidate.has_iqr_outlier,
+        form_usage_ambiguous=candidate.form_usage_ambiguous,
+    )
+    if candidate.exception_codes != expected_codes:
+        raise ValueError("exception_codes 与候选证据不一致")
     expected_stability = (
         candidate.sample_count >= 5
         and candidate.coefficient_of_variation is not None
         and candidate.coefficient_of_variation <= Decimal("0.15")
-        and not candidate.exception_codes
+        and not expected_codes
     )
     if candidate.is_stable is not expected_stability:
         raise ValueError("数量规则候选 is_stable 不一致")
@@ -549,6 +611,12 @@ def _require_nonnegative_decimal(value: object, name: str) -> Decimal:
     if not isinstance(value, Decimal) or not value.is_finite() or value < 0:
         raise ValueError(f"{name} 必须为有限非负 Decimal")
     return value
+
+
+def _require_optional_positive_decimal(value: object, name: str) -> Decimal | None:
+    if value is None:
+        return None
+    return _require_positive_decimal(value, name)
 
 
 def _is_formal_measure_rule_path(path: Path) -> bool:
