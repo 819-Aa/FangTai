@@ -64,7 +64,7 @@ def _fuzzy_rule(grams: str = "10") -> MeasureRule:
 
 
 def test_rule_candidate_requires_five_samples_and_cv_at_most_point_15() -> None:
-    rows = tuple(_candidate(value) for value in ("9", "10", "10", "10", "11"))
+    rows = tuple(_candidate(value) for value in ("9", "9.5", "10", "10.5", "11"))
 
     result = generate_quantity_rule_candidates(rows, MeasureRuleIndex(()))
 
@@ -416,6 +416,96 @@ def test_rule_writer_requires_zero_dispersion_for_a_single_sample(tmp_path) -> N
     with pytest.raises(ValueError, match="单样本"):
         write_quantity_rule_candidates(
             (replace(candidate, sample_standard_deviation=Decimal("1")),), output
+        )
+
+    assert output.read_bytes() == original
+
+
+@pytest.mark.parametrize(
+    ("unit", "raw_quantity", "grams", "rule_type"),
+    (
+        ("个", "1个", ("9", "10", "10", "10", "11"), "unit_weight"),
+        ("毫升", "100毫升", ("90", "100", "100", "100", "110"), "density"),
+    ),
+)
+def test_writer_accepts_generated_count_and_density_provenance_contexts(
+    tmp_path, unit, raw_quantity, grams, rule_type
+) -> None:
+    candidate = generate_quantity_rule_candidates(
+        tuple(
+            _candidate(
+                grams_value,
+                unit=unit,
+                fuzzy=None,
+                usage="supporting",
+                raw_quantity=raw_quantity,
+            )
+            for grams_value in grams
+        ),
+        MeasureRuleIndex(()),
+    )[0]
+    output = tmp_path / "review.csv"
+
+    write_quantity_rule_candidates((candidate,), output)
+
+    assert candidate.rule_type == rule_type
+    assert candidate.usage_code == "supporting"
+    assert candidate.review_status == "pending"
+
+
+@pytest.mark.parametrize(
+    "field",
+    ("to_grams", "coefficient_of_variation", "is_stable"),
+)
+def test_rule_writer_rejects_inconsistent_statistical_evidence_before_opening(
+    tmp_path, field
+) -> None:
+    output = tmp_path / "review.csv"
+    original = b"preserve me\r\n"
+    output.write_bytes(original)
+    candidate = generate_quantity_rule_candidates(
+        tuple(_candidate(value) for value in ("9", "9.5", "10", "10.5", "11")),
+        MeasureRuleIndex(()),
+    )[0]
+    mutation = {
+        "to_grams": candidate.mean + Decimal("1"),
+        "coefficient_of_variation": candidate.coefficient_of_variation + Decimal("0.01"),
+        "is_stable": False,
+    }[field]
+
+    with pytest.raises(ValueError):
+        write_quantity_rule_candidates((replace(candidate, **{field: mutation}),), output)
+
+    assert output.read_bytes() == original
+
+
+def test_rule_writer_rejects_inconsistent_density_evidence_before_opening(tmp_path) -> None:
+    output = tmp_path / "review.csv"
+    original = b"preserve me\r\n"
+    output.write_bytes(original)
+    candidate = generate_quantity_rule_candidates(
+        tuple(
+            _candidate(
+                value,
+                unit="毫升",
+                fuzzy=None,
+                usage="supporting",
+                raw_quantity="100毫升",
+            )
+            for value in ("90", "95", "100", "105", "110")
+        ),
+        MeasureRuleIndex(()),
+    )[0]
+
+    with pytest.raises(ValueError, match="mass_density"):
+        write_quantity_rule_candidates(
+            (
+                replace(
+                    candidate,
+                    mass_density_g_per_ml=candidate.mean + Decimal("1"),
+                ),
+            ),
+            output,
         )
 
     assert output.read_bytes() == original

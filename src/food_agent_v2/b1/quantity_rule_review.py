@@ -312,7 +312,10 @@ def _build_rule_candidate(
         iqr=iqr,
         has_iqr_outlier=has_iqr_outlier,
         is_stable=(
-            len(values) >= 5 and cv is not None and cv <= Decimal("0.15")
+            len(values) >= 5
+            and cv is not None
+            and cv <= Decimal("0.15")
+            and not codes
         ),
         exception_codes=tuple(code for code in _EXCEPTION_CODES if code in codes),
     )
@@ -449,40 +452,45 @@ def _validate_output_candidate(candidate: QuantityRuleCandidate) -> None:
         _require_nonnegative_decimal(
             candidate.coefficient_of_variation, "coefficient_of_variation"
         )
+        if candidate.coefficient_of_variation != (
+            candidate.sample_standard_deviation / candidate.mean
+        ):
+            raise ValueError("数量规则候选 coefficient_of_variation 不一致")
     _require_nonnegative_decimal(candidate.iqr, "iqr")
     if candidate.q1 > candidate.q3 or candidate.iqr != candidate.q3 - candidate.q1:
         raise ValueError("数量规则候选分位数与 IQR 不一致")
     if type(candidate.has_iqr_outlier) is not bool or type(candidate.is_stable) is not bool:
         raise ValueError("数量规则候选布尔字段非法")
+    _validate_exception_codes(candidate.exception_codes)
     expected_stability = (
         candidate.sample_count >= 5
         and candidate.coefficient_of_variation is not None
         and candidate.coefficient_of_variation <= Decimal("0.15")
+        and not candidate.exception_codes
     )
     if candidate.is_stable is not expected_stability:
         raise ValueError("数量规则候选 is_stable 不一致")
-    _validate_exception_codes(candidate.exception_codes)
     if candidate.rule_type == "density":
         if candidate.to_grams is not None:
             raise ValueError("density 候选不得包含 to_grams")
         _require_positive_decimal(
             candidate.mass_density_g_per_ml, "mass_density_g_per_ml"
         )
+        if candidate.mass_density_g_per_ml != candidate.mean:
+            raise ValueError("mass_density_g_per_ml 必须等于 mean")
     else:
         if candidate.mass_density_g_per_ml is not None:
             raise ValueError("非 density 候选不得包含 mass_density_g_per_ml")
         _require_positive_decimal(candidate.to_grams, "to_grams")
+        if candidate.to_grams != candidate.mean:
+            raise ValueError("to_grams 必须等于 mean")
 
     if candidate.rule_type == "unit_weight":
         if candidate.normalized_unit not in _COUNT_UNITS:
             raise ValueError("unit_weight 候选单位非法")
-        if candidate.usage_code is not None or candidate.fuzzy_token_class is not None:
-            raise ValueError("unit_weight 候选不得包含用途或模糊分类")
     elif candidate.rule_type == "density":
         if candidate.normalized_unit not in {"毫升", "升"}:
             raise ValueError("density 候选单位非法")
-        if candidate.usage_code is not None or candidate.fuzzy_token_class is not None:
-            raise ValueError("density 候选不得包含用途或模糊分类")
     elif candidate.normalized_unit is not None:
         raise ValueError("fuzzy_single_value 候选不得包含单位")
     elif candidate.usage_code is None or candidate.fuzzy_token_class is None:
