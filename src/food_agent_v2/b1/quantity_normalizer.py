@@ -1,4 +1,4 @@
-"""食材用量到克的确定性标准化。"""
+"""确定性地将营养 occurrence 用量规范为克。"""
 
 from __future__ import annotations
 
@@ -9,14 +9,28 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Literal
 
+from food_agent_v2.b1.nutrition_occurrence_rules import FuzzyTokenClass, UsageCode
+
 ReviewStatus = Literal["pending", "approved", "modified", "rejected"]
-_REVIEW_STATUSES = {"pending", "approved", "modified", "rejected"}
+_REVIEW_STATUSES = frozenset({"pending", "approved", "modified", "rejected"})
+_USAGE_CODES = frozenset(
+    {"main", "supporting", "seasoning", "cooking_fat", "retained_liquid"}
+)
+_FUZZY_TOKEN_CLASSES = frozenset(
+    {"as_needed", "small_amount", "several_count", "few_drops"}
+)
+_COUNT_UNITS = frozenset({"个", "片", "根", "勺"})
 
 _MEASURE_HEADERS = (
+    "schema_version",
     "rule_id",
-    "ingredient_name",
     "rule_type",
-    "from_unit",
+    "ingredient_id",
+    "ingredient_name",
+    "normalized_form",
+    "normalized_unit",
+    "usage_code",
+    "fuzzy_token_class",
     "to_grams",
     "mass_density_g_per_ml",
     "review_status",
@@ -44,35 +58,139 @@ _QUANTITY_DECISION_HEADERS = (
 
 @dataclass(frozen=True)
 class MeasureRule:
+    schema_version: Literal["2.0.0"]
     rule_id: str
+    rule_type: Literal["unit_weight", "density", "fuzzy_single_value"]
+    ingredient_id: int
     ingredient_name: str
-    rule_type: Literal["density", "unit_weight"]
-    from_unit: str
+    normalized_form: str
+    normalized_unit: str | None
+    usage_code: UsageCode | None
+    fuzzy_token_class: FuzzyTokenClass | None
     to_grams: Decimal | None
     mass_density_g_per_ml: Decimal | None
     review_status: ReviewStatus
 
 
 class MeasureRuleIndex:
-    def __init__(self, rules) -> None:
-        self._rules: dict[tuple[str, str], MeasureRule] = {}
-        for rule in rules:
-            if rule.review_status not in _REVIEW_STATUSES:
-                raise ValueError(f"计量规则 review_status 非法: {rule.rule_id}")
-            if rule.review_status != "approved":
-                raise ValueError(f"计量规则未批准: {rule.rule_id}")
-            key = (rule.ingredient_name.strip(), _normalize_unit(rule.from_unit))
-            if key in self._rules:
-                raise ValueError(f"重复计量规则: {key}")
-            if rule.rule_type == "density":
-                if rule.mass_density_g_per_ml is None or rule.mass_density_g_per_ml <= 0:
-                    raise ValueError(f"密度规则无合法密度: {rule.rule_id}")
-            elif rule.to_grams is None or rule.to_grams <= 0:
-                raise ValueError(f"单位重量规则无合法克重: {rule.rule_id}")
-            self._rules[key] = rule
+    """Indexes approved V2 rules at their only valid matching granularity."""
 
-    def get(self, ingredient_name: str, unit: str) -> MeasureRule | None:
-        return self._rules.get((ingredient_name.strip(), _normalize_unit(unit)))
+    def __init__(self, rules) -> None:
+        self._unit_weights: dict[tuple[int, str, str], MeasureRule] = {}
+        self._densities: dict[tuple[int, str], MeasureRule] = {}
+        self._fuzzy_single_values: dict[
+            tuple[int, str, UsageCode, FuzzyTokenClass], MeasureRule
+        ] = {}
+        rule_ids: set[str] = set()
+        for rule in rules:
+            self._validate_common(rule, rule_ids)
+            if rule.rule_type == "unit_weight":
+                self._add_unit_weight(rule)
+            elif rule.rule_type == "density":
+                self._add_density(rule)
+            elif rule.rule_type == "fuzzy_single_value":
+                self._add_fuzzy_single_value(rule)
+            else:
+                raise ValueError(f"不支持的 rule_type: {rule.rule_type}")
+
+    def get_unit_weight(
+        self, ingredient_id: int, normalized_form: str, normalized_unit: str
+    ) -> MeasureRule | None:
+        return self._unit_weights.get(
+            (ingredient_id, _normalized_form(normalized_form), _normalize_unit(normalized_unit))
+        )
+
+    def get_density(
+        self, ingredient_id: int, normalized_form: str
+    ) -> MeasureRule | None:
+        return self._densities.get((ingredient_id, _normalized_form(normalized_form)))
+
+    def get_fuzzy_single_value(
+        self,
+        ingredient_id: int,
+        normalized_form: str,
+        usage_code: UsageCode,
+        fuzzy_token_class: FuzzyTokenClass,
+    ) -> MeasureRule | None:
+        return self._fuzzy_single_values.get(
+            (
+                ingredient_id,
+                _normalized_form(normalized_form),
+                usage_code,
+                fuzzy_token_class,
+            )
+        )
+
+    def _validate_common(self, rule: MeasureRule, rule_ids: set[str]) -> None:
+        if rule.schema_version != "2.0.0":
+            raise ValueError(f"计量规则 schema_version 非法: {rule.rule_id}")
+        if not rule.rule_id.strip() or rule.rule_id in rule_ids:
+            raise ValueError(f"重复或为空的计量规则 rule_id: {rule.rule_id}")
+        rule_ids.add(rule.rule_id)
+        if rule.ingredient_id < 1:
+            raise ValueError(f"计量规则 ingredient_id 必须为正整数: {rule.rule_id}")
+        if not rule.ingredient_name.strip():
+            raise ValueError(f"计量规则 ingredient_name 不能为空: {rule.rule_id}")
+        if rule.review_status not in _REVIEW_STATUSES:
+            raise ValueError(f"计量规则 review_status 非法: {rule.rule_id}")
+        if rule.review_status != "approved":
+            raise ValueError(f"计量规则未批准: {rule.rule_id}")
+
+    def _add_unit_weight(self, rule: MeasureRule) -> None:
+        unit = _normalize_unit(rule.normalized_unit or "")
+        if unit not in _COUNT_UNITS:
+            raise ValueError(f"单位重量规则单位非法: {rule.rule_id}")
+        if rule.to_grams is None or rule.to_grams <= 0:
+            raise ValueError(f"单位重量规则无合法克重: {rule.rule_id}")
+        if any(
+            value is not None
+            for value in (
+                rule.mass_density_g_per_ml,
+                rule.usage_code,
+                rule.fuzzy_token_class,
+            )
+        ):
+            raise ValueError(f"单位重量规则字段不匹配: {rule.rule_id}")
+        key = (rule.ingredient_id, _normalized_form(rule.normalized_form), unit)
+        if key in self._unit_weights:
+            raise ValueError(f"重复计量规则: {key}")
+        self._unit_weights[key] = rule
+
+    def _add_density(self, rule: MeasureRule) -> None:
+        if _normalize_unit(rule.normalized_unit or "") != "毫升":
+            raise ValueError(f"密度规则单位必须为毫升: {rule.rule_id}")
+        if rule.mass_density_g_per_ml is None or rule.mass_density_g_per_ml <= 0:
+            raise ValueError(f"密度规则无合法密度: {rule.rule_id}")
+        if any(
+            value is not None
+            for value in (rule.to_grams, rule.usage_code, rule.fuzzy_token_class)
+        ):
+            raise ValueError(f"密度规则字段不匹配: {rule.rule_id}")
+        key = (rule.ingredient_id, _normalized_form(rule.normalized_form))
+        if key in self._densities:
+            raise ValueError(f"重复计量规则: {key}")
+        self._densities[key] = rule
+
+    def _add_fuzzy_single_value(self, rule: MeasureRule) -> None:
+        if rule.normalized_unit is not None and rule.normalized_unit.strip():
+            raise ValueError(f"模糊单值规则不得包含单位: {rule.rule_id}")
+        if rule.to_grams is None or rule.to_grams <= 0:
+            raise ValueError(f"模糊单值规则无合法克重: {rule.rule_id}")
+        if rule.mass_density_g_per_ml is not None:
+            raise ValueError(f"模糊单值规则不得包含密度: {rule.rule_id}")
+        if rule.usage_code not in _USAGE_CODES:
+            raise ValueError(f"模糊单值规则 usage_code 非法: {rule.rule_id}")
+        if rule.fuzzy_token_class not in _FUZZY_TOKEN_CLASSES:
+            raise ValueError(f"模糊单值规则 fuzzy_token_class 非法: {rule.rule_id}")
+        key = (
+            rule.ingredient_id,
+            _normalized_form(rule.normalized_form),
+            rule.usage_code,
+            rule.fuzzy_token_class,
+        )
+        if key in self._fuzzy_single_values:
+            raise ValueError(f"重复计量规则: {key}")
+        self._fuzzy_single_values[key] = rule
 
 
 @dataclass(frozen=True)
@@ -140,15 +258,20 @@ def load_measure_rules(path: Path) -> MeasureRuleIndex:
         status = _review_status(row, path)
         if status != "approved":
             continue
-        rule_type = row["rule_type"].strip()
-        if rule_type not in {"density", "unit_weight"}:
+        rule_type = _required(row, "rule_type")
+        if rule_type not in {"unit_weight", "density", "fuzzy_single_value"}:
             raise ValueError(f"不支持的 rule_type: {rule_type}")
         rules.append(
             MeasureRule(
+                schema_version=_required(row, "schema_version"),  # type: ignore[arg-type]
                 rule_id=_required(row, "rule_id"),
+                rule_type=rule_type,  # type: ignore[arg-type]
+                ingredient_id=_required_int(row, "ingredient_id"),
                 ingredient_name=_required(row, "ingredient_name"),
-                rule_type=rule_type,
-                from_unit=_required(row, "from_unit"),
+                normalized_form=(row["normalized_form"] or "").strip(),
+                normalized_unit=_optional_text(row, "normalized_unit"),
+                usage_code=_optional_text(row, "usage_code"),  # type: ignore[arg-type]
+                fuzzy_token_class=_optional_text(row, "fuzzy_token_class"),  # type: ignore[arg-type]
                 to_grams=_optional_decimal(row, "to_grams"),
                 mass_density_g_per_ml=_optional_decimal(
                     row, "mass_density_g_per_ml"
@@ -200,6 +323,7 @@ class QuantityNormalizationResult:
 
 
 def normalize_quantity(occurrence, measure_rules, decisions) -> QuantityNormalizationResult:
+    """Apply the V2 priority order without broadening a rule's scope."""
     decision = decisions.get_effective(occurrence.occurrence_id)
     if decision is not None:
         return QuantityNormalizationResult(
@@ -209,40 +333,59 @@ def normalize_quantity(occurrence, measure_rules, decisions) -> QuantityNormaliz
         )
 
     raw = (occurrence.quantity_raw or "").strip()
-    if not raw or any(marker in raw for marker in ("适量", "少许", "若干", "几滴")):
-        return _pending()
-
-    values = _numbers(raw)
-    if not values:
-        return _pending()
-    amount = sum(values[:2], Decimal("0")) / Decimal(len(values[:2]))
     unit = _normalize_unit(occurrence.unit_raw or _unit_from_text(raw))
+    amount = _deterministic_amount(raw)
+    if amount is not None and unit in _MASS_FACTORS:
+        return _resolved(amount * _MASS_FACTORS[unit])
 
-    mass_factors = {
-        "克": Decimal("1"),
-        "千克": Decimal("1000"),
-        "斤": Decimal("500"),
-        "两": Decimal("50"),
-    }
-    if unit in mass_factors:
-        return _resolved(amount * mass_factors[unit])
+    normalized_form = _normalized_form(occurrence.normalized_form)
+    if amount is not None and unit in _COUNT_UNITS:
+        rule = measure_rules.get_unit_weight(
+            occurrence.ingredient_id, normalized_form, unit
+        )
+        if rule is not None:
+            return _resolved(amount * rule.to_grams)
 
-    rule_unit = "毫升" if unit == "升" else unit
-    rule = measure_rules.get(occurrence.ingredient_name, rule_unit)
-    if rule is None:
-        return _pending()
-    if rule.rule_type == "density":
-        volume_ml = amount * (Decimal("1000") if unit in {"升", "l"} else Decimal("1"))
-        return _resolved(volume_ml * rule.mass_density_g_per_ml)
-    return _resolved(amount * rule.to_grams)
+    if amount is not None and unit in {"毫升", "升"}:
+        rule = measure_rules.get_density(occurrence.ingredient_id, normalized_form)
+        if rule is not None:
+            volume_ml = amount * (Decimal("1000") if unit == "升" else Decimal("1"))
+            return _resolved(volume_ml * rule.mass_density_g_per_ml)
+
+    usage_code = occurrence.usage_code
+    fuzzy_token_class = occurrence.fuzzy_token_class
+    if usage_code is not None and fuzzy_token_class is not None:
+        rule = measure_rules.get_fuzzy_single_value(
+            occurrence.ingredient_id,
+            normalized_form,
+            usage_code,
+            fuzzy_token_class,
+        )
+        if rule is not None:
+            return _resolved(rule.to_grams)
+    return _pending()
 
 
-def _resolved(grams: Decimal) -> QuantityNormalizationResult:
+_MASS_FACTORS = {
+    "克": Decimal("1"),
+    "千克": Decimal("1000"),
+    "斤": Decimal("500"),
+    "两": Decimal("50"),
+}
+
+
+def _resolved(grams: Decimal | None) -> QuantityNormalizationResult:
+    if grams is None:
+        raise ValueError("有效规则缺少克重")
     return QuantityNormalizationResult(grams, False, None)
 
 
 def _pending() -> QuantityNormalizationResult:
     return QuantityNormalizationResult(None, True, "pending")
+
+
+def _normalized_form(form: str | None) -> str:
+    return (form or "").strip()
 
 
 def _normalize_unit(unit: str) -> str:
@@ -258,16 +401,48 @@ def _normalize_unit(unit: str) -> str:
 
 def _unit_from_text(raw: str) -> str:
     known_units = (
-        "千克", "公斤", "毫升", "茶匙", "汤匙", "克", "斤", "两", "升", "kg", "ml",
-        "g", "l", "个", "只", "片", "勺", "杯", "碗", "颗",
+        "千克",
+        "公斤",
+        "毫升",
+        "茶匙",
+        "汤匙",
+        "克",
+        "斤",
+        "两",
+        "升",
+        "kg",
+        "ml",
+        "g",
+        "l",
+        "个",
+        "片",
+        "根",
+        "勺",
     )
     lowered = raw.lower()
     return next((unit for unit in known_units if unit in lowered), "")
 
 
+def _deterministic_amount(raw: str) -> Decimal | None:
+    cleaned = raw.replace("大约", "").replace("约", "").replace("左右", "").strip()
+    if not cleaned or any(marker in cleaned for marker in ("适量", "少许", "若干", "数", "几")):
+        return None
+    values = _numbers(cleaned)
+    if values:
+        return sum(values[:2], Decimal("0")) / Decimal(len(values[:2]))
+    chinese_match = re.search(
+        r"(半|一|二|两)(?=(?:千克|公斤|毫升|个|片|根|勺|克|斤|两|升))",
+        cleaned,
+    )
+    if chinese_match is None:
+        return None
+    return {"半": Decimal("0.5"), "一": Decimal("1"), "二": Decimal("2"), "两": Decimal("2")}[
+        chinese_match.group(1)
+    ]
+
+
 def _numbers(raw: str) -> list[Decimal]:
-    cleaned = raw.replace("约", "").replace("大约", "").replace("左右", "")
-    tokens = re.findall(r"\d+(?:\.\d+)?(?:/\d+(?:\.\d+)?)?", cleaned)
+    tokens = re.findall(r"\d+(?:\.\d+)?(?:/\d+(?:\.\d+)?)?", raw)
     values: list[Decimal] = []
     for token in tokens:
         try:
@@ -307,6 +482,11 @@ def _required(row: dict[str, str], field: str) -> str:
     return value
 
 
+def _optional_text(row: dict[str, str], field: str) -> str | None:
+    value = (row.get(field) or "").strip()
+    return value or None
+
+
 def _optional_decimal(row: dict[str, str], field: str) -> Decimal | None:
     value = (row.get(field) or "").strip()
     if not value:
@@ -322,3 +502,11 @@ def _required_decimal(row: dict[str, str], field: str) -> Decimal:
     if value is None:
         raise ValueError(f"{field} 不能为空")
     return value
+
+
+def _required_int(row: dict[str, str], field: str) -> int:
+    value = _required(row, field)
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise ValueError(f"{field} 不是合法整数: {value!r}") from exc

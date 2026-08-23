@@ -1,1 +1,1 @@
-rule_id,ingredient_name,rule_type,from_unit,to_grams,mass_density_g_per_ml,review_status
+schema_version,rule_id,rule_type,ingredient_id,ingredient_name,normalized_form,normalized_unit,usage_code,fuzzy_token_class,to_grams,mass_density_g_per_ml,review_status
