@@ -81,6 +81,11 @@ class MeasureRuleIndex:
         self._fuzzy_single_values: dict[
             tuple[int, str, UsageCode, FuzzyTokenClass], MeasureRule
         ] = {}
+        self._unit_weight_keys: set[tuple[int, str, str]] = set()
+        self._density_keys: set[tuple[int, str]] = set()
+        self._fuzzy_single_value_keys: set[
+            tuple[int, str, UsageCode, FuzzyTokenClass]
+        ] = set()
         rule_ids: set[str] = set()
         for rule in rules:
             self._validate_common(rule, rule_ids)
@@ -157,9 +162,11 @@ class MeasureRuleIndex:
         ):
             raise ValueError(f"单位重量规则字段不匹配: {rule.rule_id}")
         key = (rule.ingredient_id, _normalized_form(rule.normalized_form), unit)
-        if key in self._unit_weights:
+        if key in self._unit_weight_keys:
             raise ValueError(f"重复计量规则: {key}")
-        self._unit_weights[key] = rule
+        self._unit_weight_keys.add(key)
+        if rule.review_status == "approved":
+            self._unit_weights[key] = rule
 
     def _add_density(self, rule: MeasureRule) -> None:
         if _normalize_unit(rule.normalized_unit or "") != "毫升":
@@ -172,9 +179,11 @@ class MeasureRuleIndex:
         ):
             raise ValueError(f"密度规则字段不匹配: {rule.rule_id}")
         key = (rule.ingredient_id, _normalized_form(rule.normalized_form))
-        if key in self._densities:
+        if key in self._density_keys:
             raise ValueError(f"重复计量规则: {key}")
-        self._densities[key] = rule
+        self._density_keys.add(key)
+        if rule.review_status == "approved":
+            self._densities[key] = rule
 
     def _add_fuzzy_single_value(self, rule: MeasureRule) -> None:
         if rule.normalized_unit is not None and rule.normalized_unit.strip():
@@ -193,9 +202,11 @@ class MeasureRuleIndex:
             rule.usage_code,
             rule.fuzzy_token_class,
         )
-        if key in self._fuzzy_single_values:
+        if key in self._fuzzy_single_value_keys:
             raise ValueError(f"重复计量规则: {key}")
-        self._fuzzy_single_values[key] = rule
+        self._fuzzy_single_value_keys.add(key)
+        if rule.review_status == "approved":
+            self._fuzzy_single_values[key] = rule
 
 
 @dataclass(frozen=True)
@@ -434,6 +445,12 @@ def _parse_deterministic_quantity(raw: str) -> tuple[Decimal, str] | None:
     second_text = match.group("second")
     second = _parse_quantity_number(second_text) if second_text is not None else None
     if first is None or (second_text is not None and second is None):
+        return None
+    if second is not None and (
+        not _is_finite_positive_decimal(first)
+        or not _is_finite_positive_decimal(second)
+        or first > second
+    ):
         return None
     amount = first if second is None else (first + second) / Decimal("2")
     if not _is_finite_positive_decimal(amount):

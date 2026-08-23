@@ -390,3 +390,29 @@ def test_inactive_measure_rows_are_fully_validated_before_being_ignored(
 
     with pytest.raises(ValueError, match=message):
         load_measure_rules(path)
+
+
+def test_inactive_audit_rules_are_never_queryable() -> None:
+    audit_index = MeasureRuleIndex(
+        (
+            _rule(
+                rule_type="unit_weight",
+                unit="个",
+                grams="50",
+                status="pending",
+            ),
+        ),
+        _allow_inactive=True,
+    )
+
+    assert audit_index.get_unit_weight(10, "raw", "个") is None
+
+
+@pytest.mark.parametrize("raw", ["0-10克", "40-30克"])
+def test_quantity_ranges_require_positive_ordered_endpoints(raw) -> None:
+    result = normalize_quantity(
+        _occurrence(raw, "克"), MeasureRuleIndex(()), QuantityDecisionIndex(())
+    )
+
+    assert result.standardized_grams is None
+    assert result.requires_review is True
