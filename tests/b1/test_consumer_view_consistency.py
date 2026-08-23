@@ -92,8 +92,8 @@ def test_all_consumer_views_share_build_recipe_and_ingredient_identity() -> None
             ),
         ),
         identities=(
-            IngredientIdentityFact(10, "姜", 1, ("生姜",)),
-            IngredientIdentityFact(20, "盐", 2),
+            IngredientIdentityFact(10, "姜", 1, ("生姜",), "调料"),
+            IngredientIdentityFact(20, "盐", 2, category="调料"),
         ),
     )
 
@@ -103,6 +103,10 @@ def test_all_consumer_views_share_build_recipe_and_ingredient_identity() -> None
     assert views.nutrition_views[0].ingredient_ids == (10, 20)
     assert views.nutrition_views[0].ingredients[0].ingredient_name == "姜"
     assert views.nutrition_views[0].ingredients[0].form == "丝"
+    assert views.nutrition_views[0].ingredients[0].normalized_form == "丝"
+    assert views.nutrition_views[0].ingredients[0].usage_code == "seasoning"
+    assert views.nutrition_views[0].ingredients[0].fuzzy_token_class is None
+    assert views.nutrition_views[0].ingredients[0].retained_in_dish is True
     assert views.retrieval_views[0].ingredient_ids == (10, 20)
     assert views.step_views[0].ingredient_ids == (10, 20)
     assert views.step_views[0].steps[0].bound_occurrence_ids == ("1-1", "1-2")
@@ -195,6 +199,22 @@ def test_conditioned_ingredients_project_different_consumer_sets() -> None:
     assert [relation.condition_type for relation in views.health_views[0].ingredient_relations] == [
         "required", "optional", "one_of",
     ]
+
+
+def test_ambiguous_nutrition_usage_is_published_as_review_required() -> None:
+    views = build_consumer_views(
+        build=BUILD,
+        recipes=(RecipeFact(1, "测试菜", "dish", ("准备水",)),),
+        occurrences=(
+            IngredientOccurrenceFact("1-1", 1, "水", "水", 10, "edible"),
+        ),
+        identities=(IngredientIdentityFact(10, "水", 1, category="其他"),),
+    )
+
+    ingredient = views.nutrition_views[0].ingredients[0]
+    assert ingredient.usage_code is None
+    assert ingredient.retained_in_dish is None
+    assert ingredient.requires_review is True
 
 
 def test_publish_rejects_cross_build_consumer_view(tmp_path) -> None:

@@ -11,11 +11,18 @@ import re
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 from uuid import UUID
 
 from food_agent_v2.b1.review_inputs import RecipeProfileEnrichment
 from food_agent_v2.b1.schemas import RecipeClassification, RecordType, SourceRecipeRow
+
+if TYPE_CHECKING:
+    from food_agent_v2.b1.nutrition_occurrence_rules import (
+        FuzzyTokenClass,
+        NutritionUsageDecisionIndex,
+        UsageCode,
+    )
 
 CatalogEligibility = Literal["eligible", "ineligible"]
 ConsumptionRole = Literal["edible", "non_edible"]
@@ -94,6 +101,7 @@ class IngredientIdentityFact:
     name_canonical: str
     family_id: int
     aliases: tuple[str, ...] = ()
+    category: str = ""
 
 
 @dataclass(frozen=True)
@@ -146,6 +154,11 @@ class NutritionOccurrenceInput:
     quantity_status: QuantityStatus
     ingredient_name: str = ""
     form: str | None = None
+    normalized_form: str = ""
+    usage_code: UsageCode | None = None
+    fuzzy_token_class: FuzzyTokenClass | None = None
+    retained_in_dish: bool | None = None
+    requires_review: bool = False
 
 
 @dataclass(frozen=True)
@@ -286,6 +299,7 @@ def identity_facts_from_records(
             name_canonical=record["name_canonical"],
             family_id=int(record["family_id"]),
             aliases=tuple(sorted(set(aliases_by_id.get(int(record["ingredient_id"]), [])))),
+            category=record.get("category", ""),
         )
         for record in registry_records
     )
@@ -579,11 +593,15 @@ def build_consumer_views(
     recipes: tuple[RecipeFact, ...],
     occurrences: tuple[IngredientOccurrenceFact, ...],
     identities: tuple[IngredientIdentityFact, ...],
+    nutrition_usage_decisions: NutritionUsageDecisionIndex | None = None,
 ) -> ConsumerViewSet:
     """投影同构建的 B4/B5/B6/C1 视图；仅发布 eligible dish。"""
+    from food_agent_v2.b1.nutrition_occurrence_rules import NutritionUsageDecisionIndex
+
     _validate_build_identity(build)
     recipe_by_id = _unique_by(recipes, "recipe_id")
     identity_by_id = _unique_by(identities, "ingredient_id")
+    usage_decisions = nutrition_usage_decisions or NutritionUsageDecisionIndex(())
     _unique_by(occurrences, "occurrence_id")
 
     occurrences_by_recipe: dict[int, list[IngredientOccurrenceFact]] = {
@@ -688,18 +706,11 @@ def build_consumer_views(
                 build_id=build.build_id,
                 source_manifest_hash=build.source_manifest_hash,
                 recipe_id=recipe_id,
-                ingredients=tuple(
-                    NutritionOccurrenceInput(
-                        occurrence_id=item.occurrence_id,
-                        ingredient_id=item.ingredient_id,
-                        ingredient_name=identity_by_id[item.ingredient_id].name_canonical,
-                        form=item.form,
-                        quantity_raw=item.quantity_raw,
-                        unit_raw=item.unit_raw,
-                        quantity_status=_quantity_status(item.quantity_raw),
-                    )
-                    for item in nutrition_occurrences
-                    if item.ingredient_id is not None
+                ingredients=_nutrition_inputs(
+                    nutrition_occurrences,
+                    identity_by_id,
+                    steps,
+                    usage_decisions,
                 ),
             )
         )
@@ -827,6 +838,54 @@ def _quantity_status(quantity_raw: str | None) -> QuantityStatus:
     if any(marker in quantity_raw for marker in ("-", "–", "—", "~", "～", "至", "到")):
         return "range"
     return "explicit"
+
+
+def _nutrition_inputs(
+    occurrences: list[IngredientOccurrenceFact],
+    identities: dict[int, IngredientIdentityFact],
+    steps: tuple[StructuredStep, ...],
+    decisions: NutritionUsageDecisionIndex,
+) -> tuple[NutritionOccurrenceInput, ...]:
+    from food_agent_v2.b1.nutrition_occurrence_rules import (
+        classify_fuzzy_token,
+        derive_nutrition_usage,
+    )
+
+    inputs: list[NutritionOccurrenceInput] = []
+    for occurrence in occurrences:
+        if occurrence.ingredient_id is None:
+            continue
+        identity = identities[occurrence.ingredient_id]
+        resolution = derive_nutrition_usage(
+            occurrence=occurrence,
+            identity=identity,
+            steps=steps,
+            decisions=decisions,
+        )
+        bound_text = "\n".join(
+            step.raw_text
+            for step in steps
+            if occurrence.occurrence_id in step.bound_occurrence_ids
+        )
+        inputs.append(
+            NutritionOccurrenceInput(
+                occurrence_id=occurrence.occurrence_id,
+                ingredient_id=occurrence.ingredient_id,
+                ingredient_name=identity.name_canonical,
+                form=occurrence.form,
+                normalized_form=(occurrence.form or "").strip(),
+                quantity_raw=occurrence.quantity_raw,
+                unit_raw=occurrence.unit_raw,
+                quantity_status=_quantity_status(occurrence.quantity_raw),
+                usage_code=resolution.usage_code,
+                fuzzy_token_class=classify_fuzzy_token(
+                    occurrence.quantity_raw, bound_text
+                ),
+                retained_in_dish=resolution.retained_in_dish,
+                requires_review=resolution.requires_review,
+            )
+        )
+    return tuple(inputs)
 
 
 def _split_label_tags(labels_raw: str) -> tuple[str, ...]:
