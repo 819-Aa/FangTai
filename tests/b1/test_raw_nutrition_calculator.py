@@ -40,6 +40,7 @@ def _ingredient(
     *,
     retained_in_dish: bool | None = True,
     requires_review: bool = False,
+    usage_code: str | None = "main",
 ):
     return NutritionOccurrenceInput(
         occurrence_id=occurrence_id,
@@ -50,6 +51,7 @@ def _ingredient(
         ingredient_name=name,
         retained_in_dish=retained_in_dish,
         requires_review=requires_review,
+        usage_code=usage_code,
     )
 
 
@@ -204,6 +206,31 @@ def test_review_required_occurrence_makes_nutrition_unavailable() -> None:
     assert result.reason == "usage_unresolved"
 
 
+@pytest.mark.parametrize(
+    ("usage_code", "retained_in_dish"),
+    [(None, True), ("main", None)],
+)
+def test_missing_v2_usage_fields_make_nutrition_unavailable(
+    usage_code: str | None, retained_in_dish: bool | None
+) -> None:
+    view = _view(
+        _ingredient(
+            "1-1", 10, "甲", "100克", usage_code=usage_code, retained_in_dish=retained_in_dish
+        )
+    )
+
+    result = calculate_raw_recipe_nutrition(
+        view,
+        measure_rules=MeasureRuleIndex(()),
+        quantity_decisions=QuantityDecisionIndex(()),
+        edible_fractions=EdibleFractionRuleIndex(()),
+        nutrition_crosswalk=NutritionCrosswalkIndex((), NutritionReferenceIndex(())),
+    )
+
+    assert result.available is False
+    assert result.reason == "usage_unresolved"
+
+
 def test_non_retained_occurrence_does_not_contribute_to_raw_nutrition() -> None:
     view = _view(
         _ingredient("1-1", 10, "甲", "100克"),
@@ -222,3 +249,18 @@ def test_non_retained_occurrence_does_not_contribute_to_raw_nutrition() -> None:
     assert result.available is True
     assert result.raw_edible_input_weight_g == Decimal("100.00")
     assert result.raw_nutrition_total.energy_kcal == Decimal("10.00")
+
+
+def test_all_non_retained_occurrences_have_a_stable_reason() -> None:
+    view = _view(_ingredient("1-1", 10, "甲", "100克", retained_in_dish=False))
+
+    result = calculate_raw_recipe_nutrition(
+        view,
+        measure_rules=MeasureRuleIndex(()),
+        quantity_decisions=QuantityDecisionIndex(()),
+        edible_fractions=EdibleFractionRuleIndex(()),
+        nutrition_crosswalk=NutritionCrosswalkIndex((), NutritionReferenceIndex(())),
+    )
+
+    assert result.available is False
+    assert result.reason == "no_retained_ingredients"

@@ -68,7 +68,6 @@ def test_fuzzy_token_and_usage_are_closed_and_deterministic() -> None:
     ("name", "step", "usage_code", "retained_in_dish"),
     [
         ("食用油", "热锅下食用油", "cooking_fat", True),
-        ("高汤", "加入高汤煮开", "retained_liquid", True),
     ],
 )
 def test_unambiguous_bound_evidence_resolves_usage_code(
@@ -84,6 +83,19 @@ def test_unambiguous_bound_evidence_resolves_usage_code(
     assert resolution.usage_code == usage_code
     assert resolution.retained_in_dish is retained_in_dish
     assert resolution.requires_review is False
+
+
+def test_liquid_without_occurrence_decision_requires_review_even_when_step_mentions_adding() -> None:
+    resolution = derive_nutrition_usage(
+        occurrence=_occurrence(name="高汤"),
+        identity=_identity(category="调料", name="高汤"),
+        steps=_bound_steps("加入高汤煮开"),
+        decisions=NutritionUsageDecisionIndex(()),
+    )
+
+    assert resolution.usage_code is None
+    assert resolution.retained_in_dish is None
+    assert resolution.requires_review is True
 
 
 @pytest.mark.parametrize(("category", "name"), [("肉禽", "鸡肉"), ("蔬菜", "葱花")])
@@ -112,8 +124,20 @@ def test_sauce_with_heating_evidence_is_not_cooking_fat(name: str) -> None:
     assert resolution.requires_review is False
 
 
+def test_controlled_oil_without_heating_evidence_requires_review() -> None:
+    resolution = derive_nutrition_usage(
+        occurrence=_occurrence(name="油"),
+        identity=_identity(category="调料", name="油"),
+        steps=_bound_steps("加入油拌匀"),
+        decisions=NutritionUsageDecisionIndex(()),
+    )
+
+    assert resolution.usage_code is None
+    assert resolution.requires_review is True
+
+
 @pytest.mark.parametrize("step", ["焯水后倒掉", "浸泡后沥干", "过滤后弃去汤汁"])
-def test_discarded_liquid_is_explicitly_non_retained(step: str) -> None:
+def test_liquid_discard_language_does_not_replace_occurrence_decision(step: str) -> None:
     resolution = derive_nutrition_usage(
         occurrence=_occurrence(name="高汤"),
         identity=_identity(category="调料", name="高汤"),
@@ -121,9 +145,9 @@ def test_discarded_liquid_is_explicitly_non_retained(step: str) -> None:
         decisions=NutritionUsageDecisionIndex(()),
     )
 
-    assert resolution.usage_code == "retained_liquid"
-    assert resolution.retained_in_dish is False
-    assert resolution.requires_review is False
+    assert resolution.usage_code is None
+    assert resolution.retained_in_dish is None
+    assert resolution.requires_review is True
 
 
 @pytest.mark.parametrize(
@@ -224,14 +248,14 @@ def test_usage_decision_rejects_invalid_boolean_and_metadata_drift(tmp_path) -> 
         load_nutrition_usage_decisions(path)
 
     drifted = NutritionUsageDecisionIndex(
-        (NutritionUsageDecision("1-1", 1, 11, "盐", "粉", "seasoning", True, "approved"),)
+        (NutritionUsageDecision("1-1", 1, 11, "食用油", "", "cooking_fat", True, "approved"),)
     )
     resolution = derive_nutrition_usage(
         occurrence=IngredientOccurrenceFact(
-            "1-1", 1, "盐粉", "盐", 10, "edible", form="粉"
+            "1-1", 1, "食用油", "食用油", 10, "edible"
         ),
-        identity=_identity(category="其他"),
-        steps=_bound_steps("加入盐粉"),
+        identity=_identity(category="调料", name="食用油"),
+        steps=_bound_steps("热锅下食用油"),
         decisions=drifted,
     )
     assert resolution.requires_review is True

@@ -238,6 +238,31 @@ def test_nutrition_usage_decision_is_applied_through_consumer_projection() -> No
     assert ingredient.requires_review is False
 
 
+def test_shared_step_does_not_leak_fuzzy_evidence_between_occurrences() -> None:
+    views = build_consumer_views(
+        build=BUILD,
+        recipes=(RecipeFact(1, "测试菜", "dish", ("加入少许盐和100克面粉",)),),
+        occurrences=(
+            IngredientOccurrenceFact("1-1", 1, "盐少许", "盐", 10, "edible", quantity_raw="少许"),
+            IngredientOccurrenceFact("1-2", 1, "面粉100克", "面粉", 20, "edible", quantity_raw="100克"),
+        ),
+        identities=(
+            IngredientIdentityFact(10, "盐", 1, category="调料"),
+            IngredientIdentityFact(20, "面粉", 2, category="谷物"),
+        ),
+        nutrition_usage_decisions=NutritionUsageDecisionIndex(
+            (
+                NutritionUsageDecision("1-1", 1, 10, "盐", "", "seasoning", True, "approved"),
+                NutritionUsageDecision("1-2", 1, 20, "面粉", "", "main", True, "approved"),
+            )
+        ),
+    )
+
+    salt, flour = views.nutrition_views[0].ingredients
+    assert salt.fuzzy_token_class == "small_amount"
+    assert flour.fuzzy_token_class is None
+
+
 def test_publish_rejects_cross_build_consumer_view(tmp_path) -> None:
     views = build_consumer_views(
         build=BUILD,

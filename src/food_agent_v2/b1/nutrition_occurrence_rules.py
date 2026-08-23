@@ -31,11 +31,9 @@ _FUZZY_TOKENS: tuple[tuple[str, FuzzyTokenClass], ...] = (
     ("几滴", "few_drops"),
 )
 _COOKING_FAT_MARKERS = ("热锅", "下油", "炒", "煎", "炸", "爆")
-_RETAINED_LIQUID_MARKERS = ("加入", "倒入", "煮", "炖", "焖", "烧", "煨")
-_DISCARDED_LIQUID_MARKERS = ("焯", "浸泡", "沥", "过滤", "滤", "倒掉", "弃", "捞出")
 _LIQUID_NAME_MARKERS = ("汤", "水", "汁")
 _COOKING_OIL_IDENTITIES = frozenset({
-    "食用油", "植物油", "花生油", "菜籽油", "橄榄油", "玉米油", "大豆油", "葵花籽油", "猪油", "色拉油",
+    "油", "食用油", "植物油", "花生油", "菜籽油", "橄榄油", "玉米油", "大豆油", "葵花籽油", "猪油", "色拉油",
 })
 _DECISION_FIELDS = (
     "occurrence_id",
@@ -133,7 +131,9 @@ def derive_nutrition_usage(
 ) -> NutritionUsageResolution:
     """Resolve from an effective decision or unambiguous category/bound-step evidence."""
     decision = decisions.get_effective(occurrence.occurrence_id)
-    if decision is not None and _decision_matches(decision, occurrence, identity):
+    if decision is not None:
+        if not _decision_matches(decision, occurrence, identity):
+            return _requires_review()
         return NutritionUsageResolution(
             usage_code=decision.usage_code,
             retained_in_dish=decision.retained_in_dish,
@@ -145,19 +145,14 @@ def derive_nutrition_usage(
         for step in steps
         if occurrence.occurrence_id in step.bound_occurrence_ids
     )
-    if (
-        identity.name_canonical in _COOKING_OIL_IDENTITIES
-        and occurrence.name_clean == identity.name_canonical
-        and any(marker in bound_text for marker in _COOKING_FAT_MARKERS)
-    ):
-        return NutritionUsageResolution("cooking_fat", True, False)
-    if (
-        any(marker in occurrence.name_clean for marker in _LIQUID_NAME_MARKERS)
-    ):
-        if any(marker in bound_text for marker in _DISCARDED_LIQUID_MARKERS):
-            return NutritionUsageResolution("retained_liquid", False, False)
-        if any(marker in bound_text for marker in _RETAINED_LIQUID_MARKERS):
-            return NutritionUsageResolution("retained_liquid", True, False)
+    if identity.name_canonical in _COOKING_OIL_IDENTITIES:
+        if (
+            occurrence.name_clean == identity.name_canonical
+            and any(marker in bound_text for marker in _COOKING_FAT_MARKERS)
+        ):
+            return NutritionUsageResolution("cooking_fat", True, False)
+        return _requires_review()
+    if any(marker in occurrence.name_clean for marker in _LIQUID_NAME_MARKERS):
         return _requires_review()
     if identity.category == "调料":
         return NutritionUsageResolution("seasoning", True, False)

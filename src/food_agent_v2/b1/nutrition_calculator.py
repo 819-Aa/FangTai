@@ -21,6 +21,7 @@ NutritionUnavailableReason = Literal[
     "mapping_missing",
     "nutrient_incomplete",
     "no_nutrition_ingredients",
+    "no_retained_ingredients",
 ]
 
 
@@ -65,11 +66,17 @@ def calculate_raw_recipe_nutrition(
 
     total_edible_g = Decimal("0")
     totals = {field: Decimal("0") for field in NUTRIENT_FIELDS}
+    retained_occurrence_count = 0
     for occurrence in view.ingredients:
-        if occurrence.requires_review:
+        if (
+            occurrence.requires_review
+            or occurrence.usage_code is None
+            or occurrence.retained_in_dish is None
+        ):
             return _unavailable(view, "usage_unresolved")
         if occurrence.retained_in_dish is False:
             continue
+        retained_occurrence_count += 1
         normalized = normalize_quantity(occurrence, measure_rules, quantity_decisions)
         if normalized.standardized_grams is None or normalized.requires_review:
             return _unavailable(view, "quantity_unapproved")
@@ -94,6 +101,8 @@ def calculate_raw_recipe_nutrition(
             nutrient = getattr(reference.per_100g, field)
             totals[field] += edible_g / Decimal("100") * nutrient
 
+    if retained_occurrence_count == 0:
+        return _unavailable(view, "no_retained_ingredients")
     if total_edible_g <= 0:
         return _unavailable(view, "quantity_unapproved")
     per_100g = {
