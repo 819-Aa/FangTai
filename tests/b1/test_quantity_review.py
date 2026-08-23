@@ -25,6 +25,10 @@ def _pending(occurrence_id: str, name: str) -> NutritionOccurrenceInput:
         unit_raw=None,
         quantity_status="unknown",
         ingredient_name=name,
+        normalized_form="",
+        usage_code="seasoning",
+        fuzzy_token_class="small_amount",
+        retained_in_dish=True,
     )
 
 
@@ -98,8 +102,27 @@ def test_review_contexts_only_include_unresolved_quantities() -> None:
         source_manifest_hash="a" * 64,
         recipe_id=1,
         ingredients=(
-            NutritionOccurrenceInput("1-1", 10, "100克", "克", "explicit", "面粉"),
-            NutritionOccurrenceInput("1-2", 20, "少许", None, "unknown", "盐"),
+                NutritionOccurrenceInput(
+                    "1-1",
+                    10,
+                    "100克",
+                    "克",
+                    "explicit",
+                    "面粉",
+                    usage_code="main",
+                    retained_in_dish=True,
+                ),
+                NutritionOccurrenceInput(
+                    "1-2",
+                    20,
+                    "少许",
+                    None,
+                    "unknown",
+                    "盐",
+                    usage_code="seasoning",
+                    fuzzy_token_class="small_amount",
+                    retained_in_dish=True,
+                ),
         ),
     )
     fact = RecipeFact(

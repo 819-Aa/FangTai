@@ -46,7 +46,10 @@ from food_agent_v2.b1.quantity_review import (
     QuantityEstimateCache,
     build_quantity_review_contexts,
     generate_quantity_candidates,
-    write_quantity_candidates,
+)
+from food_agent_v2.b1.quantity_rule_review import (
+    generate_quantity_rule_candidates,
+    write_quantity_rule_candidates,
 )
 from food_agent_v2.b1.recipe_classifier import classify_all, load_overrides
 from food_agent_v2.b1.review_inputs import (
@@ -229,8 +232,12 @@ def _write_quantity_review(
         model_id=load_config().llm.model_for_role("quantity_estimation"),
         max_workers=workers,
     )
-    write_quantity_candidates(candidates, output)
-    return len(candidates)
+    rule_candidates = generate_quantity_rule_candidates(
+        candidates,
+        load_measure_rules(_REVIEW_DIR / "ingredient_measure_rules.csv"),
+    )
+    write_quantity_rule_candidates(rule_candidates, output)
+    return len(rule_candidates)
 
 
 def _write_nutrition_review(rows, facts, output: Path, *, sample: int | None) -> int:

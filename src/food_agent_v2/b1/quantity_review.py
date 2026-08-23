@@ -39,6 +39,11 @@ class QuantityReviewCandidate:
     deterministic_calculation: str
     candidate_basis: str
     candidate_grams: Decimal
+    ingredient_id: int | None = None
+    normalized_form: str = ""
+    normalized_unit: str | None = None
+    usage_code: str | None = None
+    fuzzy_token_class: str | None = None
     decision_grams: Decimal | None = None
     review_status: str = "pending"
 
@@ -237,7 +242,12 @@ def generate_quantity_candidates(
                     occurrence_id=ingredient.occurrence_id,
                     recipe_id=context.recipe_id,
                     recipe_name=context.recipe_name,
+                    ingredient_id=ingredient.ingredient_id,
                     ingredient_name=ingredient.ingredient_name,
+                    normalized_form=ingredient.normalized_form,
+                    normalized_unit=ingredient.unit_raw,
+                    usage_code=ingredient.usage_code,
+                    fuzzy_token_class=ingredient.fuzzy_token_class,
                     raw_quantity=ingredient.quantity_raw or "",
                     step_context=context.step_context,
                     deterministic_calculation="not_available",
@@ -265,7 +275,12 @@ def write_quantity_candidates(candidates, output_path: Path) -> None:
         "occurrence_id",
         "recipe_id",
         "recipe_name",
+        "ingredient_id",
         "ingredient_name",
+        "normalized_form",
+        "normalized_unit",
+        "usage_code",
+        "fuzzy_token_class",
         "raw_quantity",
         "step_context",
         "deterministic_calculation",
@@ -283,7 +298,12 @@ def write_quantity_candidates(candidates, output_path: Path) -> None:
                     "occurrence_id": item.occurrence_id,
                     "recipe_id": item.recipe_id,
                     "recipe_name": item.recipe_name,
+                    "ingredient_id": item.ingredient_id if item.ingredient_id is not None else "",
                     "ingredient_name": item.ingredient_name,
+                    "normalized_form": item.normalized_form,
+                    "normalized_unit": item.normalized_unit or "",
+                    "usage_code": item.usage_code or "",
+                    "fuzzy_token_class": item.fuzzy_token_class or "",
                     "raw_quantity": item.raw_quantity,
                     "step_context": item.step_context,
                     "deterministic_calculation": item.deterministic_calculation,
