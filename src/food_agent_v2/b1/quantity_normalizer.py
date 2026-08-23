@@ -9,17 +9,27 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Literal
 
+from food_agent_v2.b1.edible_fraction_review import (
+    EdibleFractionRule as _EdibleFractionRule,
+)
+from food_agent_v2.b1.edible_fraction_review import (
+    EdibleFractionRuleIndex as _EdibleFractionRuleIndex,
+)
+from food_agent_v2.b1.edible_fraction_review import (
+    load_edible_fraction_rules as _load_edible_fraction_rules,
+)
 from food_agent_v2.b1.nutrition_occurrence_rules import FuzzyTokenClass, UsageCode
 
 ReviewStatus = Literal["pending", "approved", "modified", "rejected"]
 _REVIEW_STATUSES = frozenset({"pending", "approved", "modified", "rejected"})
-_USAGE_CODES = frozenset(
-    {"main", "supporting", "seasoning", "cooking_fat", "retained_liquid"}
-)
-_FUZZY_TOKEN_CLASSES = frozenset(
-    {"as_needed", "small_amount", "several_count", "few_drops"}
-)
+_USAGE_CODES = frozenset({"main", "supporting", "seasoning", "cooking_fat", "retained_liquid"})
+_FUZZY_TOKEN_CLASSES = frozenset({"as_needed", "small_amount", "several_count", "few_drops"})
 _COUNT_UNITS = frozenset({"个", "片", "根", "勺"})
+
+# Compatibility exports; formal edible-fraction semantics live in their own module.
+EdibleFractionRule = _EdibleFractionRule
+EdibleFractionRuleIndex = _EdibleFractionRuleIndex
+load_edible_fraction_rules = _load_edible_fraction_rules
 
 _MEASURE_HEADERS = (
     "schema_version",
@@ -33,12 +43,6 @@ _MEASURE_HEADERS = (
     "fuzzy_token_class",
     "to_grams",
     "mass_density_g_per_ml",
-    "review_status",
-)
-_EDIBLE_FRACTION_HEADERS = (
-    "ingredient_name",
-    "form",
-    "edible_fraction",
     "review_status",
 )
 _QUANTITY_DECISION_HEADERS = (
@@ -83,9 +87,7 @@ class MeasureRuleIndex:
         ] = {}
         self._unit_weight_keys: set[tuple[int, str, str]] = set()
         self._density_keys: set[tuple[int, str]] = set()
-        self._fuzzy_single_value_keys: set[
-            tuple[int, str, UsageCode, FuzzyTokenClass]
-        ] = set()
+        self._fuzzy_single_value_keys: set[tuple[int, str, UsageCode, FuzzyTokenClass]] = set()
         rule_ids: set[str] = set()
         for rule in rules:
             self._validate_common(rule, rule_ids)
@@ -107,9 +109,7 @@ class MeasureRuleIndex:
             (ingredient_id, _normalized_form(normalized_form), _normalize_unit(normalized_unit))
         )
 
-    def get_density(
-        self, ingredient_id: int, normalized_form: str
-    ) -> MeasureRule | None:
+    def get_density(self, ingredient_id: int, normalized_form: str) -> MeasureRule | None:
         return self._densities.get((ingredient_id, _normalized_form(normalized_form)))
 
     def get_fuzzy_single_value(
@@ -174,8 +174,7 @@ class MeasureRuleIndex:
         if not _is_finite_positive_decimal(rule.mass_density_g_per_ml):
             raise ValueError(f"密度规则无合法密度: {rule.rule_id}")
         if any(
-            value is not None
-            for value in (rule.to_grams, rule.usage_code, rule.fuzzy_token_class)
+            value is not None for value in (rule.to_grams, rule.usage_code, rule.fuzzy_token_class)
         ):
             raise ValueError(f"密度规则字段不匹配: {rule.rule_id}")
         key = (rule.ingredient_id, _normalized_form(rule.normalized_form))
@@ -235,39 +234,6 @@ class QuantityDecisionIndex:
         return None
 
 
-@dataclass(frozen=True)
-class EdibleFractionRule:
-    ingredient_name: str
-    form: str
-    edible_fraction: Decimal
-    review_status: ReviewStatus
-
-
-class EdibleFractionRuleIndex:
-    def __init__(self, rules) -> None:
-        self._rules: dict[tuple[str, str], Decimal] = {}
-        for rule in rules:
-            if rule.review_status not in _REVIEW_STATUSES:
-                raise ValueError(
-                    f"可食比例规则 review_status 非法: {rule.ingredient_name}/{rule.form}"
-                )
-            if rule.review_status != "approved":
-                raise ValueError(
-                    f"可食比例规则未批准: {rule.ingredient_name}/{rule.form}"
-                )
-            if not Decimal("0") < rule.edible_fraction <= Decimal("1"):
-                raise ValueError(
-                    f"可食比例必须在 (0, 1]：{rule.ingredient_name}/{rule.form}"
-                )
-            key = (rule.ingredient_name.strip(), (rule.form or "").strip())
-            if key in self._rules:
-                raise ValueError(f"重复可食比例规则: {key}")
-            self._rules[key] = rule.edible_fraction
-
-    def get(self, ingredient_name: str, form: str | None) -> Decimal | None:
-        return self._rules.get((ingredient_name.strip(), (form or "").strip()))
-
-
 def load_measure_rules(path: Path) -> MeasureRuleIndex:
     rules: list[MeasureRule] = []
     for row in _read_review_csv(path, _MEASURE_HEADERS):
@@ -287,9 +253,7 @@ def load_measure_rules(path: Path) -> MeasureRuleIndex:
                 usage_code=_optional_text(row, "usage_code"),  # type: ignore[arg-type]
                 fuzzy_token_class=_optional_text(row, "fuzzy_token_class"),  # type: ignore[arg-type]
                 to_grams=_optional_decimal(row, "to_grams"),
-                mass_density_g_per_ml=_optional_decimal(
-                    row, "mass_density_g_per_ml"
-                ),
+                mass_density_g_per_ml=_optional_decimal(row, "mass_density_g_per_ml"),
                 review_status=status,
             )
         )
@@ -311,23 +275,6 @@ def load_quantity_decisions(path: Path) -> QuantityDecisionIndex:
             )
         )
     return QuantityDecisionIndex(decisions)
-
-
-def load_edible_fraction_rules(path: Path) -> EdibleFractionRuleIndex:
-    rules: list[EdibleFractionRule] = []
-    for row in _read_review_csv(path, _EDIBLE_FRACTION_HEADERS):
-        status = _review_status(row, path)
-        if status != "approved":
-            continue
-        rules.append(
-            EdibleFractionRule(
-                ingredient_name=_required(row, "ingredient_name"),
-                form=row["form"].strip(),
-                edible_fraction=_required_decimal(row, "edible_fraction"),
-                review_status="approved",
-            )
-        )
-    return EdibleFractionRuleIndex(rules)
 
 
 @dataclass(frozen=True)
@@ -364,9 +311,7 @@ def normalize_quantity(occurrence, measure_rules, decisions) -> QuantityNormaliz
 
     normalized_form = _normalized_form(occurrence.normalized_form)
     if amount is not None and unit in _COUNT_UNITS:
-        rule = measure_rules.get_unit_weight(
-            occurrence.ingredient_id, normalized_form, unit
-        )
+        rule = measure_rules.get_unit_weight(occurrence.ingredient_id, normalized_form, unit)
         if rule is not None:
             return _resolved(amount * rule.to_grams)
 
@@ -481,9 +426,7 @@ def _read_review_csv(path: Path, expected_headers: tuple[str, ...]):
     with review_path.open("r", encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
         if tuple(reader.fieldnames or ()) != expected_headers:
-            raise ValueError(
-                f"审阅文件列不匹配: {review_path}; expected={expected_headers}"
-            )
+            raise ValueError(f"审阅文件列不匹配: {review_path}; expected={expected_headers}")
         yield from reader
 
 

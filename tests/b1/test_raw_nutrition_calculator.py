@@ -7,6 +7,12 @@ from food_agent_v2.b1.consumer_views import (
     NutritionOccurrenceInput,
     RecipeNutritionInputView,
 )
+from food_agent_v2.b1.edible_fraction_review import (
+    EdibleFractionDecision,
+    EdibleFractionDecisionIndex,
+    EdibleFractionRule,
+    EdibleFractionRuleIndex,
+)
 from food_agent_v2.b1.nutrition_calculator import calculate_raw_recipe_nutrition
 from food_agent_v2.b1.nutrition_reference import (
     IngredientNutritionReference,
@@ -16,8 +22,6 @@ from food_agent_v2.b1.nutrition_reference import (
     NutritionVector,
 )
 from food_agent_v2.b1.quantity_normalizer import (
-    EdibleFractionRule,
-    EdibleFractionRuleIndex,
     MeasureRuleIndex,
     QuantityDecisionIndex,
 )
@@ -60,6 +64,18 @@ def _vector(value: str) -> NutritionVector:
     return NutritionVector(**{field: number for field in NutritionVector.model_fields})
 
 
+def _edible_rule(
+    ingredient_id: int, name: str, fraction: str, normalized_form: str = ""
+) -> EdibleFractionRule:
+    return EdibleFractionRule(
+        ingredient_id,
+        name,
+        normalized_form,
+        Decimal(fraction),
+        "approved",
+    )
+
+
 def _references(*pairs: tuple[int, str, str]):
     references = NutritionReferenceIndex(
         tuple(
@@ -99,8 +115,8 @@ def test_two_ingredient_decimal_calculation_is_all_raw_input_and_rounds_only_at_
     )
     edible = EdibleFractionRuleIndex(
         (
-            EdibleFractionRule("甲", "", Decimal("0.8"), "approved"),
-            EdibleFractionRule("乙", "", Decimal("1"), "approved"),
+            _edible_rule(10, "甲", "0.8"),
+            _edible_rule(20, "乙", "1"),
         )
     )
 
@@ -124,6 +140,36 @@ def test_two_ingredient_decimal_calculation_is_all_raw_input_and_rounds_only_at_
     assert "confidence" not in str(dumped)
 
 
+def test_calculator_uses_occurrence_fraction_decision_before_generic_rule() -> None:
+    view = _view(_ingredient("1-1", 10, "甲", "100克"))
+
+    result = calculate_raw_recipe_nutrition(
+        view,
+        measure_rules=MeasureRuleIndex(()),
+        quantity_decisions=QuantityDecisionIndex(()),
+        edible_fractions=EdibleFractionRuleIndex((_edible_rule(10, "甲", "0.8"),)),
+        edible_fraction_decisions=EdibleFractionDecisionIndex(
+            (
+                EdibleFractionDecision(
+                    occurrence_id="1-1",
+                    recipe_id=1,
+                    ingredient_id=10,
+                    ingredient_name="甲",
+                    normalized_form="",
+                    decision_form="",
+                    edible_fraction=Decimal("0.5"),
+                    review_status="approved",
+                ),
+            )
+        ),
+        nutrition_crosswalk=_references((10, "甲", "ref-a", "10")),
+    )
+
+    assert result.available is True
+    assert result.raw_edible_input_weight_g == Decimal("50.00")
+    assert result.raw_nutrition_total.energy_kcal == Decimal("5.00")
+
+
 @pytest.mark.parametrize(
     ("raw", "with_fraction", "with_mapping", "complete", "reason"),
     [
@@ -137,11 +183,7 @@ def test_any_missing_prerequisite_returns_no_partial_nutrition(
     raw, with_fraction, with_mapping, complete, reason
 ) -> None:
     view = _view(_ingredient("1-1", 10, "甲", raw))
-    edible = EdibleFractionRuleIndex(
-        (EdibleFractionRule("甲", "", Decimal("1"), "approved"),)
-        if with_fraction
-        else ()
-    )
+    edible = EdibleFractionRuleIndex((_edible_rule(10, "甲", "1"),) if with_fraction else ())
     if with_mapping:
         references = NutritionReferenceIndex(
             (
@@ -150,9 +192,7 @@ def test_any_missing_prerequisite_returns_no_partial_nutrition(
                     canonical_name="甲",
                     form="unspecified",
                     per_100g=(
-                        _vector("10")
-                        if complete
-                        else NutritionVector(energy_kcal=Decimal("10"))
+                        _vector("10") if complete else NutritionVector(energy_kcal=Decimal("10"))
                     ),
                     source_name="权威来源",
                     source_url="https://example.invalid/ref-a",
@@ -240,9 +280,7 @@ def test_non_retained_occurrence_does_not_contribute_to_raw_nutrition() -> None:
         view,
         measure_rules=MeasureRuleIndex(()),
         quantity_decisions=QuantityDecisionIndex(()),
-        edible_fractions=EdibleFractionRuleIndex(
-            (EdibleFractionRule("甲", "", Decimal("1"), "approved"),)
-        ),
+        edible_fractions=EdibleFractionRuleIndex((_edible_rule(10, "甲", "1"),)),
         nutrition_crosswalk=_references((10, "甲", "ref-a", "10")),
     )
 

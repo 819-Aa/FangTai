@@ -5,6 +5,10 @@ from food_agent_v2.b1.consumer_views import (
     NutritionOccurrenceInput,
     RecipeNutritionInputView,
 )
+from food_agent_v2.b1.edible_fraction_review import (
+    EdibleFractionRule,
+    EdibleFractionRuleIndex,
+)
 from food_agent_v2.b1.nutrition_feature_builder import (
     build_nutrition_features_from_views,
 )
@@ -13,8 +17,6 @@ from food_agent_v2.b1.nutrition_reference import (
     NutritionReferenceIndex,
 )
 from food_agent_v2.b1.quantity_normalizer import (
-    EdibleFractionRule,
-    EdibleFractionRuleIndex,
     MeasureRuleIndex,
     QuantityDecisionIndex,
 )
@@ -33,6 +35,8 @@ def _view() -> RecipeNutritionInputView:
                 unit_raw="克",
                 quantity_status="explicit",
                 ingredient_name="姜",
+                usage_code="main",
+                retained_in_dish=True,
             ),
         ),
     )
@@ -44,7 +48,7 @@ def test_unavailable_recipe_is_still_published_without_partial_totals() -> None:
         measure_rules=MeasureRuleIndex(()),
         quantity_decisions=QuantityDecisionIndex(()),
         edible_fractions=EdibleFractionRuleIndex(
-            (EdibleFractionRule("姜", "", Decimal("1"), "approved"),)
+            (EdibleFractionRule(10, "姜", "", Decimal("1"), "approved"),)
         ),
         nutrition_crosswalk=NutritionCrosswalkIndex((), NutritionReferenceIndex(())),
     )

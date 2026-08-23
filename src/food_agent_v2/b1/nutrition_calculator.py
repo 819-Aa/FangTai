@@ -7,6 +7,10 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
+from food_agent_v2.b1.edible_fraction_review import (
+    EdibleFractionDecisionIndex,
+    resolve_edible_fraction,
+)
 from food_agent_v2.b1.nutrition_reference import (
     NUTRIENT_FIELDS,
     NutritionVector,
@@ -59,6 +63,7 @@ def calculate_raw_recipe_nutrition(
     measure_rules,
     quantity_decisions,
     edible_fractions,
+    edible_fraction_decisions=None,
     nutrition_crosswalk,
 ) -> RecipeNutritionFeatures:
     if not view.ingredients:
@@ -80,11 +85,12 @@ def calculate_raw_recipe_nutrition(
         normalized = normalize_quantity(occurrence, measure_rules, quantity_decisions)
         if normalized.standardized_grams is None or normalized.requires_review:
             return _unavailable(view, "quantity_unapproved")
-        edible_fraction = edible_fractions.get(
-            occurrence.ingredient_name,
-            occurrence.form,
+        resolution = resolve_edible_fraction(
+            occurrence,
+            edible_fractions,
+            edible_fraction_decisions or EdibleFractionDecisionIndex(()),
         )
-        if edible_fraction is None:
+        if resolution.edible_fraction is None or resolution.requires_review:
             return _unavailable(view, "edible_fraction_missing")
         reference = nutrition_crosswalk.get(
             occurrence.ingredient_id,
@@ -95,7 +101,7 @@ def calculate_raw_recipe_nutrition(
         if not reference.per_100g.complete:
             return _unavailable(view, "nutrient_incomplete")
 
-        edible_g = normalized.standardized_grams * edible_fraction
+        edible_g = normalized.standardized_grams * resolution.edible_fraction
         total_edible_g += edible_g
         for field in NUTRIENT_FIELDS:
             nutrient = getattr(reference.per_100g, field)
@@ -105,10 +111,7 @@ def calculate_raw_recipe_nutrition(
         return _unavailable(view, "no_retained_ingredients")
     if total_edible_g <= 0:
         return _unavailable(view, "quantity_unapproved")
-    per_100g = {
-        field: value / total_edible_g * Decimal("100")
-        for field, value in totals.items()
-    }
+    per_100g = {field: value / total_edible_g * Decimal("100") for field, value in totals.items()}
     return RecipeNutritionFeatures(
         build_id=str(view.build_id),
         source_manifest_hash=view.source_manifest_hash,
