@@ -323,3 +323,70 @@ def test_model_writer_keeps_existing_queue_when_serialization_fails(tmp_path, mo
         write_quantity_candidates((candidate,), output)
 
     assert output.read_text(encoding="utf-8") == "preserve me"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("occurrence_id", ""),
+        ("recipe_id", True),
+        ("recipe_name", "  "),
+        ("ingredient_name", ""),
+        ("raw_quantity", 1),
+        ("step_context", 1),
+        ("deterministic_calculation", ""),
+        ("candidate_basis", ""),
+        ("candidate_grams", Decimal("NaN")),
+        ("ingredient_id", "=1+1"),
+        ("normalized_form", None),
+        ("normalized_unit", 1),
+        ("usage_code", 1),
+        ("fuzzy_token_class", 1),
+        ("decision_grams", Decimal("0")),
+        ("review_status", "approved"),
+    ),
+)
+def test_model_writer_rejects_every_invalid_dataclass_field_before_opening(
+    tmp_path, field, value
+) -> None:
+    output = tmp_path / "model-candidates.csv"
+    original = b"preserve me\r\n"
+    output.write_bytes(original)
+    candidate = generate_quantity_candidates(
+        (
+            RecipeQuantityReviewContext(
+                recipe_id=1,
+                recipe_name="测试菜",
+                step_context="加入少许盐",
+                ingredients=(_pending("1-1", "盐"),),
+            ),
+        ),
+        type("Estimator", (), {"estimate": lambda _self, _context: {"1-1": Decimal("2")}})(),
+    )[0]
+
+    with pytest.raises(ValueError):
+        write_quantity_candidates((replace(candidate, **{field: value}),), output)
+
+    assert output.read_bytes() == original
+
+
+def test_model_writer_rejects_unknown_usage_enum_before_opening(tmp_path) -> None:
+    output = tmp_path / "model-candidates.csv"
+    original = b"preserve me\r\n"
+    output.write_bytes(original)
+    candidate = generate_quantity_candidates(
+        (
+            RecipeQuantityReviewContext(
+                recipe_id=1,
+                recipe_name="测试菜",
+                step_context="加入少许盐",
+                ingredients=(_pending("1-1", "盐"),),
+            ),
+        ),
+        type("Estimator", (), {"estimate": lambda _self, _context: {"1-1": Decimal("2")}})(),
+    )[0]
+
+    with pytest.raises(ValueError, match="usage_code"):
+        write_quantity_candidates((replace(candidate, usage_code="unknown"),), output)
+
+    assert output.read_bytes() == original

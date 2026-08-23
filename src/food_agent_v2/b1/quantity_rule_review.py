@@ -25,6 +25,12 @@ _EXCEPTION_CODES = (
     "QTY_FORM_USAGE_AMBIGUOUS",
 )
 _COUNT_UNITS = frozenset({"个", "片", "根", "勺"})
+_USAGE_CODES = frozenset(
+    {"main", "supporting", "seasoning", "cooking_fat", "retained_liquid"}
+)
+_FUZZY_TOKEN_CLASSES = frozenset(
+    {"as_needed", "small_amount", "several_count", "few_drops"}
+)
 _UNIT_ALIASES = {
     "g": "克",
     "kg": "千克",
@@ -428,18 +434,33 @@ def _validate_output_candidate(candidate: QuantityRuleCandidate) -> None:
     _require_positive_decimal(candidate.q1, "q1")
     _require_positive_decimal(candidate.q3, "q3")
     _require_nonnegative_decimal(candidate.sample_standard_deviation, "sample_standard_deviation")
-    if candidate.sample_count < 1:
+    if type(candidate.sample_count) is not int or candidate.sample_count < 1:
         raise ValueError("数量规则候选 sample_count 非法")
     if candidate.sample_count < 2:
         if candidate.coefficient_of_variation is not None:
             raise ValueError("单样本候选 coefficient_of_variation 必须为空")
+        if (
+            candidate.sample_standard_deviation != Decimal("0")
+            or candidate.q1 != candidate.q3
+            or candidate.iqr != Decimal("0")
+        ):
+            raise ValueError("单样本候选统计量必须为零离散度")
     else:
         _require_nonnegative_decimal(
             candidate.coefficient_of_variation, "coefficient_of_variation"
         )
     _require_nonnegative_decimal(candidate.iqr, "iqr")
+    if candidate.q1 > candidate.q3 or candidate.iqr != candidate.q3 - candidate.q1:
+        raise ValueError("数量规则候选分位数与 IQR 不一致")
     if type(candidate.has_iqr_outlier) is not bool or type(candidate.is_stable) is not bool:
         raise ValueError("数量规则候选布尔字段非法")
+    expected_stability = (
+        candidate.sample_count >= 5
+        and candidate.coefficient_of_variation is not None
+        and candidate.coefficient_of_variation <= Decimal("0.15")
+    )
+    if candidate.is_stable is not expected_stability:
+        raise ValueError("数量规则候选 is_stable 不一致")
     _validate_exception_codes(candidate.exception_codes)
     if candidate.rule_type == "density":
         if candidate.to_grams is not None:
@@ -452,19 +473,49 @@ def _validate_output_candidate(candidate: QuantityRuleCandidate) -> None:
             raise ValueError("非 density 候选不得包含 mass_density_g_per_ml")
         _require_positive_decimal(candidate.to_grams, "to_grams")
 
+    if candidate.rule_type == "unit_weight":
+        if candidate.normalized_unit not in _COUNT_UNITS:
+            raise ValueError("unit_weight 候选单位非法")
+        if candidate.usage_code is not None or candidate.fuzzy_token_class is not None:
+            raise ValueError("unit_weight 候选不得包含用途或模糊分类")
+    elif candidate.rule_type == "density":
+        if candidate.normalized_unit not in {"毫升", "升"}:
+            raise ValueError("density 候选单位非法")
+        if candidate.usage_code is not None or candidate.fuzzy_token_class is not None:
+            raise ValueError("density 候选不得包含用途或模糊分类")
+    elif candidate.normalized_unit is not None:
+        raise ValueError("fuzzy_single_value 候选不得包含单位")
+    elif candidate.usage_code is None or candidate.fuzzy_token_class is None:
+        raise ValueError("fuzzy_single_value 候选缺少用途或模糊分类")
+
 
 def _validate_rule_text_fields(candidate: QuantityRuleCandidate) -> None:
-    for value in (
+    required = (
         candidate.rule_type,
         candidate.ingredient_name,
         candidate.normalized_form,
+        candidate.review_status,
+    )
+    optional = (
         candidate.normalized_unit,
         candidate.usage_code,
         candidate.fuzzy_token_class,
-        candidate.review_status,
+    )
+    if any(not isinstance(value, str) for value in required) or any(
+        value is not None and not isinstance(value, str) for value in optional
     ):
-        if value is not None and not isinstance(value, str):
-            raise ValueError("数量规则候选文本字段非法")
+        raise ValueError("数量规则候选文本字段非法")
+    if not candidate.ingredient_name.strip():
+        raise ValueError("数量规则候选 ingredient_name 不能为空")
+    if candidate.usage_code is not None and candidate.usage_code not in _USAGE_CODES:
+        raise ValueError("数量规则候选 usage_code 非法")
+    if (
+        candidate.fuzzy_token_class is not None
+        and candidate.fuzzy_token_class not in _FUZZY_TOKEN_CLASSES
+    ):
+        raise ValueError("数量规则候选 fuzzy_token_class 非法")
+    if candidate.normalized_unit is not None and not candidate.normalized_unit.strip():
+        raise ValueError("数量规则候选 normalized_unit 非法")
 
 
 def _validate_exception_codes(codes: object) -> None:

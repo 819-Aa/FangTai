@@ -15,6 +15,13 @@ from tempfile import NamedTemporaryFile
 from food_agent_v2.b1.quantity_normalizer import normalize_quantity
 from food_agent_v2.core.paths import PROJECT_ROOT
 
+_USAGE_CODES = frozenset(
+    {"main", "supporting", "seasoning", "cooking_fat", "retained_liquid"}
+)
+_FUZZY_TOKEN_CLASSES = frozenset(
+    {"as_needed", "small_amount", "several_count", "few_drops"}
+)
+
 _SYSTEM_PROMPT = """你是家庭烹饪食材用量估算器。请基于整道菜的名称、全部待估食材和完整步骤，
 为每个 occurrence_id 估算一个大于 0 的原始食材克重。只估算输入中列出的 occurrence，
 不补充新食材，不输出区间、置信度、来源或解释。输出严格 JSON：
@@ -276,15 +283,7 @@ def write_quantity_candidates(candidates, output_path: Path) -> None:
         raise ValueError("数量候选不得写入正式计量规则文件")
     candidate_rows = tuple(candidates)
     for item in candidate_rows:
-        _validate_candidate_text_fields(item)
-        if item.review_status != "pending":
-            raise ValueError("数量候选必须保持 pending")
-        if not _is_finite_positive_decimal(item.candidate_grams):
-            raise ValueError("候选克重必须为有限正数")
-        if item.decision_grams is not None and not _is_finite_positive_decimal(
-            item.decision_grams
-        ):
-            raise ValueError("决定克重必须为有限正数")
+        _validate_output_candidate(item)
     path.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = (
         "occurrence_id",
@@ -365,6 +364,7 @@ def _validate_candidate_text_fields(candidate: QuantityReviewCandidate) -> None:
         candidate.occurrence_id,
         candidate.recipe_name,
         candidate.ingredient_name,
+        candidate.normalized_form,
         candidate.raw_quantity,
         candidate.step_context,
         candidate.deterministic_calculation,
@@ -372,7 +372,6 @@ def _validate_candidate_text_fields(candidate: QuantityReviewCandidate) -> None:
         candidate.review_status,
     )
     optional = (
-        candidate.normalized_form,
         candidate.normalized_unit,
         candidate.usage_code,
         candidate.fuzzy_token_class,
@@ -381,6 +380,40 @@ def _validate_candidate_text_fields(candidate: QuantityReviewCandidate) -> None:
         value is not None and not isinstance(value, str) for value in optional
     ):
         raise ValueError("数量候选文本字段非法")
+
+
+def _validate_output_candidate(candidate: QuantityReviewCandidate) -> None:
+    _validate_candidate_text_fields(candidate)
+    required_nonempty = (
+        candidate.occurrence_id,
+        candidate.recipe_name,
+        candidate.ingredient_name,
+        candidate.deterministic_calculation,
+        candidate.candidate_basis,
+    )
+    if any(not value.strip() for value in required_nonempty):
+        raise ValueError("数量候选必填文本不能为空")
+    if type(candidate.recipe_id) is not int or candidate.recipe_id < 1:
+        raise ValueError("数量候选 recipe_id 必须为正整数")
+    if candidate.ingredient_id is not None and (
+        type(candidate.ingredient_id) is not int or candidate.ingredient_id < 1
+    ):
+        raise ValueError("数量候选 ingredient_id 必须为正整数或为空")
+    if candidate.usage_code is not None and candidate.usage_code not in _USAGE_CODES:
+        raise ValueError("数量候选 usage_code 非法")
+    if (
+        candidate.fuzzy_token_class is not None
+        and candidate.fuzzy_token_class not in _FUZZY_TOKEN_CLASSES
+    ):
+        raise ValueError("数量候选 fuzzy_token_class 非法")
+    if candidate.review_status != "pending":
+        raise ValueError("数量候选必须保持 pending")
+    if not _is_finite_positive_decimal(candidate.candidate_grams):
+        raise ValueError("候选克重必须为有限正数")
+    if candidate.decision_grams is not None and not _is_finite_positive_decimal(
+        candidate.decision_grams
+    ):
+        raise ValueError("决定克重必须为有限正数")
 
 
 def _safe_csv_text(value: str | None) -> str:
