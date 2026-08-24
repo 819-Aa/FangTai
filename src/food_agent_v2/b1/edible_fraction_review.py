@@ -148,31 +148,37 @@ def generate_edible_fraction_candidates(views, rules, decisions):
                 occurrence.retention_requires_review
                 or occurrence.retained_in_dish is None
             )
+            if retention_unresolved:
+                candidates.append(
+                    EdibleFractionReviewCandidate(
+                        occurrence_id=occurrence.occurrence_id,
+                        recipe_id=view.recipe_id,
+                        ingredient_id=occurrence.ingredient_id,
+                        ingredient_name=occurrence.ingredient_name,
+                        source_form=(occurrence.normalized_form or "").strip(),
+                        decision_form="",
+                        candidate_basis="unresolved_retention",
+                        quantity_raw=occurrence.quantity_raw or "",
+                        usage_code=occurrence.usage_code,
+                        retained_in_dish=occurrence.retained_in_dish,
+                        exception_reasons=("unresolved_retention",),
+                    )
+                )
+                continue
             resolution = resolve_edible_fraction(occurrence, rules, decisions)
-            if (
-                not retention_unresolved
-                and resolution.edible_fraction is not None
-                and not resolution.requires_review
-            ):
+            if resolution.edible_fraction is not None and not resolution.requires_review:
                 continue
             reasons: list[str] = []
             if not (occurrence.normalized_form or "").strip():
                 reasons.append("blank_form")
             if len(forms_by_ingredient.get(occurrence.ingredient_id, ())) > 1:
                 reasons.append("multi_form_ingredient")
-            if retention_unresolved:
-                reasons.append("unresolved_retention")
             fraction_unresolved = (
                 resolution.edible_fraction is None or resolution.requires_review
             )
             if fraction_unresolved:
                 reasons.append("no_effective_rule_or_occurrence_decision")
             decision = decisions.get_effective(occurrence.occurrence_id)
-            candidate_basis = (
-                "unresolved_retention"
-                if retention_unresolved
-                else "no_effective_rule_or_occurrence_decision"
-            )
             candidates.append(
                 EdibleFractionReviewCandidate(
                     occurrence_id=occurrence.occurrence_id,
@@ -181,7 +187,7 @@ def generate_edible_fraction_candidates(views, rules, decisions):
                     ingredient_name=occurrence.ingredient_name,
                     source_form=(occurrence.normalized_form or "").strip(),
                     decision_form=decision.decision_form if decision is not None else "",
-                    candidate_basis=candidate_basis,
+                    candidate_basis="no_effective_rule_or_occurrence_decision",
                     quantity_raw=occurrence.quantity_raw or "",
                     usage_code=occurrence.usage_code,
                     retained_in_dish=occurrence.retained_in_dish,

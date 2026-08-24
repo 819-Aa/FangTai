@@ -291,6 +291,23 @@ def test_retention_unresolved_is_marked_separately() -> None:
     assert candidates[0].exception_reasons == ("unresolved_retention",)
 
 
+def test_retention_unresolved_without_fraction_resolution_has_only_retention_reason() -> None:
+    view = RecipeNutritionInputView(
+        build_id=UUID("00000000-0000-0000-0000-000000000001"),
+        source_manifest_hash="a" * 64,
+        recipe_id=1,
+        ingredients=(
+            _occurrence(retained_in_dish=None, retention_requires_review=True),
+        ),
+    )
+
+    candidates = generate_edible_fraction_candidates(
+        (view,), EdibleFractionRuleIndex(()), EdibleFractionDecisionIndex(())
+    )
+
+    assert candidates[0].exception_reasons == ("unresolved_retention",)
+
+
 def test_retained_false_is_fully_excluded_from_fraction_queue() -> None:
     view = RecipeNutritionInputView(
         build_id=UUID("00000000-0000-0000-0000-000000000001"),
