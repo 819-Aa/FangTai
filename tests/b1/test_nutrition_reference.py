@@ -19,6 +19,7 @@ from food_agent_v2.b1.nutrition_reference import (
     source_priority,
     write_nutrition_crosswalk_candidates,
 )
+from food_agent_v2.core.paths import PROJECT_ROOT
 
 
 def _vector(**overrides) -> NutritionVector:
@@ -304,3 +305,54 @@ def test_nutrition_candidate_writer_suggests_reference_aliases_without_approving
     assert {row["match_method"] for row in rows} == {"reference_alias"}
     assert {row["reason"] for row in rows} == {"alias_candidate_requires_review"}
     assert {row["review_status"] for row in rows} == {"pending"}
+
+
+def test_repository_crosswalk_covers_retained_inputs_with_complete_references() -> None:
+    reference_path = PROJECT_ROOT / "data/reference/ingredient_nutrition.jsonl"
+    crosswalk_path = PROJECT_ROOT / "data/review/ingredient_nutrition_crosswalk.jsonl"
+    retention_path = (
+        PROJECT_ROOT / "data/review/ingredient_nutrition_retention_decisions.csv"
+    )
+    references = load_nutrition_references(reference_path)
+    crosswalk = load_nutrition_crosswalk(crosswalk_path, references)
+    decisions = [
+        json.loads(line)
+        for line in crosswalk_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    with retention_path.open(encoding="utf-8", newline="") as handle:
+        required_keys = {
+            (
+                int(row["ingredient_id"]),
+                nutrition_form_from_occurrence(row["normalized_form"]),
+            )
+            for row in csv.DictReader(handle)
+            if row["review_status"] in {"approved", "modified"}
+            and row["retained_in_dish"].strip().lower() == "true"
+        }
+
+    decision_keys = {
+        (int(row["ingredient_id"]), row["form"])
+        for row in decisions
+        if row["review_status"] in {"approved", "modified"}
+    }
+    assert len(decisions) == len(decision_keys) == crosswalk.approved_count == 1_787
+    assert decision_keys == required_keys
+    assert all(
+        set(row)
+        == {
+            "ingredient_id",
+            "ingredient_name",
+            "form",
+            "reference_id",
+            "match_method",
+            "review_status",
+            "brand_name",
+            "specification",
+        }
+        for row in decisions
+    )
+    assert all(
+        crosswalk.get(ingredient_id, form).per_100g.complete
+        for ingredient_id, form in required_keys
+    )
