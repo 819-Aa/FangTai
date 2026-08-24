@@ -378,6 +378,7 @@ def test_writer_rejects_invalid_diagnostic_fields_before_opening(tmp_path, field
         "ingredient_measure_rules.csv",
         "ingredient_quantity_decisions.csv",
         "ingredient_nutrition_usage_decisions.csv",
+        "ingredient_nutrition_retention_decisions.csv",
         "ingredient_edible_fraction_rules.csv",
         "ingredient_edible_fraction_decisions.csv",
     ),

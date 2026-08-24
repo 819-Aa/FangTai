@@ -8,7 +8,7 @@ COMMANDS = {
     "data-rebuild": "Run B1 offline data pipeline",
     "data-verify": "Verify a fixed-data BuildManifest and all quality gates",
     "data-initialize": "Initialize empty V2 MySQL/Qdrant from a verified manifest",
-    "data-review": "Generate offline profile/quantity/nutrition/time-graph review candidates",
+    "data-review": "Generate offline profile, nutrition, quantity, and time review candidates",
     "seed-generate": "Show migration path for removed independent seed generation",
     "qdrant-build": "Show migration path for removed direct Qdrant build",
     "database-load": "Show migration path for removed mutable database load",

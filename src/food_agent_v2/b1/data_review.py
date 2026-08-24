@@ -31,6 +31,11 @@ from food_agent_v2.b1.food_origin_review import (
     write_food_origin_candidates,
 )
 from food_agent_v2.b1.ingredient_identity import rebuild_ingredient_identities
+from food_agent_v2.b1.nutrition_occurrence_review import (
+    NutritionOccurrenceReviewContext,
+    generate_nutrition_occurrence_review,
+    write_nutrition_occurrence_review,
+)
 from food_agent_v2.b1.nutrition_occurrence_rules import (
     load_nutrition_retention_decisions,
     load_nutrition_usage_decisions,
@@ -113,6 +118,7 @@ def main(argv: list[str] | None = None) -> int:
             "food-origins",
             "time-graphs",
             "edible-fractions",
+            "nutrition-occurrences",
         ),
         required=True,
     )
@@ -184,6 +190,10 @@ def main(argv: list[str] | None = None) -> int:
         )
     elif args.kind == "edible-fractions":
         count = _write_edible_fraction_review(
+            rows, facts, args.output, sample=args.sample
+        )
+    elif args.kind == "nutrition-occurrences":
+        count = _write_nutrition_occurrence_review(
             rows, facts, args.output, sample=args.sample
         )
     else:
@@ -312,6 +322,7 @@ def _refuse_formal_review_target(path: Path) -> None:
         formal_root / "ingredient_measure_rules.csv",
         formal_root / "ingredient_quantity_decisions.csv",
         formal_root / "ingredient_nutrition_usage_decisions.csv",
+        formal_root / "ingredient_nutrition_retention_decisions.csv",
         formal_root / "ingredient_edible_fraction_rules.csv",
         formal_root / "ingredient_edible_fraction_decisions.csv",
     )
@@ -356,6 +367,20 @@ def _write_nutrition_review(rows, facts, output: Path, *, sample: int | None) ->
     )
     write_nutrition_crosswalk_candidates(unique_rows, references, output)
     return len(unique_rows)
+
+
+def _write_nutrition_occurrence_review(
+    rows, facts, output: Path, *, sample: int | None
+) -> dict[str, int]:
+    _refuse_formal_review_target(output)
+    selected_rows = rows[:sample] if sample is not None else rows
+    selected_ids = {row.recipe_id for row in selected_rows}
+    context = _build_review_context(
+        selected_rows, tuple(fact for fact in facts if fact.recipe_id in selected_ids)
+    )
+    return write_nutrition_occurrence_review(
+        generate_nutrition_occurrence_review(context), output
+    )
 
 
 def _write_food_origin_review(
@@ -551,7 +576,7 @@ def _write_time_graph_review(
     return int(result["conflicts"])
 
 
-def _build_review_views(rows, facts):
+def _build_review_context(rows, facts) -> NutritionOccurrenceReviewContext:
     with TemporaryDirectory(prefix="food-agent-quantity-review-") as temp_dir:
         staging = Path(temp_dir)
         report = rebuild_ingredient_identities(
@@ -596,4 +621,13 @@ def _build_review_views(rows, facts):
             nutrition_usage_decisions=usage_decisions,
             nutrition_retention_decisions=retention_decisions,
         )
-    return views
+    return NutritionOccurrenceReviewContext(
+        views=views,
+        occurrences=occurrences,
+        identities=identities,
+        recipes=tuple(facts),
+    )
+
+
+def _build_review_views(rows, facts):
+    return _build_review_context(rows, facts).views

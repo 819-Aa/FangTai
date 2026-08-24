@@ -329,6 +329,7 @@ def _formal_review_paths() -> tuple[Path, ...]:
         review_root / "ingredient_measure_rules.csv",
         review_root / "ingredient_quantity_decisions.csv",
         review_root / "ingredient_nutrition_usage_decisions.csv",
+        review_root / "ingredient_nutrition_retention_decisions.csv",
         review_root / "ingredient_edible_fraction_rules.csv",
         review_root / "ingredient_edible_fraction_decisions.csv",
     )

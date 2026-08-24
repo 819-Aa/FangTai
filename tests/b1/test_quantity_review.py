@@ -520,6 +520,7 @@ def test_quantity_rule_loader_rejects_v2_metadata_conflict(tmp_path) -> None:
     "ingredient_measure_rules.csv",
     "ingredient_quantity_decisions.csv",
     "ingredient_nutrition_usage_decisions.csv",
+    "ingredient_nutrition_retention_decisions.csv",
     "ingredient_edible_fraction_rules.csv",
     "ingredient_edible_fraction_decisions.csv",
 ))
