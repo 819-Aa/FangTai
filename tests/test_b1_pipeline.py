@@ -147,12 +147,14 @@ class TestQualityGates:
 
         versions = artifact_schema_versions(
             {"rag_documents": object(), "nutrition_features": object(),
-             "step_tasks": object(), "recipe_health_views": object()}
+             "step_tasks": object(), "recipe_nutrition_input_views": object(),
+             "recipe_health_views": object()}
         )
         assert versions == {
             "rag_documents": "2.0.0",
             "nutrition_features": "2.0.0",
             "step_tasks": "2.0.0",
+            "recipe_nutrition_input_views": "2.0.0",
             "recipe_health_views": "1.0.0",
         }
 

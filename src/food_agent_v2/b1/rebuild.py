@@ -23,10 +23,12 @@ from food_agent_v2.b1.consumer_views import (
     publish_downstream_build_views,
     recipe_facts_from_source,
 )
+from food_agent_v2.b1.edible_fraction_review import load_edible_fraction_decisions
 from food_agent_v2.b1.health_relation_builder import (
     run_health_relation_stage as build_health_relation_stage,
 )
 from food_agent_v2.b1.ingredient_identity import rebuild_ingredient_identities
+from food_agent_v2.b1.nutrition_occurrence_rules import load_nutrition_usage_decisions
 from food_agent_v2.b1.quality_gates import (
     artifact_entry,
     build_artifact_entries,
@@ -53,12 +55,20 @@ from food_agent_v2.b1.user_cleaning import clean_one, load_raw_users
 from food_agent_v2.contracts.build import BuildManifest, QualityGateReport, source_manifest_hash
 from food_agent_v2.core.paths import PROJECT_ROOT, RECIPES_RAW, USERS_RAW
 
-V2_RUNTIME_ARTIFACTS = frozenset({"rag_documents", "nutrition_features", "step_tasks"})
+V2_RUNTIME_ARTIFACTS = frozenset(
+    {"rag_documents", "nutrition_features", "step_tasks", "recipe_nutrition_input_views"}
+)
 
 CLASSIFICATION_OVERRIDES = PROJECT_ROOT / "data" / "review" / "recipe_classification_overrides.csv"
 INGREDIENT_OVERRIDES = PROJECT_ROOT / "data" / "review" / "ingredient_identity_overrides.csv"
 HEALTH_DECISIONS = PROJECT_ROOT / "data" / "review" / "health_relation_decisions.csv"
 RECIPE_PROFILE_ENRICHMENTS = PROJECT_ROOT / "data" / "review" / "recipe_profile_enrichment.jsonl"
+NUTRITION_USAGE_DECISIONS = (
+    PROJECT_ROOT / "data" / "review" / "ingredient_nutrition_usage_decisions.csv"
+)
+EDIBLE_FRACTION_DECISIONS = (
+    PROJECT_ROOT / "data" / "review" / "ingredient_edible_fraction_decisions.csv"
+)
 INGREDIENT_CONDITION_DEFAULTS = (
     PROJECT_ROOT / "data" / "review" / "ingredient_condition_defaults.csv"
 )
@@ -322,17 +332,25 @@ def build_fixed_data_staging(
         tuple(classifications),
         occurrence_facts_from_records(_read_jsonl(t06 / "ingredient_occurrences.jsonl")),
     )
+    nutrition_usage_decisions = load_nutrition_usage_decisions(
+        NUTRITION_USAGE_DECISIONS
+    )
+    edible_fraction_decisions = load_edible_fraction_decisions(
+        EDIBLE_FRACTION_DECISIONS
+    )
     views = build_consumer_views(
         build=BuildIdentity(resolved_build_id, manifest_hash),
         recipes=recipe_facts,
         occurrences=occurrence_facts,
         identities=identities,
+        nutrition_usage_decisions=nutrition_usage_decisions,
     )
     downstream_report = publish_downstream_build_views(
         views,
         identities,
         (),
         t07,
+        edible_fraction_decisions=edible_fraction_decisions,
     )
 
     t08_report = build_health_relation_stage(

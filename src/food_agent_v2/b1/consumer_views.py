@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections import Counter
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -441,6 +442,7 @@ def publish_downstream_build_views(
     *,
     time_graph_cache=None,
     time_graph_generator_model_id: str | None = None,
+    edible_fraction_decisions=None,
     time_graph_verifier_model_id: str | None = None,
 ) -> dict:
     """运行只接收结构化视图的 B5/B6/C1 构建器并发布派生产物。"""
@@ -521,20 +523,34 @@ def publish_downstream_build_views(
     nutrition_references = load_nutrition_references(
         PROJECT_ROOT / "data" / "reference" / "ingredient_nutrition.jsonl"
     )
-    nutrition_features, nutrition_report = build_nutrition_features_from_views(
-        views.nutrition_views,
-        measure_rules=load_measure_rules(review_dir / "ingredient_measure_rules.csv"),
-        quantity_decisions=load_quantity_decisions(
-            review_dir / "ingredient_quantity_decisions.csv"
-        ),
-        edible_fractions=load_edible_fraction_rules(
-            review_dir / "ingredient_edible_fraction_rules.csv"
-        ),
-        nutrition_crosswalk=load_nutrition_crosswalk(
-            review_dir / "ingredient_nutrition_crosswalk.jsonl",
-            nutrition_references,
-        ),
+    measure_rules = load_measure_rules(review_dir / "ingredient_measure_rules.csv")
+    quantity_decisions = load_quantity_decisions(
+        review_dir / "ingredient_quantity_decisions.csv"
     )
+    edible_fractions = load_edible_fraction_rules(
+        review_dir / "ingredient_edible_fraction_rules.csv"
+    )
+    nutrition_crosswalk = load_nutrition_crosswalk(
+        review_dir / "ingredient_nutrition_crosswalk.jsonl",
+        nutrition_references,
+    )
+    if edible_fraction_decisions is None:
+        nutrition_features, nutrition_report = build_nutrition_features_from_views(
+            views.nutrition_views,
+            measure_rules=measure_rules,
+            quantity_decisions=quantity_decisions,
+            edible_fractions=edible_fractions,
+            nutrition_crosswalk=nutrition_crosswalk,
+        )
+    else:
+        nutrition_features, nutrition_report = _build_nutrition_features_with_decisions(
+            views.nutrition_views,
+            measure_rules=measure_rules,
+            quantity_decisions=quantity_decisions,
+            edible_fractions=edible_fractions,
+            edible_fraction_decisions=edible_fraction_decisions,
+            nutrition_crosswalk=nutrition_crosswalk,
+        )
     rag_documents, rag_report = build_rag_documents_from_views(views.retrieval_views)
 
     base_report = publish_consumer_views(views, staging)
@@ -571,6 +587,42 @@ def publish_downstream_build_views(
     if status != "passed":
         raise ValueError("下游构建产物数量或构建身份不一致")
     return report
+
+def _build_nutrition_features_with_decisions(
+    views,
+    *,
+    measure_rules,
+    quantity_decisions,
+    edible_fractions,
+    edible_fraction_decisions,
+    nutrition_crosswalk,
+):
+    from food_agent_v2.b1.nutrition_calculator import calculate_raw_recipe_nutrition
+
+    features = [
+        calculate_raw_recipe_nutrition(
+            view,
+            measure_rules=measure_rules,
+            quantity_decisions=quantity_decisions,
+            edible_fractions=edible_fractions,
+            edible_fraction_decisions=edible_fraction_decisions,
+            nutrition_crosswalk=nutrition_crosswalk,
+        )
+        for view in views
+    ]
+    available_count = sum(item.available for item in features)
+    reason_counts = Counter(
+        item.reason for item in features if not item.available and item.reason is not None
+    )
+    return features, {
+        "stage": "raw_recipe_nutrition",
+        "status": "passed",
+        "total_recipes": len(features),
+        "available_count": available_count,
+        "unavailable_count": len(features) - available_count,
+        "reason_counts": dict(sorted(reason_counts.items())),
+    }
+
 
 
 def _write_models(path: Path, records: list) -> None:

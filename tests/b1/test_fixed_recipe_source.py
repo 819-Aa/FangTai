@@ -22,7 +22,11 @@ from food_agent_v2.b1.source_manifest import (
     canonical_build_input_manifest,
     load_verified_recipe_source,
 )
-from food_agent_v2.contracts.build import SourceManifest, SourceManifestMismatch
+from food_agent_v2.contracts.build import (
+    SourceManifest,
+    SourceManifestMismatch,
+    source_manifest_hash,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SOURCE_CSV = REPO_ROOT / "data" / "raw" / "recipes_sample_2000.csv"
@@ -42,6 +46,36 @@ def canonical_manifest() -> SourceManifest:
 
 
 class TestFixedSource:
+    def test_h06_nutrition_review_inputs_are_hashed(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import shutil
+
+        import food_agent_v2.b1.source_manifest as source_manifest_module
+
+        manifest = canonical_build_input_manifest()
+        paths = {entry["relative_path"] for entry in manifest["inputs"]}
+        assert "data/review/ingredient_nutrition_usage_decisions.csv" in paths
+        assert "data/review/ingredient_edible_fraction_decisions.csv" in paths
+
+        for relative_path in paths:
+            destination = tmp_path / relative_path
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(REPO_ROOT / relative_path, destination)
+
+        monkeypatch.setattr(source_manifest_module, "PROJECT_ROOT", tmp_path)
+        baseline = source_manifest_hash(source_manifest_module.canonical_build_input_manifest())
+
+        usage_path = tmp_path / "data/review/ingredient_nutrition_usage_decisions.csv"
+        usage_path.write_bytes(usage_path.read_bytes() + b"\n")
+        usage_changed = source_manifest_hash(source_manifest_module.canonical_build_input_manifest())
+        assert usage_changed != baseline
+
+        edible_path = tmp_path / "data/review/ingredient_edible_fraction_decisions.csv"
+        edible_path.write_bytes(edible_path.read_bytes() + b"\n")
+        edible_changed = source_manifest_hash(source_manifest_module.canonical_build_input_manifest())
+        assert edible_changed != usage_changed
+
     def test_build_input_manifest_binds_reviewed_facts_but_not_model_cache(self) -> None:
         manifest = canonical_build_input_manifest()
         paths = {entry["relative_path"] for entry in manifest["inputs"]}
