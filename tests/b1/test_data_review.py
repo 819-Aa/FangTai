@@ -453,38 +453,84 @@ def test_edible_fractions_route_is_offline_and_uses_real_writer(monkeypatch, tmp
     assert "review_status" in (tmp_path / "fractions.csv").read_text(encoding="utf-8")
 
 
-def test_repository_nutrition_queue_routes_audited_solids_and_non_suffix_fluids(
-    tmp_path: Path,
-) -> None:
-    output = tmp_path / "nutrition-occurrences"
+def test_repository_retention_decisions_supersede_solid_candidates_but_keep_fluids_ambiguous() -> None:
+    rows = tuple(
+        data_review.load_verified_recipe_source(
+            data_review.RECIPES_RAW, data_review.canonical_source_manifest()
+        )
+    )
+    classifications = tuple(
+        data_review.classify_all(
+            list(rows),
+            data_review.load_overrides(
+                data_review._REVIEW_DIR / "recipe_classification_overrides.csv"
+            ),
+        )
+    )
+    profile_enrichments = data_review.load_recipe_profile_enrichments(
+        data_review._REVIEW_DIR / "recipe_profile_enrichment.jsonl",
+        known_recipe_ids={row.recipe_id for row in rows},
+    )
+    facts = data_review.recipe_facts_from_source(
+        rows, classifications, profile_enrichments
+    )
+    context = data_review._build_review_context(rows, facts)
+    bundle = data_review.generate_nutrition_occurrence_review(context)
 
-    assert data_review.main(
-        ["--kind", "nutrition-occurrences", "--output", str(output)]
-    ) == 0
-
-    with (output / "nutrition_retention_candidates.csv").open(
-        encoding="utf-8", newline=""
-    ) as handle:
-        candidate_names = {
-            row["ingredient_name"] for row in csv.DictReader(handle)
-        }
-    with (output / "nutrition_retention_exceptions.csv").open(
-        encoding="utf-8", newline=""
-    ) as handle:
-        ambiguous_names = {
-            row["ingredient_name"]
+    retention_path = (
+        data_review._REVIEW_DIR / "ingredient_nutrition_retention_decisions.csv"
+    )
+    with retention_path.open(encoding="utf-8", newline="") as handle:
+        approved_true_rows = [
+            row
             for row in csv.DictReader(handle)
-            if row["exception_codes"] == "NUTRITION_RETENTION_AMBIGUOUS"
-        }
+            if row["review_status"] in {"approved", "modified"}
+            and row["retained_in_dish"] == "true"
+        ]
+
+    current_occurrences = data_review.nutrition_occurrence_metadata_from_views(
+        context.views.nutrition_views
+    )
+    retention_index = data_review.load_nutrition_retention_decisions(
+        retention_path, current_occurrences=current_occurrences
+    )
+    final_inputs = {
+        ingredient.occurrence_id: ingredient
+        for view in context.views.nutrition_views
+        for ingredient in view.ingredients
+    }
+    approved_occurrence_ids = {row["occurrence_id"] for row in approved_true_rows}
+    candidate_occurrence_ids = {
+        row.occurrence_id for row in bundle.retention_candidates
+    }
+    ambiguous_names = {
+        row.ingredient_name
+        for row in bundle.retention_exceptions
+        if row.exception_codes == ("NUTRITION_RETENTION_AMBIGUOUS",)
+    }
 
     audited_solids = {"盐", "姜", "白糖", "酵母", "八角", "黑胡椒"}
     audited_fluids = {
         "生抽", "有机生抽", "老抽", "李锦记老抽", "金兰油膏", "香草精", "糟卤"
     }
-    assert audited_solids <= candidate_names
-    assert audited_solids.isdisjoint(ambiguous_names)
+    assert len(approved_true_rows) == 8_315
+    assert audited_solids <= {
+        row["ingredient_name"] for row in approved_true_rows
+    }
+    assert approved_occurrence_ids.isdisjoint(candidate_occurrence_ids)
+    assert all(
+        retention_index.get_effective(occurrence_id).retained_in_dish is True
+        for occurrence_id in approved_occurrence_ids
+    )
+    assert all(
+        final_inputs[occurrence_id].retained_in_dish is True
+        and final_inputs[occurrence_id].retention_requires_review is False
+        for occurrence_id in approved_occurrence_ids
+    )
     assert audited_fluids <= ambiguous_names
-    assert audited_fluids.isdisjoint(candidate_names)
+    assert audited_fluids.isdisjoint(
+        row.ingredient_name for row in bundle.retention_candidates
+    )
 
 
 @pytest.mark.parametrize(
