@@ -453,7 +453,7 @@ def test_edible_fractions_route_is_offline_and_uses_real_writer(monkeypatch, tmp
     assert "review_status" in (tmp_path / "fractions.csv").read_text(encoding="utf-8")
 
 
-def test_repository_retention_decisions_supersede_solid_candidates_but_keep_fluids_ambiguous() -> None:
+def test_repository_retention_decisions_reach_inputs_and_only_unresolved_are_queued() -> None:
     rows = tuple(
         data_review.load_verified_recipe_source(
             data_review.RECIPES_RAW, data_review.canonical_source_manifest()
@@ -481,12 +481,7 @@ def test_repository_retention_decisions_supersede_solid_candidates_but_keep_flui
         data_review._REVIEW_DIR / "ingredient_nutrition_retention_decisions.csv"
     )
     with retention_path.open(encoding="utf-8", newline="") as handle:
-        approved_true_rows = [
-            row
-            for row in csv.DictReader(handle)
-            if row["review_status"] in {"approved", "modified"}
-            and row["retained_in_dish"] == "true"
-        ]
+        formal_rows = list(csv.DictReader(handle))
 
     current_occurrences = data_review.nutrition_occurrence_metadata_from_views(
         context.views.nutrition_views
@@ -499,38 +494,59 @@ def test_repository_retention_decisions_supersede_solid_candidates_but_keep_flui
         for view in context.views.nutrition_views
         for ingredient in view.ingredients
     }
-    approved_occurrence_ids = {row["occurrence_id"] for row in approved_true_rows}
-    candidate_occurrence_ids = {
-        row.occurrence_id for row in bundle.retention_candidates
+    formal_retention_by_id = {
+        row["occurrence_id"]: row["retained_in_dish"] == "true"
+        for row in formal_rows
     }
-    ambiguous_names = {
-        row.ingredient_name
-        for row in bundle.retention_exceptions
-        if row.exception_codes == ("NUTRITION_RETENTION_AMBIGUOUS",)
+    false_occurrence_ids = {
+        occurrence_id
+        for occurrence_id, retained in formal_retention_by_id.items()
+        if not retained
+    }
+    exceptions_by_id = {
+        row.occurrence_id: row for row in bundle.retention_exceptions
     }
 
-    audited_solids = {"盐", "姜", "白糖", "酵母", "八角", "黑胡椒"}
-    audited_fluids = {
-        "生抽", "有机生抽", "老抽", "李锦记老抽", "金兰油膏", "香草精", "糟卤"
+    assert len(formal_rows) == len(formal_retention_by_id) == 15_999
+    assert sum(formal_retention_by_id.values()) == 15_990
+    assert false_occurrence_ids == {
+        "285-5",
+        "414-8",
+        "414-9",
+        "414-10",
+        "637-2",
+        "693-11",
+        "935-5",
+        "1947-8",
+        "1963-2",
     }
-    assert len(approved_true_rows) == 8_315
-    assert audited_solids <= {
-        row["ingredient_name"] for row in approved_true_rows
+    assert {row["review_status"] for row in formal_rows} <= {
+        "approved",
+        "modified",
     }
-    assert approved_occurrence_ids.isdisjoint(candidate_occurrence_ids)
     assert all(
-        retention_index.get_effective(occurrence_id).retained_in_dish is True
-        for occurrence_id in approved_occurrence_ids
+        retention_index.get_effective(occurrence_id).retained_in_dish is retained
+        for occurrence_id, retained in formal_retention_by_id.items()
     )
     assert all(
-        final_inputs[occurrence_id].retained_in_dish is True
+        final_inputs[occurrence_id].retained_in_dish is retained
         and final_inputs[occurrence_id].retention_requires_review is False
-        for occurrence_id in approved_occurrence_ids
+        for occurrence_id, retained in formal_retention_by_id.items()
     )
-    assert audited_fluids <= ambiguous_names
-    assert audited_fluids.isdisjoint(
-        row.ingredient_name for row in bundle.retention_candidates
-    )
+    assert len(bundle.retention_candidates) == 0
+    assert len(bundle.retention_exceptions) == len(exceptions_by_id) == 821
+    assert {
+        occurrence_id: (
+            exceptions_by_id[occurrence_id].ingredient_name,
+            exceptions_by_id[occurrence_id].exception_codes,
+        )
+        for occurrence_id in ("151-1", "201-28", "347-1", "698-2")
+    } == {
+        "151-1": ("乌龙茶包", ("NUTRITION_RETENTION_NO_STEP_BINDING",)),
+        "201-28": ("生抽", ("NUTRITION_RETENTION_NO_STEP_BINDING",)),
+        "347-1": ("红茶", ("NUTRITION_RETENTION_AMBIGUOUS",)),
+        "698-2": ("锡兰红茶", ("NUTRITION_RETENTION_AMBIGUOUS",)),
+    }
 
 
 @pytest.mark.parametrize(
