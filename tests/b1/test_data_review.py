@@ -583,6 +583,32 @@ def test_repository_retention_decisions_reach_inputs_and_only_unresolved_are_que
         context.views.nutrition_views, edible_rules, edible_decisions
     ) == ()
 
+    quantity_rules = data_review.load_measure_rules(
+        data_review._REVIEW_DIR / "ingredient_measure_rules.csv"
+    )
+    quantity_decisions = data_review.load_quantity_decisions(
+        data_review._REVIEW_DIR / "ingredient_quantity_decisions.csv"
+    )
+    retained_views = tuple(
+        type(view)(
+            build_id=view.build_id,
+            source_manifest_hash=view.source_manifest_hash,
+            recipe_id=view.recipe_id,
+            ingredients=tuple(
+                ingredient
+                for ingredient in view.ingredients
+                if ingredient.retained_in_dish is True
+            ),
+        )
+        for view in context.views.nutrition_views
+    )
+    assert data_review.build_quantity_review_contexts(
+        retained_views,
+        facts,
+        quantity_rules,
+        quantity_decisions,
+    ) == ()
+
 
 @pytest.mark.parametrize(
     "filename",
