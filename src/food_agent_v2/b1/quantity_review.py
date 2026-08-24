@@ -593,11 +593,7 @@ def _is_formal_measure_rule_path(path: Path) -> bool:
         resolved_path = path.resolve(strict=False)
         resolved = str(resolved_path).casefold()
         resolved_root = review_root.resolve(strict=False)
-        review_prefix = str(resolved_root).casefold().rstrip("\\/") + "\\"
-        if (
-            str(resolved_path).casefold() == str(resolved_root).casefold()
-            or str(resolved_path).casefold().startswith(review_prefix)
-        ):
+        if resolved_path == resolved_root or resolved_path.is_relative_to(resolved_root):
             return True
         for formal in formal_paths:
             if resolved == str(formal.resolve(strict=False)).casefold():

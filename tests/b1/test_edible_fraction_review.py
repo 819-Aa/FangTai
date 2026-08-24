@@ -244,6 +244,7 @@ def test_generator_is_pending_only_excludes_nonretained_and_diagnoses_usage() ->
     assert candidates[0].review_status == "pending"
     assert "blank_form" in candidates[0].exception_reasons
     assert "unresolved_usage" in candidates[0].exception_reasons
+    assert "no_effective_rule_or_occurrence_decision" in candidates[0].exception_reasons
     assert "unresolved_usage" in candidates[1].exception_reasons
 
 

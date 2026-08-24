@@ -307,6 +307,8 @@ def _refuse_formal_review_target(path: Path) -> None:
     formal_root = PROJECT_ROOT / "data" / "review"
     formal_paths = (
         formal_root / "ingredient_measure_rules.csv",
+        formal_root / "ingredient_quantity_decisions.csv",
+        formal_root / "ingredient_nutrition_usage_decisions.csv",
         formal_root / "ingredient_edible_fraction_rules.csv",
         formal_root / "ingredient_edible_fraction_decisions.csv",
     )
@@ -315,11 +317,7 @@ def _refuse_formal_review_target(path: Path) -> None:
     try:
         resolved_path = path.resolve(strict=False)
         review_root = formal_root.resolve(strict=False)
-        review_prefix = str(review_root).casefold().rstrip("\\/") + "\\"
-        if (
-            str(resolved_path).casefold() == str(review_root).casefold()
-            or str(resolved_path).casefold().startswith(review_prefix)
-        ):
+        if resolved_path == review_root or resolved_path.is_relative_to(review_root):
             raise ValueError("候选不得写入正式规则或决定文件")
         resolved = str(resolved_path).casefold()
         for formal in formal_paths:

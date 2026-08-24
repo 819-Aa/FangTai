@@ -163,7 +163,10 @@ def generate_edible_fraction_candidates(views, rules, decisions):
                 reasons.append("multi_form_ingredient")
             if usage_unresolved:
                 reasons.append("unresolved_usage")
-            elif resolution.edible_fraction is None or resolution.requires_review:
+            fraction_unresolved = (
+                resolution.edible_fraction is None or resolution.requires_review
+            )
+            if fraction_unresolved:
                 reasons.append("no_effective_rule_or_occurrence_decision")
             decision = decisions.get_effective(occurrence.occurrence_id)
             candidate_basis = (
@@ -293,8 +296,6 @@ def _validate_output_candidate(candidate: EdibleFractionReviewCandidate) -> None
     unresolved = "unresolved_usage" in candidate.exception_reasons
     if (candidate.candidate_basis == "unresolved_usage") != unresolved:
         raise ValueError("可食比例候选 candidate_basis 与诊断原因不一致")
-    if unresolved and "no_effective_rule_or_occurrence_decision" in candidate.exception_reasons:
-        raise ValueError("usage 未决时不得伪造有效规则诊断")
     if (
         candidate.candidate_basis == "no_effective_rule_or_occurrence_decision"
         and "no_effective_rule_or_occurrence_decision" not in candidate.exception_reasons
@@ -335,11 +336,7 @@ def _is_formal_alias(path: Path, formal_paths: tuple[Path, ...]) -> bool:
         resolved_path = path.resolve(strict=False)
         resolved = str(resolved_path).casefold()
         review_root = (PROJECT_ROOT / "data" / "review").resolve(strict=False)
-        review_prefix = str(review_root).casefold().rstrip("\\/") + "\\"
-        if (
-            str(resolved_path).casefold() == str(review_root).casefold()
-            or str(resolved_path).casefold().startswith(review_prefix)
-        ):
+        if resolved_path == review_root or resolved_path.is_relative_to(review_root):
             return True
         for formal in formal_paths:
             if resolved == str(formal.resolve(strict=False)).casefold():

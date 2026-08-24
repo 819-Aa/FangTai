@@ -49,3 +49,33 @@ def test_edible_fractions_route_is_offline_and_uses_real_writer(monkeypatch, tmp
         (), (), tmp_path / "fractions.csv", sample=None
     ) == 0
     assert "review_status" in (tmp_path / "fractions.csv").read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    "filename",
+    (
+        "ingredient_measure_rules.csv",
+        "ingredient_quantity_decisions.csv",
+        "ingredient_nutrition_usage_decisions.csv",
+        "ingredient_edible_fraction_rules.csv",
+        "ingredient_edible_fraction_decisions.csv",
+    ),
+)
+@pytest.mark.parametrize("kind", ("quantity-rules", "edible-fractions"))
+def test_offline_routes_refuse_formal_targets_before_build(
+    monkeypatch, tmp_path: Path, filename: str, kind: str
+) -> None:
+    monkeypatch.setattr(data_review, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(
+        data_review, "_build_review_views", lambda *_args: (_ for _ in ()).throw(
+            AssertionError("formal target reached build")
+        )
+    )
+    formal = tmp_path / "data" / "review" / filename
+    formal.parent.mkdir(parents=True, exist_ok=True)
+    formal.write_text("preserve", encoding="utf-8")
+
+    writer = data_review._write_quantity_rule_review if kind == "quantity-rules" else data_review._write_edible_fraction_review
+    with pytest.raises(ValueError, match="正式"):
+        writer((), (), formal, **({"input_path": formal, "sample": None} if kind == "quantity-rules" else {"sample": None}))
+    assert formal.read_text(encoding="utf-8") == "preserve"
