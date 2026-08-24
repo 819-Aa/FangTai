@@ -13,6 +13,7 @@ def build_nutrition_features_from_views(
     measure_rules,
     quantity_decisions,
     edible_fractions,
+    edible_fraction_decisions=None,
     nutrition_crosswalk,
 ):
     features = [
@@ -21,6 +22,7 @@ def build_nutrition_features_from_views(
             measure_rules=measure_rules,
             quantity_decisions=quantity_decisions,
             edible_fractions=edible_fractions,
+            edible_fraction_decisions=edible_fraction_decisions,
             nutrition_crosswalk=nutrition_crosswalk,
         )
         for view in views

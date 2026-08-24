@@ -16,7 +16,7 @@ from food_agent_v2.b1.quantity_normalizer import normalize_quantity
 from food_agent_v2.core.paths import PROJECT_ROOT
 
 _USAGE_CODES = frozenset(
-    {"main", "supporting", "seasoning", "cooking_fat", "retained_liquid"}
+    {"main", "supporting", "seasoning", "cooking_fat", "cooking_liquid"}
 )
 _FUZZY_TOKEN_CLASSES = frozenset(
     {"as_needed", "small_amount", "several_count", "few_drops"}

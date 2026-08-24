@@ -393,6 +393,25 @@ def test_model_writer_rejects_unknown_usage_enum_before_opening(tmp_path) -> Non
     assert output.read_bytes() == original
 
 
+def test_model_writer_accepts_cooking_liquid_usage_enum(tmp_path) -> None:
+    candidate = generate_quantity_candidates(
+        (
+            RecipeQuantityReviewContext(
+                recipe_id=1,
+                recipe_name="测试菜",
+                step_context="加入汤汁",
+                ingredients=(_pending("1-1", "汤汁"),),
+            ),
+        ),
+        type("Estimator", (), {"estimate": lambda _self, _context: {"1-1": Decimal("2")}})(),
+    )[0]
+    output = tmp_path / "model-candidates.csv"
+
+    write_quantity_candidates((replace(candidate, usage_code="cooking_liquid"),), output)
+
+    assert "cooking_liquid" in output.read_text(encoding="utf-8")
+
+
 def _candidate_view(*, occurrence_id: str = "1-1", raw_quantity: str = "1个"):
     return RecipeNutritionInputView(
         build_id=UUID("00000000-0000-0000-0000-000000000001"),

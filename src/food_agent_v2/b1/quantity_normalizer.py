@@ -22,7 +22,7 @@ from food_agent_v2.b1.nutrition_occurrence_rules import FuzzyTokenClass, UsageCo
 
 ReviewStatus = Literal["pending", "approved", "modified", "rejected"]
 _REVIEW_STATUSES = frozenset({"pending", "approved", "modified", "rejected"})
-_USAGE_CODES = frozenset({"main", "supporting", "seasoning", "cooking_fat", "retained_liquid"})
+_USAGE_CODES = frozenset({"main", "supporting", "seasoning", "cooking_fat", "cooking_liquid"})
 _FUZZY_TOKEN_CLASSES = frozenset({"as_needed", "small_amount", "several_count", "few_drops"})
 _COUNT_UNITS = frozenset({"个", "片", "根", "勺"})
 
@@ -282,22 +282,18 @@ class QuantityNormalizationResult:
     standardized_grams: Decimal | None
     requires_review: bool
     review_status: ReviewStatus | None
+    reason: Literal["quantity_unapproved", "usage_unresolved_for_fuzzy"] | None
 
 
 def normalize_quantity(occurrence, measure_rules, decisions) -> QuantityNormalizationResult:
     """Apply the V2 priority order without broadening a rule's scope."""
-    if (
-        occurrence.requires_review
-        or occurrence.usage_code is None
-        or occurrence.retained_in_dish is None
-    ):
-        return _pending()
     decision = decisions.get_effective(occurrence.occurrence_id)
     if decision is not None:
         return QuantityNormalizationResult(
             standardized_grams=decision.decision_grams,
             requires_review=False,
             review_status=decision.review_status,
+            reason=None,
         )
 
     raw = (occurrence.quantity_raw or "").strip()
@@ -305,7 +301,7 @@ def normalize_quantity(occurrence, measure_rules, decisions) -> QuantityNormaliz
     amount, unit = parsed if parsed is not None else (None, "")
     input_unit = _normalize_unit(occurrence.unit_raw or "")
     if input_unit and unit and input_unit != unit:
-        return _pending()
+        return _unapproved()
     if amount is not None and unit in _MASS_FACTORS:
         return _resolved(amount * _MASS_FACTORS[unit])
 
@@ -323,6 +319,8 @@ def normalize_quantity(occurrence, measure_rules, decisions) -> QuantityNormaliz
 
     usage_code = occurrence.usage_code
     fuzzy_token_class = occurrence.fuzzy_token_class
+    if fuzzy_token_class is not None and usage_code is None:
+        return _usage_unresolved_for_fuzzy()
     if usage_code is not None and fuzzy_token_class is not None:
         rule = measure_rules.get_fuzzy_single_value(
             occurrence.ingredient_id,
@@ -332,7 +330,7 @@ def normalize_quantity(occurrence, measure_rules, decisions) -> QuantityNormaliz
         )
         if rule is not None:
             return _resolved(rule.to_grams)
-    return _pending()
+    return _unapproved()
 
 
 _MASS_FACTORS = {
@@ -350,11 +348,15 @@ def _is_finite_positive_decimal(value: object) -> bool:
 def _resolved(grams: Decimal | None) -> QuantityNormalizationResult:
     if grams is None:
         raise ValueError("有效规则缺少克重")
-    return QuantityNormalizationResult(grams, False, None)
+    return QuantityNormalizationResult(grams, False, None, None)
 
 
-def _pending() -> QuantityNormalizationResult:
-    return QuantityNormalizationResult(None, True, "pending")
+def _unapproved() -> QuantityNormalizationResult:
+    return QuantityNormalizationResult(None, True, "pending", "quantity_unapproved")
+
+
+def _usage_unresolved_for_fuzzy() -> QuantityNormalizationResult:
+    return QuantityNormalizationResult(None, True, "pending", "usage_unresolved_for_fuzzy")
 
 
 def _normalized_form(form: str | None) -> str:

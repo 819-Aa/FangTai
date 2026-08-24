@@ -19,7 +19,8 @@ from food_agent_v2.b1.nutrition_reference import (
 from food_agent_v2.b1.quantity_normalizer import normalize_quantity
 
 NutritionUnavailableReason = Literal[
-    "usage_unresolved",
+    "retention_unresolved",
+    "usage_unresolved_for_fuzzy",
     "quantity_unapproved",
     "edible_fraction_missing",
     "mapping_missing",
@@ -70,12 +71,10 @@ def calculate_raw_recipe_nutrition(
         return _unavailable(view, "no_nutrition_ingredients")
 
     if any(
-        occurrence.requires_review
-        or occurrence.usage_code is None
-        or occurrence.retained_in_dish is None
+        occurrence.retention_requires_review or occurrence.retained_in_dish is None
         for occurrence in view.ingredients
     ):
-        return _unavailable(view, "usage_unresolved")
+        return _unavailable(view, "retention_unresolved")
     retained_occurrences = tuple(
         occurrence for occurrence in view.ingredients if occurrence.retained_in_dish
     )
@@ -87,7 +86,7 @@ def calculate_raw_recipe_nutrition(
     for occurrence in retained_occurrences:
         normalized = normalize_quantity(occurrence, measure_rules, quantity_decisions)
         if normalized.standardized_grams is None or normalized.requires_review:
-            return _unavailable(view, "quantity_unapproved")
+            return _unavailable(view, normalized.reason or "quantity_unapproved")
         resolution = resolve_edible_fraction(
             occurrence,
             edible_fractions,

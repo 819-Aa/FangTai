@@ -22,7 +22,14 @@ from food_agent_v2.b1.edible_fraction_review import (
 
 
 def _occurrence(
-    *, id: str = "1-1", ingredient_id: int = 7, form: str = "带皮"
+    *,
+    id: str = "1-1",
+    ingredient_id: int = 7,
+    form: str = "带皮",
+    usage_code: str | None = "main",
+    retained_in_dish: bool | None = True,
+    usage_requires_review: bool = False,
+    retention_requires_review: bool = False,
 ) -> NutritionOccurrenceInput:
     return NutritionOccurrenceInput(
         occurrence_id=id,
@@ -32,6 +39,10 @@ def _occurrence(
         quantity_status="explicit",
         ingredient_name="苹果",
         normalized_form=form,
+        usage_code=usage_code,  # type: ignore[arg-type]
+        retained_in_dish=retained_in_dish,
+        usage_requires_review=usage_requires_review,
+        retention_requires_review=retention_requires_review,
     )
 
 
@@ -216,7 +227,7 @@ def test_decision_occurrence_id_is_unique_across_all_review_statuses(
         )
 
 
-def test_generator_is_pending_only_excludes_nonretained_and_diagnoses_usage() -> None:
+def test_generator_is_pending_only_excludes_nonretained_and_diagnoses_retention() -> None:
     view = RecipeNutritionInputView(
         build_id=UUID("00000000-0000-0000-0000-000000000001"),
         source_manifest_hash="a" * 64,
@@ -231,7 +242,7 @@ def test_generator_is_pending_only_excludes_nonretained_and_diagnoses_usage() ->
             NutritionOccurrenceInput(
                 occurrence_id="1-3", ingredient_id=7, quantity_raw="1个", unit_raw=None,
                 quantity_status="explicit", ingredient_name="苹果", normalized_form="带皮",
-                retained_in_dish=None, usage_code=None,
+                retained_in_dish=None, usage_code=None, retention_requires_review=True,
             ),
         ),
     )
@@ -243,16 +254,13 @@ def test_generator_is_pending_only_excludes_nonretained_and_diagnoses_usage() ->
     assert candidates[0].candidate_edible_fraction is None
     assert candidates[0].review_status == "pending"
     assert "blank_form" in candidates[0].exception_reasons
-    assert "unresolved_usage" in candidates[0].exception_reasons
     assert "no_effective_rule_or_occurrence_decision" in candidates[0].exception_reasons
-    assert "unresolved_usage" in candidates[1].exception_reasons
+    assert "unresolved_retention" in candidates[1].exception_reasons
 
 
-def test_usage_unresolved_does_not_skip_existing_effective_fraction() -> None:
-    occurrence = NutritionOccurrenceInput(
-        occurrence_id="1-1", ingredient_id=7, quantity_raw="1个", unit_raw=None,
-        quantity_status="explicit", ingredient_name="苹果", normalized_form="带皮",
-        usage_code="main", retained_in_dish=None, requires_review=False,
+def test_retained_true_usage_unresolved_still_resolves_existing_fraction() -> None:
+    occurrence = _occurrence(
+        usage_code=None, retained_in_dish=True, usage_requires_review=True,
     )
     view = RecipeNutritionInputView(
         build_id=UUID("00000000-0000-0000-0000-000000000001"),
@@ -262,9 +270,42 @@ def test_usage_unresolved_does_not_skip_existing_effective_fraction() -> None:
         (view,), EdibleFractionRuleIndex((_rule(7, "带皮", "0.8"),)), EdibleFractionDecisionIndex(())
     )
 
-    assert len(candidates) == 1
-    assert candidates[0].candidate_basis == "unresolved_usage"
-    assert candidates[0].exception_reasons == ("unresolved_usage",)
+    assert candidates == ()
+
+
+def test_retention_unresolved_is_marked_separately() -> None:
+    view = RecipeNutritionInputView(
+        build_id=UUID("00000000-0000-0000-0000-000000000001"),
+        source_manifest_hash="a" * 64,
+        recipe_id=1,
+        ingredients=(
+            _occurrence(retained_in_dish=None, retention_requires_review=True),
+        ),
+    )
+
+    candidates = generate_edible_fraction_candidates(
+        (view,), EdibleFractionRuleIndex((_rule(7, "带皮", "0.8"),)), EdibleFractionDecisionIndex(())
+    )
+
+    assert candidates[0].candidate_basis == "unresolved_retention"
+    assert candidates[0].exception_reasons == ("unresolved_retention",)
+
+
+def test_retained_false_is_fully_excluded_from_fraction_queue() -> None:
+    view = RecipeNutritionInputView(
+        build_id=UUID("00000000-0000-0000-0000-000000000001"),
+        source_manifest_hash="a" * 64,
+        recipe_id=1,
+        ingredients=(
+            _occurrence(retained_in_dish=False, retention_requires_review=False),
+        ),
+    )
+
+    candidates = generate_edible_fraction_candidates(
+        (view,), EdibleFractionRuleIndex(()), EdibleFractionDecisionIndex(())
+    )
+
+    assert candidates == ()
 
 
 def test_writer_escapes_formulas_and_preserves_old_queue_on_formal_alias(tmp_path, monkeypatch) -> None:
@@ -294,7 +335,7 @@ def test_writer_escapes_formulas_and_preserves_old_queue_on_formal_alias(tmp_pat
     (
         ("usage_code", "garbage"),
         ("candidate_basis", "garbage"),
-        ("candidate_basis", "unresolved_usage"),
+        ("candidate_basis", "unresolved_retention"),
         ("exception_reasons", ("blank_form", "blank_form")),
         ("exception_reasons", ("no_effective_rule_or_occurrence_decision", "blank_form")),
     ),

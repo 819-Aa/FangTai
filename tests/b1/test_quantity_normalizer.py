@@ -23,7 +23,8 @@ def _occurrence(
     usage: str | None = "seasoning",
     token: str | None = None,
     retained: bool | None = True,
-    requires_review: bool = False,
+    usage_requires_review: bool = False,
+    retention_requires_review: bool = False,
 ) -> NutritionOccurrenceInput:
     return NutritionOccurrenceInput(
         occurrence_id=occurrence_id,
@@ -36,7 +37,8 @@ def _occurrence(
         usage_code=usage,  # type: ignore[arg-type]
         fuzzy_token_class=token,  # type: ignore[arg-type]
         retained_in_dish=retained,
-        requires_review=requires_review,
+        usage_requires_review=usage_requires_review,
+        retention_requires_review=retention_requires_review,
     )
 
 
@@ -73,6 +75,16 @@ def _fuzzy_rule(**kwargs) -> MeasureRule:
     return _rule(rule_type="fuzzy_single_value", **kwargs)
 
 
+@pytest.fixture
+def rules() -> MeasureRuleIndex:
+    return MeasureRuleIndex(
+        (
+            _rule(rule_id="per-piece", rule_type="unit_weight", unit="个", grams="33"),
+            _rule(rule_id="density", rule_type="density", unit="毫升", density="1.02"),
+        )
+    )
+
+
 @pytest.mark.parametrize(
     ("raw", "unit", "expected"),
     [
@@ -91,6 +103,29 @@ def test_direct_mass_conversions_are_deterministic(raw, unit, expected) -> None:
 
     assert result.standardized_grams == expected
     assert result.requires_review is False
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [("100克", Decimal("100")), ("2个", Decimal("66")), ("250毫升", Decimal("255"))],
+)
+def test_deterministic_paths_do_not_require_usage(raw, expected, rules) -> None:
+    occurrence = _occurrence(raw, usage=None, retained=True, usage_requires_review=True)
+
+    assert (
+        normalize_quantity(occurrence, rules, QuantityDecisionIndex(())).standardized_grams
+        == expected
+    )
+
+
+def test_fuzzy_quantity_without_usage_has_specific_reason() -> None:
+    result = normalize_quantity(
+        _occurrence("少许", usage=None, retained=True, token="small_amount"),
+        MeasureRuleIndex(()),
+        QuantityDecisionIndex(()),
+    )
+
+    assert result.reason == "usage_unresolved_for_fuzzy"
 
 
 def test_occurrence_decision_has_highest_priority() -> None:
@@ -246,17 +281,7 @@ def test_measure_rule_index_rejects_duplicate_v2_keys() -> None:
         MeasureRuleIndex((rule, duplicate))
 
 
-@pytest.mark.parametrize(
-    ("usage", "retained", "requires_review"),
-    [
-        ("seasoning", True, True),
-        (None, True, False),
-        ("seasoning", None, False),
-    ],
-)
-def test_unresolved_task1_occurrence_cannot_be_overridden_by_quantity_decision(
-    usage, retained, requires_review
-) -> None:
+def test_occurrence_decision_has_priority_over_independent_review_states() -> None:
     decisions = QuantityDecisionIndex(
         (
             QuantityDecision(
@@ -271,16 +296,17 @@ def test_unresolved_task1_occurrence_cannot_be_overridden_by_quantity_decision(
         _occurrence(
             "100克",
             "克",
-            usage=usage,
-            retained=retained,
-            requires_review=requires_review,
+            usage=None,
+            retained=None,
+            usage_requires_review=True,
+            retention_requires_review=True,
         ),
         MeasureRuleIndex(()),
         decisions,
     )
 
-    assert result.standardized_grams is None
-    assert result.requires_review is True
+    assert result.standardized_grams == Decimal("3.5")
+    assert result.requires_review is False
 
 
 @pytest.mark.parametrize(

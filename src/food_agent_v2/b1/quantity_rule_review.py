@@ -26,7 +26,7 @@ _EXCEPTION_CODES = (
 )
 _COUNT_UNITS = frozenset({"个", "片", "根", "勺"})
 _USAGE_CODES = frozenset(
-    {"main", "supporting", "seasoning", "cooking_fat", "retained_liquid"}
+    {"main", "supporting", "seasoning", "cooking_fat", "cooking_liquid"}
 )
 _FUZZY_TOKEN_CLASSES = frozenset(
     {"as_needed", "small_amount", "several_count", "few_drops"}

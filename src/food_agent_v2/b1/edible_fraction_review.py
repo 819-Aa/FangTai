@@ -34,14 +34,14 @@ _DECISION_HEADERS = (
 _DIAGNOSTIC_REASONS = (
     "blank_form",
     "multi_form_ingredient",
-    "unresolved_usage",
+    "unresolved_retention",
     "no_effective_rule_or_occurrence_decision",
 )
 _USAGE_CODES = frozenset(
-    {"main", "supporting", "seasoning", "cooking_fat", "retained_liquid"}
+    {"main", "supporting", "seasoning", "cooking_fat", "cooking_liquid"}
 )
 _CANDIDATE_BASES = frozenset(
-    {"no_effective_rule_or_occurrence_decision", "unresolved_usage"}
+    {"no_effective_rule_or_occurrence_decision", "unresolved_retention"}
 )
 
 
@@ -144,14 +144,13 @@ def generate_edible_fraction_candidates(views, rules, decisions):
         for occurrence in view.ingredients:
             if occurrence.retained_in_dish is False:
                 continue
-            usage_unresolved = (
-                occurrence.usage_code is None
+            retention_unresolved = (
+                occurrence.retention_requires_review
                 or occurrence.retained_in_dish is None
-                or occurrence.requires_review
             )
             resolution = resolve_edible_fraction(occurrence, rules, decisions)
             if (
-                not usage_unresolved
+                not retention_unresolved
                 and resolution.edible_fraction is not None
                 and not resolution.requires_review
             ):
@@ -161,8 +160,8 @@ def generate_edible_fraction_candidates(views, rules, decisions):
                 reasons.append("blank_form")
             if len(forms_by_ingredient.get(occurrence.ingredient_id, ())) > 1:
                 reasons.append("multi_form_ingredient")
-            if usage_unresolved:
-                reasons.append("unresolved_usage")
+            if retention_unresolved:
+                reasons.append("unresolved_retention")
             fraction_unresolved = (
                 resolution.edible_fraction is None or resolution.requires_review
             )
@@ -170,8 +169,8 @@ def generate_edible_fraction_candidates(views, rules, decisions):
                 reasons.append("no_effective_rule_or_occurrence_decision")
             decision = decisions.get_effective(occurrence.occurrence_id)
             candidate_basis = (
-                "unresolved_usage"
-                if usage_unresolved
+                "unresolved_retention"
+                if retention_unresolved
                 else "no_effective_rule_or_occurrence_decision"
             )
             candidates.append(
@@ -293,8 +292,8 @@ def _validate_output_candidate(candidate: EdibleFractionReviewCandidate) -> None
         != tuple(reason for reason in _DIAGNOSTIC_REASONS if reason in candidate.exception_reasons)
     ):
         raise ValueError("可食比例候选诊断原因非法")
-    unresolved = "unresolved_usage" in candidate.exception_reasons
-    if (candidate.candidate_basis == "unresolved_usage") != unresolved:
+    unresolved = "unresolved_retention" in candidate.exception_reasons
+    if (candidate.candidate_basis == "unresolved_retention") != unresolved:
         raise ValueError("可食比例候选 candidate_basis 与诊断原因不一致")
     if (
         candidate.candidate_basis == "no_effective_rule_or_occurrence_decision"

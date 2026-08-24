@@ -43,8 +43,9 @@ def _ingredient(
     raw: str,
     *,
     retained_in_dish: bool | None = True,
-    requires_review: bool = False,
     usage_code: str | None = "main",
+    usage_requires_review: bool = False,
+    retention_requires_review: bool = False,
 ):
     return NutritionOccurrenceInput(
         occurrence_id=occurrence_id,
@@ -54,8 +55,9 @@ def _ingredient(
         quantity_status="explicit",
         ingredient_name=name,
         retained_in_dish=retained_in_dish,
-        requires_review=requires_review,
         usage_code=usage_code,
+        usage_requires_review=usage_requires_review,
+        retention_requires_review=retention_requires_review,
     )
 
 
@@ -106,6 +108,24 @@ def _references(*pairs: tuple[int, str, str]):
         references,
     )
     return crosswalk
+
+
+def _complete_dependencies():
+    return {
+        "measure_rules": MeasureRuleIndex(()),
+        "quantity_decisions": QuantityDecisionIndex(()),
+        "edible_fractions": EdibleFractionRuleIndex((_edible_rule(10, "甲", "1"),)),
+        "nutrition_crosswalk": _references((10, "甲", "ref-a", "10")),
+    }
+
+
+def _empty_dependencies():
+    return {
+        "measure_rules": MeasureRuleIndex(()),
+        "quantity_decisions": QuantityDecisionIndex(()),
+        "edible_fractions": EdibleFractionRuleIndex(()),
+        "nutrition_crosswalk": NutritionCrosswalkIndex((), NutritionReferenceIndex(())),
+    }
 
 
 def test_two_ingredient_decimal_calculation_is_all_raw_input_and_rounds_only_at_output() -> None:
@@ -169,22 +189,46 @@ def test_calculator_uses_occurrence_fraction_decision_before_generic_rule() -> N
     assert result.raw_nutrition_total.energy_kcal == Decimal("5.00")
 
 
-def test_unresolved_usage_in_any_occurrence_precedes_other_prerequisite_failures() -> None:
-    view = _view(
-        _ingredient("1-1", 10, "甲", "少许"),
-        _ingredient("1-2", 20, "乙", "100克", requires_review=True),
-    )
-
+def test_retained_true_mass_calculates_with_usage_unresolved() -> None:
     result = calculate_raw_recipe_nutrition(
-        view,
-        measure_rules=MeasureRuleIndex(()),
-        quantity_decisions=QuantityDecisionIndex(()),
-        edible_fractions=EdibleFractionRuleIndex(()),
-        nutrition_crosswalk=NutritionCrosswalkIndex((), NutritionReferenceIndex(())),
+        _view(
+            _ingredient(
+                "1-1", 10, "甲", "100克", usage_code=None,
+                retained_in_dish=True, usage_requires_review=True,
+            )
+        ),
+        **_complete_dependencies(),
     )
 
-    assert result.available is False
-    assert result.reason == "usage_unresolved"
+    assert result.available is True
+
+
+def test_retained_false_needs_no_usage_or_downstream_facts() -> None:
+    result = calculate_raw_recipe_nutrition(
+        _view(
+            _ingredient(
+                "1-1", 10, "甲", "100克", usage_code=None,
+                retained_in_dish=False, usage_requires_review=True,
+            )
+        ),
+        **_empty_dependencies(),
+    )
+
+    assert result.reason == "no_retained_ingredients"
+
+
+def test_retention_unresolved_fails_before_quantity() -> None:
+    result = calculate_raw_recipe_nutrition(
+        _view(
+            _ingredient(
+                "1-1", 10, "甲", "100克", retained_in_dish=None,
+                retention_requires_review=True,
+            )
+        ),
+        **_empty_dependencies(),
+    )
+
+    assert result.reason == "retention_unresolved"
 
 
 @pytest.mark.parametrize(
@@ -248,8 +292,10 @@ def test_any_missing_prerequisite_returns_no_partial_nutrition(
     assert result.raw_nutrition_per_100g is None
 
 
-def test_review_required_occurrence_makes_nutrition_unavailable() -> None:
-    view = _view(_ingredient("1-1", 10, "甲", "100克", requires_review=True))
+def test_unresolved_usage_does_not_block_explicit_quantity() -> None:
+    view = _view(
+        _ingredient("1-1", 10, "甲", "100克", usage_code=None, usage_requires_review=True)
+    )
 
     result = calculate_raw_recipe_nutrition(
         view,
@@ -260,19 +306,13 @@ def test_review_required_occurrence_makes_nutrition_unavailable() -> None:
     )
 
     assert result.available is False
-    assert result.reason == "usage_unresolved"
+    assert result.reason == "edible_fraction_missing"
 
 
-@pytest.mark.parametrize(
-    ("usage_code", "retained_in_dish"),
-    [(None, True), ("main", None)],
-)
-def test_missing_v2_usage_fields_make_nutrition_unavailable(
-    usage_code: str | None, retained_in_dish: bool | None
-) -> None:
+def test_missing_retention_field_makes_nutrition_unavailable() -> None:
     view = _view(
         _ingredient(
-            "1-1", 10, "甲", "100克", usage_code=usage_code, retained_in_dish=retained_in_dish
+            "1-1", 10, "甲", "100克", retained_in_dish=None
         )
     )
 
@@ -285,7 +325,7 @@ def test_missing_v2_usage_fields_make_nutrition_unavailable(
     )
 
     assert result.available is False
-    assert result.reason == "usage_unresolved"
+    assert result.reason == "retention_unresolved"
 
 
 def test_non_retained_occurrence_does_not_contribute_to_raw_nutrition() -> None:
