@@ -1,5 +1,6 @@
 import csv
 import os
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -498,14 +499,27 @@ def test_repository_retention_decisions_reach_inputs_and_only_unresolved_are_que
         row["occurrence_id"]: row["retained_in_dish"] == "true"
         for row in formal_rows
     }
+    retention_status_by_id = {
+        row["occurrence_id"]: row["review_status"] for row in formal_rows
+    }
+    edible_retention_corrections = {
+        "23-2",
+        "538-2",
+        "870-3",
+        "982-4",
+        "1175-4",
+        "1224-2",
+        "1770-8",
+        "1886-11",
+    }
     false_occurrence_ids = {
         occurrence_id
         for occurrence_id, retained in formal_retention_by_id.items()
         if not retained
     }
     assert len(formal_rows) == len(formal_retention_by_id) == 16_820
-    assert sum(formal_retention_by_id.values()) == 16_644
-    assert len(false_occurrence_ids) == 176
+    assert sum(formal_retention_by_id.values()) == 16_636
+    assert len(false_occurrence_ids) == 184
     assert {
         "285-5",
         "414-8",
@@ -517,8 +531,19 @@ def test_repository_retention_decisions_reach_inputs_and_only_unresolved_are_que
         "1947-8",
         "1963-2",
     } <= false_occurrence_ids
+    assert edible_retention_corrections <= false_occurrence_ids
+    assert {
+        occurrence_id: retention_status_by_id[occurrence_id]
+        for occurrence_id in edible_retention_corrections
+    } == dict.fromkeys(edible_retention_corrections, "modified")
     assert formal_retention_by_id["1426-27"] is True
-    assert {row["review_status"] for row in formal_rows} == {"approved"}
+    assert formal_retention_by_id["1611-5"] is True
+    assert retention_status_by_id["1426-27"] == "approved"
+    assert retention_status_by_id["1611-5"] == "approved"
+    assert Counter(retention_status_by_id.values()) == {
+        "approved": 16_812,
+        "modified": 8,
+    }
     assert all(
         retention_index.get_effective(occurrence_id).retained_in_dish is retained
         for occurrence_id, retained in formal_retention_by_id.items()
@@ -530,6 +555,8 @@ def test_repository_retention_decisions_reach_inputs_and_only_unresolved_are_que
     )
     assert len(bundle.retention_candidates) == 0
     assert len(bundle.retention_exceptions) == 0
+    assert len(bundle.usage_candidates) == 1_733
+    assert len(bundle.usage_exceptions) == 8_684
 
 
 @pytest.mark.parametrize(
