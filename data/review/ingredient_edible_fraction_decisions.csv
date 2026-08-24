@@ -101,6 +101,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 14-11,14,17,盐,默认可食,1.0,approved
 14-12,14,89,生抽,默认可食,1.0,approved
 14-13,14,90,黄瓜,默认可食,1.0,approved
+15-1,15,91,排骨,毛重可食折算,0.72,approved
 15-2,15,92,豆豉,默认可食,1.0,approved
 15-3,15,50,蒜,蓉,1.0,approved
 15-4,15,6,姜,蓉,1.0,approved
@@ -137,6 +138,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 20-5,20,122,牛奶,按可食部估重,1.0,approved
 20-6,20,123,泡打粉,默认可食,1.0,approved
 20-7,20,17,盐,默认可食,1.0,approved
+21-1,21,124,小鲍鱼,毛重可食折算,0.65,approved
 21-2,21,65,小葱,按可食部估重,1.0,approved
 21-3,21,6,姜,按可食部估重,1.0,approved
 21-4,21,89,生抽,默认可食,1.0,approved
@@ -193,6 +195,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 27-8,27,97,白糖,按可食部估重,1.0,approved
 27-9,27,17,盐,按可食部估重,1.0,approved
 28-1,28,74,土豆,默认可食,1.0,approved
+28-2,28,152,鳕鱼,可食净料,1.0,approved
 28-3,28,17,盐,默认可食,1.0,approved
 29-1,29,54,鸡蛋,按可食部估重,1.0,approved
 29-2,29,153,老酸奶,默认可食,1.0,approved
@@ -218,6 +221,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 31-5,31,164,枸杞,默认可食,1.0,approved
 31-6,31,165,冰糖粉,默认可食,1.0,approved
 31-7,31,166,黄酒,按可食部估重,1.0,approved
+32-1,32,91,排骨,毛重可食折算,0.72,approved
 32-2,32,6,姜,末,1.0,approved
 32-3,32,50,蒜,末,1.0,approved
 32-4,32,89,生抽,按可食部估重,1.0,approved
@@ -312,6 +316,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 42-8,42,28,食用油,默认可食,1.0,approved
 42-9,42,97,白糖,默认可食,1.0,approved
 42-10,42,125,鸡精,默认可食,1.0,approved
+43-1,43,195,扇贝,毛重可食折算,0.35,approved
 43-2,43,196,日本豆腐,默认可食,1.0,approved
 43-3,43,135,肉末,末,1.0,approved
 43-4,43,33,葱,花,1.0,approved
@@ -426,6 +431,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 54-7,54,28,食用油,默认可食,1.0,approved
 54-8,54,111,纯净水,默认可食,1.0,approved
 54-9,54,33,葱,花,1.0,approved
+55-1,55,113,小龙虾,毛重可食折算,0.31,approved
 55-2,55,6,姜,片,1.0,approved
 55-3,55,239,大葱,段,1.0,approved
 55-5,55,41,水,默认可食,1.0,approved
@@ -531,6 +537,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 69-1,69,280,芥菜,默认可食,1.0,approved
 69-2,69,281,火腿,默认可食,1.0,approved
 69-3,69,36,蒸鱼豉油,默认可食,1.0,approved
+70-1,70,282,鸭翅,毛重可食折算,0.67,approved
 70-2,70,6,姜,片,1.0,approved
 70-3,70,98,料酒,默认可食,1.0,approved
 70-4,70,41,水,默认可食,1.0,approved
@@ -589,6 +596,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 76-6,76,123,泡打粉,按可食部估重,1.0,approved
 76-7,76,41,水,默认可食,1.0,approved
 77-1,77,297,竹笋,默认可食,1.0,approved
+77-2,77,298,大虾干,可食净料,1.0,approved
 77-3,77,33,葱,花,1.0,approved
 77-4,77,17,盐,默认可食,1.0,approved
 77-5,77,96,鸡粉,默认可食,1.0,approved
@@ -650,6 +658,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 81-9,81,235,红椒,丝,1.0,approved
 81-10,81,17,盐,按可食部估重,1.0,approved
 81-11,81,41,水,默认可食,1.0,approved
+82-1,82,324,火鸡腿,毛重可食折算,0.69,approved
 82-2,82,325,果木烟熏调料,默认可食,1.0,approved
 82-3,82,326,奥尔良腌料,默认可食,1.0,approved
 82-4,82,155,色拉油,默认可食,1.0,approved
@@ -669,9 +678,11 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 84-3,84,330,米酒,默认可食,1.0,approved
 84-4,84,331,黑枣,默认可食,1.0,approved
 84-5,84,6,姜,片,1.0,approved
+84-6,84,332,草虾,毛重可食折算,0.57,approved
 84-7,84,17,盐,按可食部估重,1.0,approved
 84-8,84,89,生抽,默认可食,1.0,approved
 84-9,84,193,白胡椒粉,按可食部估重,1.0,approved
+85-1,85,333,猪筒骨,毛重可食折算,0.20,approved
 85-2,85,334,海带,干,1.0,approved
 85-6,85,283,花椒,粒,1.0,approved
 85-7,85,239,大葱,按可食部估重,1.0,approved
@@ -680,6 +691,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 85-10,85,17,盐,默认可食,1.0,approved
 85-11,85,125,鸡精,默认可食,1.0,approved
 85-12,85,334,海带,干,1.0,approved
+85-13,85,337,筒骨,毛重可食折算,0.20,approved
 85-14,85,41,水,默认可食,1.0,approved
 85-15,85,6,姜,片,1.0,approved
 85-16,85,239,大葱,默认可食,1.0,approved
@@ -891,6 +903,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 110-15,110,317,蛋黄,按可食部估重,1.0,approved
 110-16,110,163,黑芝麻,按可食部估重,1.0,approved
 111-1,111,105,薏米,默认可食,1.0,approved
+111-2,111,91,排骨,毛重可食折算,0.72,approved
 111-3,111,98,料酒,默认可食,1.0,approved
 111-4,111,41,水,默认可食,1.0,approved
 111-5,111,6,姜,片,1.0,approved
@@ -1090,6 +1103,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 133-9,133,1242,奶酪,片,1.0,approved
 133-10,133,163,黑芝麻,按可食部估重,1.0,approved
 133-11,133,454,寿司醋,默认可食,1.0,approved
+134-1,134,455,牛仔骨,毛重可食折算,0.68,approved
 134-2,134,14,迷迭香,干+末,1.0,approved
 134-3,134,17,盐,默认可食,1.0,approved
 134-4,134,96,鸡粉,默认可食,1.0,approved
@@ -1155,6 +1169,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 143-5,143,194,小米椒,默认可食,1.0,approved
 143-6,143,89,生抽,按可食部估重,1.0,approved
 143-7,143,97,白糖,默认可食,1.0,approved
+144-1,144,477,虾,毛重可食折算,0.51,approved
 144-2,144,478,海盐,默认可食,1.0,approved
 144-3,144,283,花椒,默认可食,1.0,approved
 144-4,144,142,八角,默认可食,1.0,approved
@@ -1335,6 +1350,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 166-5,166,96,鸡粉,默认可食,1.0,approved
 166-6,166,17,盐,默认可食,1.0,approved
 166-7,166,28,食用油,按可食部估重,1.0,approved
+167-1,167,515,猪肋排,毛重可食折算,0.72,approved
 167-2,167,92,豆豉,默认可食,1.0,approved
 167-3,167,89,生抽,默认可食,1.0,approved
 167-4,167,139,老抽,默认可食,1.0,approved
@@ -1503,6 +1519,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 190-13,190,552,煲仔饭调味汁,默认可食,1.0,approved
 190-14,190,41,水,默认可食,1.0,approved
 191-1,191,229,鸡爪,带骨毛重,0.60,approved
+191-2,191,91,排骨,毛重可食折算,0.72,approved
 191-3,191,89,生抽,默认可食,1.0,approved
 191-4,191,97,白糖,默认可食,1.0,approved
 191-5,191,92,豆豉,默认可食,1.0,approved
@@ -1538,6 +1555,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 195-2,195,306,核桃,默认可食,1.0,approved
 195-3,195,266,鹌鹑蛋,熟,1.0,approved
 195-4,195,3,冰糖,默认可食,1.0,approved
+196-1,196,515,猪肋排,毛重可食折算,0.72,approved
 196-2,196,6,姜,片,1.0,approved
 196-3,196,98,料酒,默认可食,1.0,approved
 196-4,196,41,水,默认可食,1.0,approved
@@ -1618,6 +1636,8 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 202-5,202,6,姜,片,1.0,approved
 202-6,202,146,蒜瓣,默认可食,1.0,approved
 202-7,202,28,食用油,默认可食,1.0,approved
+202-8,202,572,鱼头,毛重可食折算,0.20,approved
+202-9,202,573,鱼骨,毛重可食折算,0.10,approved
 202-10,202,41,水,默认可食,1.0,approved
 202-11,202,574,酸菜,默认可食,1.0,approved
 202-12,202,340,黄豆芽,默认可食,1.0,approved
@@ -1852,8 +1872,10 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 228-9,228,41,水,默认可食,1.0,approved
 229-1,229,635,鲍鱼,按可食部估重,1.0,approved
 229-2,229,98,料酒,默认可食,1.0,approved
+229-3,229,91,排骨,毛重可食折算,0.72,approved
 229-4,229,6,姜,片,1.0,approved
 229-5,229,41,水,默认可食,1.0,approved
+229-6,229,233,贝,干,1.0,approved
 229-7,229,85,香菇,干,1.0,approved
 229-8,229,84,胡萝卜,块,1.0,approved
 229-9,229,637,大白菜,默认可食,1.0,approved
@@ -1925,6 +1947,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 238-1,238,653,牛排,按可食部估重,1.0,approved
 238-2,238,654,研磨黑胡椒盐,默认可食,1.0,approved
 238-3,238,46,黄油,默认可食,1.0,approved
+239-1,239,655,波士顿龙虾,毛重可食折算,0.46,approved
 239-2,239,656,葡萄酒,默认可食,1.0,approved
 239-3,239,657,酥皮,按可食部估重,1.0,approved
 239-4,239,85,香菇,默认可食,1.0,approved
@@ -2076,6 +2099,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 256-11,256,139,老抽,默认可食,1.0,approved
 256-12,256,125,鸡精,默认可食,1.0,approved
 256-13,256,690,花椒油,默认可食,1.0,approved
+257-1,257,515,猪肋排,毛重可食折算,0.72,approved
 257-2,257,6,姜,丝,1.0,approved
 257-3,257,33,葱,花,1.0,approved
 257-4,257,92,豆豉,默认可食,1.0,approved
@@ -2110,6 +2134,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 259-9,259,421,澄面,默认可食,1.0,approved
 259-10,259,699,鹰粟粉,默认可食,1.0,approved
 259-11,259,700,沸水,默认可食,1.0,approved
+260-1,260,515,猪肋排,毛重可食折算,0.72,approved
 260-2,260,6,姜,片,1.0,approved
 260-3,260,37,胡椒粉,按可食部估重,1.0,approved
 260-4,260,701,大藏芥末,末,1.0,approved
@@ -2194,6 +2219,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 267-1,267,718,免洗去核干灰枣,默认可食,1.0,approved
 268-1,268,719,腊猪肉,默认可食,1.0,approved
 268-2,268,720,腊鸡肉/腊鸭肉,默认可食,1.0,approved
+268-3,268,721,腊鲤鱼,毛重可食折算,0.54,approved
 268-7,268,92,豆豉,默认可食,1.0,approved
 268-8,268,65,小葱,按可食部估重,1.0,approved
 268-9,268,6,姜,按可食部估重,1.0,approved
@@ -2247,6 +2273,8 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 277-8,277,729,有机生抽,按可食部估重,1.0,approved
 277-9,277,98,料酒,按可食部估重,1.0,approved
 277-10,277,414,黄豆酱,默认可食,1.0,approved
+278-1,278,485,生蚝,可食净料,1.0,approved
+278-2,278,715,乌鸡,毛重可食折算,0.48,approved
 278-3,278,6,姜,默认可食,1.0,approved
 278-4,278,730,虫草花,花,1.0,approved
 278-5,278,294,白芷,默认可食,1.0,approved
@@ -2267,6 +2295,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 280-7,280,208,猪油,默认可食,1.0,approved
 280-8,280,97,白糖,默认可食,1.0,approved
 280-9,280,700,沸水,默认可食,1.0,approved
+281-1,281,91,排骨,毛重可食折算,0.72,approved
 281-2,281,6,姜,片,1.0,approved
 281-3,281,98,料酒,默认可食,1.0,approved
 281-4,281,41,水,默认可食,1.0,approved
@@ -2297,6 +2326,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 285-4,285,40,红糖,默认可食,1.0,approved
 285-6,285,41,水,默认可食,1.0,approved
 285-7,285,716,桂圆,按可食部估重,1.0,approved
+287-1,287,192,巴沙鱼,可食净料,1.0,approved
 287-2,287,224,粉丝,丝,1.0,approved
 287-3,287,739,小米椒圈,默认可食,1.0,approved
 287-4,287,33,葱,花,1.0,approved
@@ -2358,6 +2388,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 292-11,292,613,中筋粉,默认可食,1.0,approved
 292-12,292,377,菠菜,默认可食,1.0,approved
 292-13,292,41,水,按可食部估重,1.0,approved
+293-1,293,195,扇贝,毛重可食折算,0.35,approved
 293-2,293,50,蒜,蓉,1.0,approved
 293-3,293,747,彩椒,末,1.0,approved
 293-4,293,17,盐,默认可食,1.0,approved
@@ -2525,6 +2556,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 313-2,313,229,鸡爪,按可食部估重,1.0,approved
 313-3,313,780,母鸡,按可食部估重,1.0,approved
 313-4,313,781,里脊肉,默认可食,1.0,approved
+313-5,313,233,贝,干,1.0,approved
 313-6,313,227,南瓜,默认可食,1.0,approved
 313-7,313,782,花胶,按可食部估重,1.0,approved
 313-8,313,17,盐,按可食部估重,1.0,approved
@@ -2711,6 +2743,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 332-14,332,20,橄榄油,按可食部估重,1.0,approved
 332-15,332,19,黑胡椒,碎,1.0,approved
 333-1,333,304,葛根,默认可食,1.0,approved
+333-2,333,813,猪骨,毛重可食折算,0.20,approved
 333-3,333,84,胡萝卜,默认可食,1.0,approved
 333-4,333,39,红枣,按可食部估重,1.0,approved
 333-5,333,17,盐,默认可食,1.0,approved
@@ -2737,6 +2770,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 336-4,336,818,麦冬,默认可食,1.0,approved
 336-5,336,819,无花果,默认可食,1.0,approved
 339-1,339,85,香菇,默认可食,1.0,approved
+339-2,339,823,嫩鸡,毛重可食折算,0.66,approved
 339-3,339,33,葱,段,1.0,approved
 339-4,339,6,姜,片,1.0,approved
 339-5,339,66,芝麻油,按可食部估重,1.0,approved
@@ -2987,6 +3021,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 371-9,371,89,生抽,默认可食,1.0,approved
 371-10,371,139,老抽,默认可食,1.0,approved
 371-11,371,3,冰糖,默认可食,1.0,approved
+372-1,372,91,排骨,毛重可食折算,0.72,approved
 372-2,372,98,料酒,默认可食,1.0,approved
 372-3,372,41,水,默认可食,1.0,approved
 372-4,372,28,食用油,默认可食,1.0,approved
@@ -3049,6 +3084,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 380-6,380,17,盐,默认可食,1.0,approved
 380-7,380,96,鸡粉,默认可食,1.0,approved
 380-8,380,66,芝麻油,按可食部估重,1.0,approved
+381-1,381,91,排骨,毛重可食折算,0.72,approved
 381-2,381,50,蒜,蓉,1.0,approved
 381-3,381,6,姜,末,1.0,approved
 381-4,381,17,盐,按可食部估重,1.0,approved
@@ -3069,6 +3105,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 382-6,382,33,葱,花,1.0,approved
 382-7,382,17,盐,默认可食,1.0,approved
 383-1,383,334,海带,干,1.0,approved
+383-2,383,337,筒骨,毛重可食折算,0.20,approved
 383-3,383,41,水,默认可食,1.0,approved
 383-4,383,6,姜,片,1.0,approved
 383-5,383,507,大葱白,段,1.0,approved
@@ -3081,6 +3118,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 383-15,383,17,盐,默认可食,1.0,approved
 383-16,383,125,鸡精,默认可食,1.0,approved
 383-17,383,334,海带,干,1.0,approved
+383-18,383,337,筒骨,毛重可食折算,0.20,approved
 383-19,383,41,水,默认可食,1.0,approved
 383-20,383,6,姜,片,1.0,approved
 383-21,383,239,大葱,默认可食,1.0,approved
@@ -3105,11 +3143,13 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 385-7,385,48,淀粉,默认可食,1.0,approved
 385-8,385,155,色拉油,默认可食,1.0,approved
 385-9,385,98,料酒,默认可食,1.0,approved
+386-1,386,871,蛏子,毛重可食折算,0.57,approved
 386-2,386,166,黄酒,按可食部估重,1.0,approved
 386-3,386,6,姜,丝,1.0,approved
 386-4,386,89,生抽,按可食部估重,1.0,approved
 386-5,386,28,食用油,按可食部估重,1.0,approved
 386-6,386,65,小葱,按可食部估重,1.0,approved
+387-1,387,91,排骨,毛重可食折算,0.72,approved
 387-2,387,467,铁棍山药,默认可食,1.0,approved
 387-3,387,112,小米辣,按可食部估重,1.0,approved
 387-4,387,33,葱,花,1.0,approved
@@ -3214,6 +3254,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 401-5,401,96,鸡粉,默认可食,1.0,approved
 401-6,401,193,白胡椒粉,默认可食,1.0,approved
 401-7,401,28,食用油,按可食部估重,1.0,approved
+402-1,402,892,鲑鱼,毛重可食折算,0.61,approved
 402-2,402,893,香肠,默认可食,1.0,approved
 402-3,402,6,姜,默认可食,1.0,approved
 402-4,402,239,大葱,默认可食,1.0,approved
@@ -3278,6 +3319,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 409-8,409,55,面包糠,按可食部估重,1.0,approved
 409-9,409,155,色拉油,按可食部估重,1.0,approved
 409-10,409,270,黑胡椒粉,按可食部估重,1.0,approved
+410-1,410,503,三黄鸡,毛重可食折算,0.66,approved
 410-2,410,28,食用油,默认可食,1.0,approved
 410-3,410,210,葱白,段,1.0,approved
 410-4,410,146,蒜瓣,默认可食,1.0,approved
@@ -3384,6 +3426,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 424-1,424,928,南豆腐,默认可食,1.0,approved
 424-2,424,92,豆豉,默认可食,1.0,approved
 424-3,424,17,盐,默认可食,1.0,approved
+425-1,425,195,扇贝,毛重可食折算,0.35,approved
 425-2,425,146,蒜瓣,按可食部估重,1.0,approved
 425-3,425,65,小葱,按可食部估重,1.0,approved
 425-4,425,17,盐,默认可食,1.0,approved
@@ -3402,6 +3445,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 426-7,426,789,香草精,按可食部估重,1.0,approved
 426-8,426,121,糖粉,默认可食,1.0,approved
 427-1,427,929,红剁椒,默认可食,1.0,approved
+427-2,427,91,排骨,毛重可食折算,0.72,approved
 427-3,427,401,芋头,默认可食,1.0,approved
 427-4,427,52,蚝油,按可食部估重,1.0,approved
 427-5,427,287,柠檬,片,1.0,approved
@@ -3443,6 +3487,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 430-6,430,377,菠菜,默认可食,1.0,approved
 430-7,430,193,白胡椒粉,按可食部估重,1.0,approved
 430-8,430,594,香葱,按可食部估重,1.0,approved
+432-1,432,477,虾,毛重可食折算,0.51,approved
 432-2,432,745,花雕酒,默认可食,1.0,approved
 432-3,432,41,水,默认可食,1.0,approved
 432-4,432,142,八角,按可食部估重,1.0,approved
@@ -3558,6 +3603,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 444-7,444,98,料酒,默认可食,1.0,approved
 445-1,445,28,食用油,默认可食,1.0,approved
 445-2,445,6,姜,丝,1.0,approved
+445-3,445,958,鲜鱿鱼,可食净料,1.0,approved
 445-4,445,363,鲜虾,默认可食,1.0,approved
 445-5,445,959,松板肉,默认可食,1.0,approved
 445-6,445,115,青椒,默认可食,1.0,approved
@@ -3692,6 +3738,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 457-14,457,745,花雕酒,默认可食,1.0,approved
 457-15,457,139,老抽,默认可食,1.0,approved
 457-16,457,990,鸡饭老抽,默认可食,1.0,approved
+458-1,458,871,蛏子,毛重可食折算,0.57,approved
 458-2,458,17,盐,默认可食,1.0,approved
 458-3,458,224,粉丝,丝,1.0,approved
 458-4,458,98,料酒,默认可食,1.0,approved
@@ -3712,6 +3759,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 460-2,460,92,豆豉,默认可食,1.0,approved
 460-3,460,50,蒜,按可食部估重,1.0,approved
 460-4,460,12,洋葱,默认可食,1.0,approved
+460-5,460,91,排骨,毛重可食折算,0.72,approved
 460-6,460,17,盐,按可食部估重,1.0,approved
 460-7,460,97,白糖,按可食部估重,1.0,approved
 460-8,460,89,生抽,默认可食,1.0,approved
@@ -3800,6 +3848,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 468-3,468,84,胡萝卜,默认可食,1.0,approved
 468-4,468,269,玉米淀粉,默认可食,1.0,approved
 468-5,468,41,水,默认可食,1.0,approved
+469-1,469,91,排骨,毛重可食折算,0.72,approved
 469-2,469,98,料酒,默认可食,1.0,approved
 469-3,469,6,姜,片,1.0,approved
 469-4,469,41,水,默认可食,1.0,approved
@@ -3811,6 +3860,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 469-10,469,97,白糖,按可食部估重,1.0,approved
 469-11,469,1001,香芹,默认可食,1.0,approved
 469-12,469,71,香菜,按可食部估重,1.0,approved
+470-1,470,958,鲜鱿鱼,毛重可食折算,0.97,approved
 470-2,470,481,黄彩椒,默认可食,1.0,approved
 470-3,470,50,蒜,泥,1.0,approved
 470-4,470,33,葱,花,1.0,approved
@@ -3870,6 +3920,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 475-14,475,3,冰糖,默认可食,1.0,approved
 475-15,475,39,红枣,按可食部估重,1.0,approved
 475-16,475,164,枸杞,按可食部估重,1.0,approved
+476-1,476,515,猪肋排,毛重可食折算,0.72,approved
 476-2,476,6,姜,片,1.0,approved
 476-3,476,98,料酒,默认可食,1.0,approved
 476-4,476,239,大葱,段,1.0,approved
@@ -3922,6 +3973,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 481-4,481,1018,白豆沙,默认可食,1.0,approved
 481-5,481,269,玉米淀粉,默认可食,1.0,approved
 481-6,481,97,白糖,默认可食,1.0,approved
+482-1,482,1019,鱿鱼须,可食净料,1.0,approved
 482-2,482,6,姜,片,1.0,approved
 482-3,482,33,葱,条,1.0,approved
 482-4,482,50,蒜,末,1.0,approved
@@ -3946,6 +3998,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 485-7,485,125,鸡精,默认可食,1.0,approved
 485-8,485,89,生抽,默认可食,1.0,approved
 485-12,485,41,水,默认可食,1.0,approved
+486-1,486,958,鲜鱿鱼,可食净料,1.0,approved
 486-2,486,12,洋葱,默认可食,1.0,approved
 486-3,486,115,青椒,默认可食,1.0,approved
 486-4,486,235,红椒,默认可食,1.0,approved
@@ -4007,6 +4060,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 492-8,492,379,肉桂粉,按可食部估重,1.0,approved
 493-1,493,1033,龙井茶叶,默认可食,1.0,approved
 493-2,493,41,水,默认可食,1.0,approved
+493-3,493,1034,大虾,毛重可食折算,0.67,approved
 493-4,493,28,食用油,默认可食,1.0,approved
 493-5,493,239,大葱,默认可食,1.0,approved
 493-6,493,6,姜,丝,1.0,approved
@@ -4033,6 +4087,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 495-16,495,17,盐,默认可食,1.0,approved
 495-17,495,508,莲藕,默认可食,1.0,approved
 495-18,495,1035,水煮蛋,按可食部估重,1.0,approved
+496-1,496,773,鸡,块,0.66,approved
 496-2,496,28,食用油,默认可食,1.0,approved
 496-3,496,6,姜,粒,1.0,approved
 496-4,496,50,蒜,粒,1.0,approved
@@ -4066,6 +4121,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 498-6,498,164,枸杞,按可食部估重,1.0,approved
 499-1,499,54,鸡蛋,按可食部估重,1.0,approved
 499-2,499,1039,淡豆浆,按可食部估重,1.0,approved
+500-1,500,1040,薄片状牛仔骨,毛重可食折算,0.68,approved
 500-2,500,74,土豆,按可食部估重,1.0,approved
 500-3,500,12,洋葱,按可食部估重,1.0,approved
 500-4,500,28,食用油,默认可食,1.0,approved
@@ -4081,6 +4137,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 501-3,501,50,蒜,泥,1.0,approved
 501-4,501,36,蒸鱼豉油,按可食部估重,1.0,approved
 501-5,501,20,橄榄油,按可食部估重,1.0,approved
+502-1,502,91,排骨,毛重可食折算,0.72,approved
 502-3,502,6,姜,片,1.0,approved
 502-4,502,41,水,默认可食,1.0,approved
 502-5,502,28,食用油,默认可食,1.0,approved
@@ -4092,6 +4149,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 502-11,502,139,老抽,默认可食,1.0,approved
 502-12,502,119,啤酒,默认可食,1.0,approved
 502-13,502,17,盐,按可食部估重,1.0,approved
+503-1,503,91,排骨,毛重可食折算,0.72,approved
 503-2,503,98,料酒,默认可食,1.0,approved
 503-3,503,6,姜,片,1.0,approved
 503-4,503,41,水,默认可食,1.0,approved
@@ -4109,6 +4167,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 504-7,504,122,牛奶,默认可食,1.0,approved
 504-8,504,46,黄油,软化,1.0,approved
 505-1,505,41,水,默认可食,1.0,approved
+505-2,505,91,排骨,毛重可食折算,0.72,approved
 505-3,505,28,食用油,默认可食,1.0,approved
 505-4,505,89,生抽,默认可食,1.0,approved
 505-5,505,139,老抽,默认可食,1.0,approved
@@ -4166,6 +4225,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 510-8,510,173,陈醋,默认可食,1.0,approved
 510-9,510,52,蚝油,默认可食,1.0,approved
 510-10,510,17,盐,默认可食,1.0,approved
+511-1,511,113,小龙虾,毛重可食折算,0.31,approved
 511-2,511,28,食用油,默认可食,1.0,approved
 511-3,511,6,姜,片,1.0,approved
 511-4,511,239,大葱,段,1.0,approved
@@ -4209,6 +4269,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 514-5,514,68,纯牛奶,按可食部估重,1.0,approved
 514-6,514,155,色拉油,按可食部估重,1.0,approved
 514-7,514,355,可可粉,默认可食,1.0,approved
+515-1,515,152,鳕鱼,块,1.0,approved
 515-2,515,54,鸡蛋,默认可食,1.0,approved
 515-3,515,287,柠檬,默认可食,1.0,approved
 515-4,515,17,盐,默认可食,1.0,approved
@@ -4416,6 +4477,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 542-1,542,28,食用油,默认可食,1.0,approved
 542-2,542,6,姜,片,1.0,approved
 542-3,542,12,洋葱,默认可食,1.0,approved
+542-4,542,318,鱿鱼,可食净料,1.0,approved
 542-5,542,99,虾仁,默认可食,1.0,approved
 542-6,542,89,生抽,默认可食,1.0,approved
 542-7,542,97,白糖,按可食部估重,1.0,approved
@@ -4485,6 +4547,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 548-6,548,96,鸡粉,默认可食,1.0,approved
 548-7,548,98,料酒,按可食部估重,1.0,approved
 548-8,548,1102,豉油,按可食部估重,1.0,approved
+549-1,549,773,鸡,块,0.66,approved
 549-2,549,506,鲜香菇,默认可食,1.0,approved
 549-3,549,98,料酒,默认可食,1.0,approved
 549-4,549,89,生抽,默认可食,1.0,approved
@@ -4498,6 +4561,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 549-12,549,33,葱,花,1.0,approved
 549-13,549,28,食用油,默认可食,1.0,approved
 549-14,549,41,水,默认可食,1.0,approved
+550-1,550,1103,明虾,毛重可食折算,0.67,approved
 550-2,550,98,料酒,默认可食,1.0,approved
 550-3,550,283,花椒,按可食部估重,1.0,approved
 550-4,550,17,盐,按可食部估重,1.0,approved
@@ -4631,6 +4695,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 566-6,566,188,酵母,干,1.0,approved
 566-7,566,46,黄油,默认可食,1.0,approved
 566-8,566,530,蔓越莓干,默认可食,1.0,approved
+567-1,567,1019,鱿鱼须,可食净料,1.0,approved
 567-2,567,12,洋葱,默认可食,1.0,approved
 567-3,567,145,西芹,默认可食,1.0,approved
 567-4,567,747,彩椒,默认可食,1.0,approved
@@ -4651,6 +4716,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 569-5,569,188,酵母,默认可食,1.0,approved
 569-6,569,356,油,按可食部估重,1.0,approved
 569-7,569,41,水,按可食部估重,1.0,approved
+570-1,570,1119,童子鸡,毛重可食折算,0.66,approved
 570-2,570,867,茶树菇,默认可食,1.0,approved
 570-3,570,39,红枣,默认可食,1.0,approved
 570-4,570,164,枸杞,默认可食,1.0,approved
@@ -4659,6 +4725,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 570-7,570,166,黄酒,默认可食,1.0,approved
 570-8,570,17,盐,默认可食,1.0,approved
 570-9,570,201,糖,默认可食,1.0,approved
+571-1,571,1120,春鸡,毛重可食折算,0.66,approved
 571-2,571,33,葱,段,1.0,approved
 571-3,571,146,蒜瓣,默认可食,1.0,approved
 571-4,571,6,姜,片,1.0,approved
@@ -4772,6 +4839,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 582-18,582,11,番茄,默认可食,1.0,approved
 582-19,582,115,青椒,丝,1.0,approved
 582-20,582,235,红椒,丝,1.0,approved
+583-1,583,1125,鸭,块,0.68,approved
 583-2,583,1127,五香蒸肉米粉,默认可食,1.0,approved
 583-3,583,6,姜,末,1.0,approved
 583-4,583,33,葱,花,1.0,approved
@@ -4780,6 +4848,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 583-7,583,89,生抽,按可食部估重,1.0,approved
 583-8,583,17,盐,默认可食,1.0,approved
 583-9,583,28,食用油,按可食部估重,1.0,approved
+584-1,584,91,排骨,块,0.72,approved
 584-2,584,1129,花生米,默认可食,1.0,approved
 584-3,584,33,葱,花,1.0,approved
 584-4,584,17,盐,默认可食,1.0,approved
@@ -4836,7 +4905,9 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 590-6,590,605,高汤,按可食部估重,1.0,approved
 590-7,590,233,贝,干,1.0,approved
 590-8,590,99,虾仁,默认可食,1.0,approved
+590-9,590,485,生蚝,可食净料,1.0,approved
 590-10,590,17,盐,按可食部估重,1.0,approved
+591-1,591,1133,鸡翅尖,毛重可食折算,0.69,approved
 591-2,591,26,辣椒粉,默认可食,1.0,approved
 591-3,591,25,烧烤粉,默认可食,1.0,approved
 591-4,591,996,烧烤汁,按可食部估重,1.0,approved
@@ -4881,6 +4952,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 597-3,597,479,豆沙馅,按可食部估重,1.0,approved
 597-4,597,188,酵母,默认可食,1.0,approved
 597-5,597,163,黑芝麻,按可食部估重,1.0,approved
+598-1,598,627,青蟹,毛重可食折算,0.55,approved
 598-2,598,138,猪五花肉,默认可食,1.0,approved
 598-3,598,1139,基围虾肉,默认可食,1.0,approved
 598-4,598,85,香菇,按可食部估重,1.0,approved
@@ -4912,6 +4984,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 600-6,600,17,盐,默认可食,1.0,approved
 601-1,601,28,食用油,默认可食,1.0,approved
 601-2,601,50,蒜,去皮,1.0,approved
+601-3,601,1144,小河虾,毛重可食折算,0.86,approved
 601-4,601,115,青椒,默认可食,1.0,approved
 601-5,601,89,生抽,按可食部估重,1.0,approved
 601-6,601,17,盐,按可食部估重,1.0,approved
@@ -4954,6 +5027,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 605-7,605,33,葱,花,1.0,approved
 605-8,605,692,热油,默认可食,1.0,approved
 605-9,605,432,白醋,默认可食,1.0,approved
+606-1,606,844,羊排,毛重可食折算,0.68,approved
 607-1,607,46,黄油,默认可食,1.0,approved
 607-2,607,133,细砂糖,默认可食,1.0,approved
 607-3,607,54,鸡蛋,液,1.0,approved
@@ -5053,6 +5127,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 617-4,617,6,姜,按可食部估重,1.0,approved
 617-5,617,125,鸡精,按可食部估重,1.0,approved
 617-6,617,17,盐,按可食部估重,1.0,approved
+618-1,618,844,羊排,段,0.68,approved
 618-2,618,115,青椒,默认可食,1.0,approved
 618-3,618,235,红椒,默认可食,1.0,approved
 618-4,618,260,剁辣椒,默认可食,1.0,approved
@@ -5107,6 +5182,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 623-14,623,235,红椒,默认可食,1.0,approved
 623-15,623,115,青椒,默认可食,1.0,approved
 623-16,623,71,香菜,默认可食,1.0,approved
+624-1,624,773,鸡,块,0.66,approved
 624-3,624,6,姜,片,1.0,approved
 624-4,624,41,水,默认可食,1.0,approved
 624-5,624,465,山药,默认可食,1.0,approved
@@ -5124,6 +5200,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 625-7,625,36,蒸鱼豉油,默认可食,1.0,approved
 625-8,625,52,蚝油,默认可食,1.0,approved
 626-1,626,41,水,默认可食,1.0,approved
+626-2,626,1177,河虾,毛重可食折算,0.86,approved
 626-3,626,98,料酒,默认可食,1.0,approved
 626-4,626,65,小葱,按可食部估重,1.0,approved
 626-5,626,6,姜,片,1.0,approved
@@ -5138,6 +5215,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 627-8,627,17,盐,按可食部估重,1.0,approved
 627-9,627,188,酵母,默认可食,1.0,approved
 627-10,627,41,水,默认可食,1.0,approved
+628-1,628,1179,阿根廷鱿鱼须,可食净料,1.0,approved
 628-2,628,33,葱,默认可食,1.0,approved
 628-3,628,6,姜,默认可食,1.0,approved
 628-4,628,98,料酒,默认可食,1.0,approved
@@ -5151,6 +5229,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 629-2,629,119,啤酒,默认可食,1.0,approved
 629-3,629,90,黄瓜,按可食部估重,1.0,approved
 629-4,629,115,青椒,按可食部估重,1.0,approved
+629-5,629,113,小龙虾,新鲜,0.31,approved
 630-1,630,1182,橘子,默认可食,1.0,approved
 631-1,631,170,糯米粉,默认可食,1.0,approved
 631-2,631,274,粘米粉,默认可食,1.0,approved
@@ -5338,6 +5417,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 656-8,656,71,香菜,碎,1.0,approved
 656-9,656,1183,植物油,按可食部估重,1.0,approved
 656-10,656,17,盐,按可食部估重,1.0,approved
+657-1,657,91,排骨,毛重可食折算,0.72,approved
 657-2,657,1199,米粉,默认可食,1.0,approved
 657-3,657,201,糖,按可食部估重,1.0,approved
 657-4,657,17,盐,按可食部估重,1.0,approved
@@ -5358,6 +5438,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 658-13,658,193,白胡椒粉,按可食部估重,1.0,approved
 658-14,658,173,陈醋,按可食部估重,1.0,approved
 658-15,658,71,香菜,碎,1.0,approved
+659-1,659,1205,小羊排,毛重可食折算,0.68,approved
 659-2,659,676,开心果仁,默认可食,1.0,approved
 659-3,659,1206,欧芹,默认可食,1.0,approved
 659-4,659,55,面包糠,默认可食,1.0,approved
@@ -5543,6 +5624,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 678-9,678,33,葱,按可食部估重,1.0,approved
 678-10,678,52,蚝油,默认可食,1.0,approved
 678-11,678,97,白糖,默认可食,1.0,approved
+679-1,679,363,鲜虾,毛重可食折算,0.67,approved
 679-2,679,6,姜,片,1.0,approved
 679-3,679,98,料酒,默认可食,1.0,approved
 679-4,679,17,盐,按可食部估重,1.0,approved
@@ -5578,6 +5660,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 682-4,682,17,盐,按可食部估重,1.0,approved
 682-5,682,66,芝麻油,默认可食,1.0,approved
 682-6,682,33,葱,花,1.0,approved
+683-1,683,503,三黄鸡,毛重可食折算,0.66,approved
 683-2,683,6,姜,片,1.0,approved
 683-3,683,98,料酒,默认可食,1.0,approved
 683-4,683,473,椰汁,默认可食,1.0,approved
@@ -5637,6 +5720,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 690-9,690,1227,海苔,丝,1.0,approved
 691-1,691,28,食用油,默认可食,1.0,approved
 691-2,691,97,白糖,默认可食,1.0,approved
+691-3,691,113,小龙虾,毛重可食折算,0.31,approved
 691-4,691,119,啤酒,默认可食,1.0,approved
 691-5,691,6,姜,片,1.0,approved
 691-6,691,30,辣椒,干,1.0,approved
@@ -5743,6 +5827,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 707-2,707,40,红糖,默认可食,1.0,approved
 707-3,707,41,水,默认可食,1.0,approved
 707-4,707,123,泡打粉,默认可食,1.0,approved
+708-1,708,871,蛏子,毛重可食折算,0.57,approved
 708-2,708,6,姜,默认可食,1.0,approved
 708-3,708,33,葱,默认可食,1.0,approved
 708-4,708,194,小米椒,默认可食,1.0,approved
@@ -5869,6 +5954,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 725-3,725,163,黑芝麻,熟,1.0,approved
 725-4,725,306,核桃,去壳,1.0,approved
 725-5,725,97,白糖,默认可食,1.0,approved
+726-1,726,1257,仔鸡,毛重可食折算,0.66,approved
 726-2,726,447,糯米,默认可食,1.0,approved
 726-4,726,65,小葱,按可食部估重,1.0,approved
 726-5,726,6,姜,按可食部估重,1.0,approved
@@ -5910,11 +5996,13 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 728-8,728,71,香菜,默认可食,1.0,approved
 728-9,728,28,食用油,默认可食,1.0,approved
 728-10,728,97,白糖,按可食部估重,1.0,approved
+729-1,729,1259,螃蟹,毛重可食折算,0.55,approved
 729-2,729,12,洋葱,默认可食,1.0,approved
 729-3,729,50,蒜,末,1.0,approved
 729-4,729,46,黄油,默认可食,1.0,approved
 729-5,729,28,食用油,按可食部估重,1.0,approved
 730-1,730,1260,鯽鱼,按可食部估重,1.0,approved
+730-2,730,1261,绿茶,可食净料,1.0,approved
 731-1,731,798,牛肉,默认可食,1.0,approved
 731-4,731,41,水,默认可食,1.0,approved
 731-5,731,28,食用油,默认可食,1.0,approved
@@ -5947,6 +6035,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 734-11,734,52,蚝油,按可食部估重,1.0,approved
 734-12,734,97,白糖,默认可食,1.0,approved
 734-13,734,497,十三香,默认可食,1.0,approved
+735-1,735,477,虾,毛重可食折算,0.51,approved
 735-2,735,14,迷迭香,默认可食,1.0,approved
 735-3,735,50,蒜,蓉,1.0,approved
 735-4,735,33,葱,花,1.0,approved
@@ -6048,6 +6137,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 747-8,747,98,料酒,按可食部估重,1.0,approved
 747-9,747,97,白糖,按可食部估重,1.0,approved
 747-10,747,17,盐,按可食部估重,1.0,approved
+748-1,748,1283,鸭爪,毛重可食折算,0.59,approved
 748-2,748,6,姜,片,1.0,approved
 748-3,748,98,料酒,默认可食,1.0,approved
 748-4,748,41,水,默认可食,1.0,approved
@@ -6159,6 +6249,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 762-1,762,658,口蘑,默认可食,1.0,approved
 762-2,762,17,盐,默认可食,1.0,approved
 762-3,762,270,黑胡椒粉,默认可食,1.0,approved
+763-1,763,1295,银鳕鱼,可食净料,1.0,approved
 763-2,763,358,蛤蜊,带壳毛重,0.39,approved
 763-3,763,1296,红洋葱,默认可食,1.0,approved
 763-4,763,50,蒜,默认可食,1.0,approved
@@ -6178,6 +6269,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 763-18,763,270,黑胡椒粉,按可食部估重,1.0,approved
 763-19,763,1303,七味粉,按可食部估重,1.0,approved
 763-20,763,154,柠檬汁,按可食部估重,1.0,approved
+764-1,764,773,鸡,毛重可食折算,0.66,approved
 764-2,764,17,盐,默认可食,1.0,approved
 764-3,764,33,葱,默认可食,1.0,approved
 765-1,765,562,黄桃,按可食部估重,1.0,approved
@@ -6208,6 +6300,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 768-7,768,50,蒜,末,1.0,approved
 768-8,768,669,奶粉,默认可食,1.0,approved
 768-9,768,188,酵母,默认可食,1.0,approved
+769-1,769,515,猪肋排,毛重可食折算,0.72,approved
 769-2,769,290,小米,默认可食,1.0,approved
 769-3,769,98,料酒,按可食部估重,1.0,approved
 769-4,769,89,生抽,按可食部估重,1.0,approved
@@ -6485,6 +6578,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 802-7,802,17,盐,按可食部估重,1.0,approved
 802-8,802,98,料酒,默认可食,1.0,approved
 802-9,802,33,葱,花,1.0,approved
+803-1,803,1332,黑虎虾,毛重可食折算,0.67,approved
 803-2,803,1333,黄皮果,默认可食,1.0,approved
 803-3,803,89,生抽,默认可食,1.0,approved
 803-4,803,17,盐,默认可食,1.0,approved
@@ -6566,6 +6660,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 813-5,813,19,黑胡椒,碎,1.0,approved
 813-6,813,28,食用油,按可食部估重,1.0,approved
 813-7,813,41,水,按可食部估重,1.0,approved
+814-1,814,813,猪骨,毛重可食折算,0.20,approved
 814-2,814,385,黄芪,默认可食,1.0,approved
 814-3,814,862,淮山药,默认可食,1.0,approved
 814-4,814,1343,白扁豆,默认可食,1.0,approved
@@ -6577,6 +6672,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 815-3,815,1345,金银花,花,1.0,approved
 815-4,815,164,枸杞,按可食部估重,1.0,approved
 815-5,815,41,水,热,1.0,approved
+816-1,816,1346,公鸡,毛重可食折算,0.66,approved
 816-2,816,98,料酒,默认可食,1.0,approved
 816-3,816,6,姜,片,1.0,approved
 816-4,816,41,水,默认可食,1.0,approved
@@ -6631,6 +6727,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 821-3,821,120,低筋面粉,默认可食,1.0,approved
 821-4,821,201,糖,默认可食,1.0,approved
 821-5,821,169,玉米油,默认可食,1.0,approved
+822-1,822,1349,麻鸭,毛重可食折算,0.68,approved
 822-2,822,6,姜,片,1.0,approved
 822-3,822,98,料酒,默认可食,1.0,approved
 822-4,822,41,水,默认可食,1.0,approved
@@ -6660,6 +6757,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 824-2,824,98,料酒,默认可食,1.0,approved
 824-3,824,41,水,默认可食,1.0,approved
 824-4,824,28,食用油,默认可食,1.0,approved
+824-5,824,1103,明虾,毛重可食折算,0.67,approved
 824-6,824,6,姜,片,1.0,approved
 824-7,824,50,蒜,片,1.0,approved
 824-8,824,12,洋葱,按可食部估重,1.0,approved
@@ -6681,6 +6779,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 825-7,825,98,料酒,默认可食,1.0,approved
 825-8,825,492,鸡翅中,带骨毛重,0.69,approved
 826-1,826,1352,调味法式羊排,按可食部估重,1.0,approved
+827-1,827,471,鳜鱼,毛重可食折算,0.61,approved
 827-2,827,1353,开洋,默认可食,1.0,approved
 827-3,827,1354,韭菜花梗,默认可食,1.0,approved
 827-4,827,17,盐,默认可食,1.0,approved
@@ -6693,6 +6792,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 828-2,828,6,姜,丝,1.0,approved
 828-3,828,231,对虾,带壳毛重,0.67,approved
 828-4,828,98,料酒,默认可食,1.0,approved
+829-1,829,1356,老鸭,毛重可食折算,0.68,approved
 829-2,829,98,料酒,默认可食,1.0,approved
 829-3,829,6,姜,片,1.0,approved
 829-4,829,1357,笋干,默认可食,1.0,approved
@@ -6749,6 +6849,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 836-3,836,1367,色拉酱,默认可食,1.0,approved
 836-4,836,193,白胡椒粉,默认可食,1.0,approved
 836-5,836,28,食用油,默认可食,1.0,approved
+837-1,837,1368,多宝鱼,毛重可食折算,0.68,approved
 837-2,837,212,红辣椒,默认可食,1.0,approved
 837-3,837,1369,甜椒,默认可食,1.0,approved
 837-4,837,17,盐,默认可食,1.0,approved
@@ -6881,6 +6982,8 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 849-8,849,41,水,默认可食,1.0,approved
 849-9,849,1382,板栗肉,默认可食,1.0,approved
 849-10,849,17,盐,按可食部估重,1.0,approved
+850-1,850,1383,猪手,毛重可食折算,0.60,approved
+850-2,850,318,鱿鱼,干,0.98,approved
 850-3,850,1385,带皮蒜头,默认可食,1.0,approved
 850-4,850,1386,小香菇,按可食部估重,1.0,approved
 850-5,850,41,水,默认可食,1.0,approved
@@ -6930,6 +7033,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 857-2,857,6,姜,片,1.0,approved
 857-3,857,33,葱,段,1.0,approved
 857-4,857,142,八角,按可食部估重,1.0,approved
+857-5,857,264,鸡翅根,毛重可食折算,0.69,approved
 857-6,857,89,生抽,默认可食,1.0,approved
 857-7,857,139,老抽,默认可食,1.0,approved
 857-8,857,98,料酒,默认可食,1.0,approved
@@ -7253,6 +7357,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 899-2,899,493,红薯,默认可食,1.0,approved
 899-3,899,418,葡萄干,默认可食,1.0,approved
 899-4,899,569,酸奶,默认可食,1.0,approved
+900-1,900,515,猪肋排,毛重可食折算,0.72,approved
 900-2,900,730,虫草花,花,1.0,approved
 900-3,900,365,玉米,按可食部估重,1.0,approved
 900-4,900,65,小葱,按可食部估重,1.0,approved
@@ -7263,6 +7368,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 901-1,901,327,内酯豆腐,默认可食,1.0,approved
 901-2,901,281,火腿,默认可食,1.0,approved
 901-3,901,85,香菇,按可食部估重,1.0,approved
+901-4,901,1430,活虾,毛重可食折算,0.51,approved
 901-5,901,364,青豆,默认可食,1.0,approved
 901-6,901,125,鸡精,按可食部估重,1.0,approved
 901-7,901,17,盐,按可食部估重,1.0,approved
@@ -7270,6 +7376,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 902-1,902,28,食用油,默认可食,1.0,approved
 902-2,902,50,蒜,末,1.0,approved
 902-3,902,6,姜,末,1.0,approved
+902-4,902,1431,小鱼干,毛重可食折算,0.90,approved
 902-5,902,18,番茄酱,默认可食,1.0,approved
 902-6,902,176,蜂蜜,默认可食,1.0,approved
 902-7,902,1432,韩式辣椒粉,按可食部估重,1.0,approved
@@ -7387,6 +7494,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 914-11,914,48,淀粉,默认可食,1.0,approved
 914-12,914,41,水,默认可食,1.0,approved
 914-13,914,356,油,默认可食,1.0,approved
+915-1,915,1259,螃蟹,毛重可食折算,0.55,approved
 915-2,915,1242,奶酪,默认可食,1.0,approved
 915-3,915,12,洋葱,碎,1.0,approved
 915-4,915,19,黑胡椒,默认可食,1.0,approved
@@ -7438,6 +7546,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 920-8,920,41,水,默认可食,1.0,approved
 920-9,920,54,鸡蛋,按可食部估重,1.0,approved
 920-10,920,48,淀粉,默认可食,1.0,approved
+921-1,921,1459,猪脊骨,毛重可食折算,0.20,approved
 921-2,921,98,料酒,默认可食,1.0,approved
 921-3,921,6,姜,片,1.0,approved
 921-4,921,41,水,默认可食,1.0,approved
@@ -7479,6 +7588,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 925-7,925,357,酱油,默认可食,1.0,approved
 925-8,925,17,盐,按可食部估重,1.0,approved
 925-9,925,97,白糖,按可食部估重,1.0,approved
+926-1,926,91,排骨,毛重可食折算,0.72,approved
 926-2,926,6,姜,片,1.0,approved
 926-3,926,50,蒜,末,1.0,approved
 926-4,926,33,葱,花,1.0,approved
@@ -7593,6 +7703,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 938-10,938,97,白糖,默认可食,1.0,approved
 938-11,938,176,蜂蜜,默认可食,1.0,approved
 938-12,938,208,猪油,默认可食,1.0,approved
+939-1,939,1475,汤骨,毛重可食折算,0.20,approved
 939-2,939,1476,淮山,默认可食,1.0,approved
 939-3,939,346,莲子,默认可食,1.0,approved
 939-4,939,1477,芡实,默认可食,1.0,approved
@@ -7615,6 +7726,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 942-4,942,1483,香草豆荚粉,默认可食,1.0,approved
 942-5,942,207,鸡蛋清,默认可食,1.0,approved
 942-6,942,120,低筋面粉,默认可食,1.0,approved
+943-1,943,91,排骨,毛重可食折算,0.72,approved
 943-2,943,467,铁棍山药,默认可食,1.0,approved
 943-3,943,112,小米辣,默认可食,1.0,approved
 943-4,943,33,葱,碎,1.0,approved
@@ -7802,6 +7914,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 961-6,961,50,蒜,末,1.0,approved
 961-7,961,270,黑胡椒粉,默认可食,1.0,approved
 961-8,961,17,盐,默认可食,1.0,approved
+962-1,962,91,排骨,毛重可食折算,0.72,approved
 962-2,962,650,苦瓜,默认可食,1.0,approved
 962-3,962,92,豆豉,默认可食,1.0,approved
 962-4,962,356,油,按可食部估重,1.0,approved
@@ -7817,9 +7930,11 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 963-4,963,437,小番茄,默认可食,1.0,approved
 963-5,963,478,海盐,按可食部估重,1.0,approved
 963-6,963,18,番茄酱,默认可食,1.0,approved
+963-7,963,363,鲜虾,毛重可食折算,0.67,approved
 963-8,963,390,白葡萄酒,默认可食,1.0,approved
 963-9,963,1502,意大利面,熟,1.0,approved
 963-10,963,19,黑胡椒,碎,1.0,approved
+964-1,964,91,排骨,段,0.72,approved
 964-2,964,713,豌豆,默认可食,1.0,approved
 964-3,964,514,蒸肉米粉,默认可食,1.0,approved
 964-4,964,235,红椒,丁,1.0,approved
@@ -7838,6 +7953,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 965-8,965,1506,炼奶,默认可食,1.0,approved
 965-9,965,425,吉士粉,默认可食,1.0,approved
 965-10,965,351,蛋挞皮,按可食部估重,1.0,approved
+966-1,966,248,梭子蟹,毛重可食折算,0.55,approved
 966-2,966,281,火腿,默认可食,1.0,approved
 966-3,966,6,姜,默认可食,1.0,approved
 966-4,966,33,葱,默认可食,1.0,approved
@@ -7935,6 +8051,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 974-16,974,46,黄油,软化,1.0,approved
 974-17,974,54,鸡蛋,液,1.0,approved
 974-18,974,176,蜂蜜,默认可食,1.0,approved
+975-1,975,1510,鸭腿,毛重可食折算,0.68,approved
 975-2,975,119,啤酒,罐装,1.0,approved
 975-4,975,139,老抽,按可食部估重,1.0,approved
 975-5,975,28,食用油,按可食部估重,1.0,approved
@@ -7974,6 +8091,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 979-1,979,493,红薯,按可食部估重,1.0,approved
 979-2,979,1514,烟薯,按可食部估重,1.0,approved
 979-3,979,17,盐,默认可食,1.0,approved
+980-1,980,1515,大连鲜鲍鱼,毛重可食折算,0.65,approved
 980-2,980,33,葱,默认可食,1.0,approved
 980-3,980,50,蒜,默认可食,1.0,approved
 980-4,980,1313,鱼子酱,默认可食,1.0,approved
@@ -8038,6 +8156,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 989-1,989,467,铁棍山药,默认可食,1.0,approved
 989-2,989,468,蓝莓酱,默认可食,1.0,approved
 989-3,989,41,水,默认可食,1.0,approved
+990-1,990,152,鳕鱼,块,1.0,approved
 990-2,990,287,柠檬,片,1.0,approved
 991-1,991,227,南瓜,默认可食,1.0,approved
 991-2,991,41,水,默认可食,1.0,approved
@@ -8169,6 +8288,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1004-16,1004,28,食用油,默认可食,1.0,approved
 1004-17,1004,583,辣椒油,默认可食,1.0,approved
 1005-1,1005,41,水,默认可食,1.0,approved
+1005-2,1005,91,排骨,带骨毛重,0.72,approved
 1005-3,1005,98,料酒,默认可食,1.0,approved
 1005-4,1005,28,食用油,默认可食,1.0,approved
 1005-5,1005,3,冰糖,默认可食,1.0,approved
@@ -8276,10 +8396,12 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1017-3,1017,260,剁辣椒,默认可食,1.0,approved
 1017-4,1017,194,小米椒,按可食部估重,1.0,approved
 1017-5,1017,283,花椒,默认可食,1.0,approved
+1017-6,1017,91,排骨,带骨毛重,0.72,approved
 1017-7,1017,89,生抽,默认可食,1.0,approved
 1017-8,1017,17,盐,按可食部估重,1.0,approved
 1017-9,1017,74,土豆,默认可食,1.0,approved
 1017-10,1017,41,水,默认可食,1.0,approved
+1018-1,1018,363,鲜虾,带壳毛重,0.60,approved
 1018-2,1018,84,胡萝卜,默认可食,1.0,approved
 1018-3,1018,1046,秋葵,默认可食,1.0,approved
 1018-4,1018,33,葱,默认可食,1.0,approved
@@ -8345,6 +8467,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1024-5,1024,58,面粉,默认可食,1.0,approved
 1024-6,1024,1549,椒盐,默认可食,1.0,approved
 1024-7,1024,41,水,默认可食,1.0,approved
+1025-1,1025,515,猪肋排,带骨毛重,0.72,approved
 1025-2,1025,6,姜,片,1.0,approved
 1025-3,1025,239,大葱,默认可食,1.0,approved
 1025-4,1025,41,水,默认可食,1.0,approved
@@ -8369,6 +8492,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1027-1,1027,341,鸭肉,默认可食,1.0,approved
 1027-2,1027,730,虫草花,花,1.0,approved
 1027-3,1027,281,火腿,片,1.0,approved
+1027-4,1027,233,贝,干,1.00,approved
 1027-5,1027,1551,清汤,默认可食,1.0,approved
 1027-6,1027,166,黄酒,默认可食,1.0,approved
 1027-7,1027,239,大葱,默认可食,1.0,approved
@@ -8430,6 +8554,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1034-7,1034,1564,奇亚籽,默认可食,1.0,approved
 1034-8,1034,530,蔓越莓干,默认可食,1.0,approved
 1034-9,1034,39,红枣,去核,1.0,approved
+1035-1,1035,1565,猪棒骨,骨多肉少毛重,0.30,approved
 1035-2,1035,6,姜,片,1.0,approved
 1035-3,1035,98,料酒,默认可食,1.0,approved
 1035-4,1035,41,水,默认可食,1.0,approved
@@ -8444,6 +8569,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1035-13,1035,97,白糖,默认可食,1.0,approved
 1035-14,1035,139,老抽,默认可食,1.0,approved
 1035-15,1035,17,盐,按可食部估重,1.0,approved
+1036-1,1036,1567,牛尾,带骨毛重,0.60,approved
 1036-2,1036,98,料酒,按可食部估重,1.0,approved
 1036-3,1036,41,水,默认可食,1.0,approved
 1036-4,1036,239,大葱,段,1.0,approved
@@ -8475,6 +8601,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1039-3,1039,132,淡奶油,按可食部估重,1.0,approved
 1039-4,1039,111,纯净水,按可食部估重,1.0,approved
 1039-5,1039,97,白糖,默认可食,1.0,approved
+1040-1,1040,503,三黄鸡,整禽带骨毛重,0.66,approved
 1040-2,1040,504,盐焗鸡粉,按可食部估重,1.0,approved
 1040-3,1040,17,盐,默认可食,1.0,approved
 1040-4,1040,66,芝麻油,默认可食,1.0,approved
@@ -8596,6 +8723,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1055-4,1055,46,黄油,默认可食,1.0,approved
 1055-5,1055,188,酵母,默认可食,1.0,approved
 1055-6,1055,201,糖,默认可食,1.0,approved
+1056-1,1056,1580,青头鸭,整禽带骨毛重,0.68,approved
 1056-2,1056,1581,八头鲜鲍鱼,按可食部估重,1.0,approved
 1056-3,1056,645,蜜枣,默认可食,1.0,approved
 1056-4,1056,716,桂圆,默认可食,1.0,approved
@@ -8681,6 +8809,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1065-9,1065,862,淮山药,默认可食,1.0,approved
 1065-10,1065,508,莲藕,默认可食,1.0,approved
 1065-11,1065,33,葱,花,1.0,approved
+1066-1,1066,1034,大虾,带壳毛重,0.67,approved
 1066-2,1066,224,粉丝,丝,1.0,approved
 1066-3,1066,194,小米椒,按可食部估重,1.0,approved
 1066-4,1066,594,香葱,按可食部估重,1.0,approved
@@ -8692,6 +8821,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1066-10,1066,17,盐,默认可食,1.0,approved
 1067-1,1067,598,鸡腿肉,默认可食,1.0,approved
 1067-2,1067,138,猪五花肉,默认可食,1.0,approved
+1067-3,1067,477,虾,带壳毛重,0.60,approved
 1067-4,1067,267,培根,按可食部估重,1.0,approved
 1067-5,1067,608,杏鲍菇,默认可食,1.0,approved
 1067-6,1067,24,红彩椒,按可食部估重,1.0,approved
@@ -8727,6 +8857,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1069-6,1069,33,葱,花,1.0,approved
 1069-7,1069,17,盐,默认可食,1.0,approved
 1069-8,1069,28,食用油,按可食部估重,1.0,approved
+1070-1,1070,113,小龙虾,带壳整虾毛重,0.31,approved
 1070-2,1070,41,水,煮沸,1.0,approved
 1070-3,1070,33,葱,段,1.0,approved
 1070-4,1070,6,姜,片,1.0,approved
@@ -8745,6 +8876,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1070-17,1070,173,陈醋,默认可食,1.0,approved
 1070-18,1070,946,淀粉水,默认可食,1.0,approved
 1070-19,1070,71,香菜,按可食部估重,1.0,approved
+1071-1,1071,958,鲜鱿鱼,处理后整鱿鱼,0.97,approved
 1071-2,1071,98,料酒,默认可食,1.0,approved
 1071-3,1071,6,姜,丝,1.0,approved
 1071-4,1071,50,蒜,末,1.0,approved
@@ -8801,6 +8933,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1076-4,1076,376,桂花,干,1.0,approved
 1076-5,1076,48,淀粉,默认可食,1.0,approved
 1076-6,1076,1079,鸡汤,按可食部估重,1.0,approved
+1077-1,1077,1019,鱿鱼须,可食部净料,1.00,approved
 1077-2,1077,623,鱼露,按可食部估重,1.0,approved
 1077-3,1077,48,淀粉,按可食部估重,1.0,approved
 1077-4,1077,50,蒜,末,1.0,approved
@@ -8829,6 +8962,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1081-1,1081,54,鸡蛋,按可食部估重,1.0,approved
 1081-2,1081,68,纯牛奶,按可食部估重,1.0,approved
 1081-3,1081,97,白糖,默认可食,1.0,approved
+1082-1,1082,248,梭子蟹,带壳整蟹毛重,0.55,approved
 1082-2,1082,1598,苏梅酱,默认可食,1.0,approved
 1082-3,1082,92,豆豉,默认可食,1.0,approved
 1082-4,1082,154,柠檬汁,默认可食,1.0,approved
@@ -8899,6 +9033,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1090-6,1090,744,腐竹,默认可食,1.0,approved
 1090-7,1090,1253,白果,按可食部估重,1.0,approved
 1090-8,1090,17,盐,按可食部估重,1.0,approved
+1091-1,1091,113,小龙虾,带壳整虾毛重,0.31,approved
 1091-2,1091,50,蒜,末,1.0,approved
 1091-3,1091,6,姜,片,1.0,approved
 1091-4,1091,17,盐,默认可食,1.0,approved
@@ -9005,6 +9140,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1104-1,1104,1609,糯米鸡,按可食部估重,1.0,approved
 1105-1,1105,65,小葱,按可食部估重,1.0,approved
 1105-2,1105,6,姜,默认可食,1.0,approved
+1105-3,1105,1610,青口贝,带壳毛重,0.49,approved
 1105-4,1105,98,料酒,默认可食,1.0,approved
 1105-5,1105,36,蒸鱼豉油,默认可食,1.0,approved
 1105-6,1105,41,水,默认可食,1.0,approved
@@ -9340,6 +9476,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1149-2,1149,18,番茄酱,默认可食,1.0,approved
 1149-3,1149,65,小葱,按可食部估重,1.0,approved
 1149-4,1149,6,姜,片,1.0,approved
+1149-5,1149,1034,大虾,带壳毛重,0.67,approved
 1149-6,1149,41,水,默认可食,1.0,approved
 1149-7,1149,17,盐,按可食部估重,1.0,approved
 1149-8,1149,97,白糖,按可食部估重,1.0,approved
@@ -9387,6 +9524,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1157-6,1157,678,蛋白,默认可食,1.0,approved
 1157-7,1157,133,细砂糖,默认可食,1.0,approved
 1157-8,1157,41,水,按可食部估重,1.0,approved
+1158-1,1158,515,猪肋排,带骨毛重,0.72,approved
 1158-2,1158,6,姜,按可食部估重,1.0,approved
 1158-3,1158,50,蒜,按可食部估重,1.0,approved
 1158-4,1158,89,生抽,按可食部估重,1.0,approved
@@ -9473,6 +9611,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1168-9,1168,6,姜,汁,1.0,approved
 1168-10,1168,1079,鸡汤,默认可食,1.0,approved
 1169-1,1169,508,莲藕,默认可食,1.0,approved
+1169-2,1169,1656,鱼干,可食干制品,1.00,approved
 1169-3,1169,255,瘦肉,默认可食,1.0,approved
 1169-4,1169,33,葱,丝,1.0,approved
 1169-5,1169,6,姜,丝,1.0,approved
@@ -9481,6 +9620,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1169-8,1169,100,水淀粉,按可食部估重,1.0,approved
 1169-9,1169,89,生抽,按可食部估重,1.0,approved
 1169-10,1169,28,食用油,按可食部估重,1.0,approved
+1170-1,1170,844,羊排,带骨毛重,0.70,approved
 1170-2,1170,141,桂皮,按可食部估重,1.0,approved
 1170-3,1170,142,八角,按可食部估重,1.0,approved
 1170-4,1170,283,花椒,默认可食,1.0,approved
@@ -9601,6 +9741,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1184-3,1184,457,蜜红豆,默认可食,1.0,approved
 1184-4,1184,41,水,默认可食,1.0,approved
 1184-5,1184,28,食用油,默认可食,1.0,approved
+1185-1,1185,91,排骨,带骨毛重,0.72,approved
 1185-2,1185,293,白萝卜,默认可食,1.0,approved
 1185-3,1185,33,葱,默认可食,1.0,approved
 1185-4,1185,6,姜,默认可食,1.0,approved
@@ -9613,6 +9754,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1186-3,1186,54,鸡蛋,默认可食,1.0,approved
 1186-4,1186,121,糖粉,默认可食,1.0,approved
 1186-5,1186,46,黄油,默认可食,1.0,approved
+1187-1,1187,91,排骨,带骨毛重,0.72,approved
 1187-2,1187,6,姜,片,1.0,approved
 1187-3,1187,98,料酒,默认可食,1.0,approved
 1187-4,1187,41,水,默认可食,1.0,approved
@@ -9646,6 +9788,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1190-5,1190,1242,奶酪,丝,1.0,approved
 1190-6,1190,356,油,默认可食,1.0,approved
 1190-7,1190,17,盐,默认可食,1.0,approved
+1191-1,1191,1684,小羊腿,带骨毛重,0.77,approved
 1191-2,1191,28,食用油,默认可食,1.0,approved
 1191-3,1191,1685,干葱,默认可食,1.0,approved
 1191-4,1191,239,大葱,默认可食,1.0,approved
@@ -9748,6 +9891,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1202-3,1202,1695,综合水果干,默认可食,1.0,approved
 1202-4,1202,1696,综合坚果,按可食部估重,1.0,approved
 1202-5,1202,250,炼乳,按可食部估重,1.0,approved
+1203-1,1203,431,鸭子,整禽带骨毛重,0.68,approved
 1203-2,1203,6,姜,默认可食,1.0,approved
 1203-3,1203,239,大葱,默认可食,1.0,approved
 1203-4,1203,50,蒜,默认可食,1.0,approved
@@ -9780,6 +9924,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1205-9,1205,41,水,按可食部估重,1.0,approved
 1205-10,1205,188,酵母,默认可食,1.0,approved
 1205-11,1205,17,盐,默认可食,1.0,approved
+1206-1,1206,844,羊排,带骨毛重,0.70,approved
 1206-2,1206,1420,红葡萄酒,默认可食,1.0,approved
 1206-3,1206,17,盐,默认可食,1.0,approved
 1206-4,1206,125,鸡精,默认可食,1.0,approved
@@ -9832,6 +9977,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1210-8,1210,270,黑胡椒粉,默认可食,1.0,approved
 1210-9,1210,20,橄榄油,默认可食,1.0,approved
 1211-1,1211,41,水,默认可食,1.0,approved
+1211-2,1211,113,小龙虾,带壳整虾毛重,0.31,approved
 1211-3,1211,28,食用油,默认可食,1.0,approved
 1211-4,1211,146,蒜瓣,默认可食,1.0,approved
 1211-5,1211,6,姜,蓉,1.0,approved
@@ -9853,7 +9999,9 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1212-8,1212,607,香醋,默认可食,1.0,approved
 1212-9,1212,89,生抽,默认可食,1.0,approved
 1212-10,1212,17,盐,按可食部估重,1.0,approved
+1213-1,1213,152,鳕鱼,鱼块净料,1.00,approved
 1213-2,1213,239,大葱,默认可食,1.0,approved
+1213-3,1213,1702,墨鱼,丝,1.00,approved
 1213-4,1213,1704,苔条粉,默认可食,1.0,approved
 1213-5,1213,1705,黑松露油,默认可食,1.0,approved
 1213-6,1213,17,盐,默认可食,1.0,approved
@@ -9880,6 +10028,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1215-9,1215,97,白糖,默认可食,1.0,approved
 1215-10,1215,41,水,默认可食,1.0,approved
 1215-11,1215,17,盐,默认可食,1.0,approved
+1216-1,1216,1709,猪仔排,带骨毛重,0.72,approved
 1216-2,1216,50,蒜,按可食部估重,1.0,approved
 1216-3,1216,17,盐,默认可食,1.0,approved
 1216-4,1216,133,细砂糖,默认可食,1.0,approved
@@ -9899,6 +10048,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1217-8,1217,227,南瓜,默认可食,1.0,approved
 1217-9,1217,164,枸杞,默认可食,1.0,approved
 1217-10,1217,41,水,默认可食,1.0,approved
+1218-1,1218,455,牛仔骨,带骨毛重,0.68,approved
 1218-2,1218,176,蜂蜜,按可食部估重,1.0,approved
 1218-3,1218,89,生抽,按可食部估重,1.0,approved
 1218-4,1218,17,盐,默认可食,1.0,approved
@@ -9951,6 +10101,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1225-8,1225,639,蜜豆,默认可食,1.0,approved
 1225-9,1225,479,豆沙馅,默认可食,1.0,approved
 1225-10,1225,54,鸡蛋,液,1.0,approved
+1226-1,1226,152,鳕鱼,鱼块净料,1.00,approved
 1226-2,1226,377,菠菜,默认可食,1.0,approved
 1226-3,1226,33,葱,默认可食,1.0,approved
 1226-4,1226,6,姜,片,1.0,approved
@@ -10025,6 +10176,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1235-10,1235,17,盐,按可食部估重,1.0,approved
 1235-11,1235,41,水,默认可食,1.0,approved
 1235-12,1235,33,葱,花,1.0,approved
+1236-1,1236,773,鸡,块,0.66,approved
 1236-2,1236,6,姜,片,1.0,approved
 1236-3,1236,41,水,默认可食,1.0,approved
 1236-4,1236,465,山药,默认可食,1.0,approved
@@ -10070,6 +10222,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1241-1,1241,1721,西冷牛排,默认可食,1.0,approved
 1241-2,1241,17,盐,默认可食,1.0,approved
 1241-3,1241,20,橄榄油,按可食部估重,1.0,approved
+1242-1,1242,91,排骨,带骨毛重,0.72,approved
 1242-2,1242,92,豆豉,默认可食,1.0,approved
 1242-3,1242,33,葱,花,1.0,approved
 1242-4,1242,97,白糖,默认可食,1.0,approved
@@ -10077,6 +10230,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1242-6,1242,89,生抽,按可食部估重,1.0,approved
 1242-7,1242,52,蚝油,默认可食,1.0,approved
 1242-8,1242,48,淀粉,默认可食,1.0,approved
+1243-1,1243,195,扇贝,带壳毛重,0.35,approved
 1243-2,1243,1242,奶酪,碎,1.0,approved
 1243-3,1243,50,蒜,末,1.0,approved
 1243-4,1243,17,盐,默认可食,1.0,approved
@@ -10218,6 +10372,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1260-15,1260,176,蜂蜜,按可食部估重,1.0,approved
 1260-16,1260,17,盐,默认可食,1.0,approved
 1260-17,1260,19,黑胡椒,碎,1.0,approved
+1261-1,1261,91,排骨,带骨毛重,0.72,approved
 1261-2,1261,365,玉米,按可食部估重,1.0,approved
 1261-4,1261,52,蚝油,默认可食,1.0,approved
 1261-5,1261,17,盐,默认可食,1.0,approved
@@ -10241,6 +10396,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1264-2,1264,315,苹果,按可食部估重,1.0,approved
 1264-3,1264,3,冰糖,默认可食,1.0,approved
 1264-4,1264,111,纯净水,默认可食,1.0,approved
+1265-1,1265,195,扇贝,带壳毛重,0.35,approved
 1265-2,1265,107,金针菇,默认可食,1.0,approved
 1265-3,1265,235,红椒,末,1.0,approved
 1265-4,1265,747,彩椒,末,1.0,approved
@@ -10364,6 +10520,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1278-3,1278,97,白糖,默认可食,1.0,approved
 1278-4,1278,48,淀粉,默认可食,1.0,approved
 1278-5,1278,50,蒜,末,1.0,approved
+1278-6,1278,91,排骨,带骨毛重,0.72,approved
 1279-1,1279,1056,巧克力液,默认可食,1.0,approved
 1279-2,1279,249,高筋面粉,默认可食,1.0,approved
 1279-3,1279,133,细砂糖,默认可食,1.0,approved
@@ -10445,6 +10602,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1288-1,1288,28,食用油,默认可食,1.0,approved
 1288-2,1288,6,姜,默认可食,1.0,approved
 1288-3,1288,50,蒜,按可食部估重,1.0,approved
+1288-4,1288,773,鸡,块,0.66,approved
 1288-5,1288,17,盐,按可食部估重,1.0,approved
 1288-6,1288,98,料酒,默认可食,1.0,approved
 1288-7,1288,89,生抽,默认可食,1.0,approved
@@ -10478,6 +10636,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1290-6,1290,50,蒜,默认可食,1.0,approved
 1290-7,1290,356,油,按可食部估重,1.0,approved
 1290-8,1290,41,水,煮沸,1.0,approved
+1291-1,1291,1744,生鸡爪,带骨毛重,0.60,approved
 1291-2,1291,41,水,冰,1.0,approved
 1291-3,1291,52,蚝油,默认可食,1.0,approved
 1291-4,1291,888,白酒,默认可食,1.0,approved
@@ -10700,6 +10859,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1320-12,1320,97,白糖,按可食部估重,1.0,approved
 1320-13,1320,66,芝麻油,按可食部估重,1.0,approved
 1320-14,1320,270,黑胡椒粉,按可食部估重,1.0,approved
+1321-1,1321,1702,墨鱼,整墨鱼毛重,0.69,approved
 1321-2,1321,98,料酒,默认可食,1.0,approved
 1321-3,1321,89,生抽,默认可食,1.0,approved
 1321-4,1321,52,蚝油,默认可食,1.0,approved
@@ -10873,6 +11033,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1338-4,1338,42,蛋清,按可食部估重,1.0,approved
 1338-5,1338,17,盐,按可食部估重,1.0,approved
 1338-6,1338,193,白胡椒粉,按可食部估重,1.0,approved
+1339-1,1339,1295,银鳕鱼,鱼块净料,1.00,approved
 1339-2,1339,193,白胡椒粉,默认可食,1.0,approved
 1339-3,1339,17,盐,默认可食,1.0,approved
 1339-4,1339,25,烧烤粉,默认可食,1.0,approved
@@ -10905,6 +11066,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1342-6,1342,269,玉米淀粉,默认可食,1.0,approved
 1342-7,1342,17,盐,默认可食,1.0,approved
 1342-8,1342,41,水,默认可食,1.0,approved
+1343-1,1343,337,筒骨,骨多肉少毛重,0.30,approved
 1343-2,1343,98,料酒,默认可食,1.0,approved
 1343-3,1343,41,水,默认可食,1.0,approved
 1343-4,1343,65,小葱,按可食部估重,1.0,approved
@@ -11009,6 +11171,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1354-2,1354,1793,香草糖浆,默认可食,1.0,approved
 1354-3,1354,1794,伯爵红茶,默认可食,1.0,approved
 1354-4,1354,534,espresso,默认可食,1.0,approved
+1355-1,1355,515,猪肋排,带骨毛重,0.72,approved
 1355-2,1355,50,蒜,默认可食,1.0,approved
 1355-3,1355,89,生抽,默认可食,1.0,approved
 1355-4,1355,98,料酒,默认可食,1.0,approved
@@ -11050,6 +11213,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1359-8,1359,89,生抽,默认可食,1.0,approved
 1359-9,1359,607,香醋,默认可食,1.0,approved
 1359-10,1359,6,姜,丝,1.0,approved
+1360-1,1360,572,鱼头,鱼头毛重,0.35,approved
 1360-2,1360,92,豆豉,默认可食,1.0,approved
 1360-3,1360,33,葱,默认可食,1.0,approved
 1360-4,1360,6,姜,默认可食,1.0,approved
@@ -11230,6 +11394,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1383-4,1383,27,孜然粉,默认可食,1.0,approved
 1383-5,1383,26,辣椒粉,默认可食,1.0,approved
 1383-6,1383,28,食用油,按可食部估重,1.0,approved
+1384-1,1384,773,鸡,整禽带骨毛重,0.66,approved
 1384-2,1384,89,生抽,默认可食,1.0,approved
 1384-3,1384,139,老抽,默认可食,1.0,approved
 1384-4,1384,270,黑胡椒粉,按可食部估重,1.0,approved
@@ -11312,6 +11477,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1393-14,1393,1825,李锦记老抽,默认可食,1.0,approved
 1393-15,1393,1826,黑虎虾仁,默认可食,1.0,approved
 1393-16,1393,742,腰果,默认可食,1.0,approved
+1394-1,1394,91,排骨,带骨毛重,0.72,approved
 1394-2,1394,1827,油豆腐,默认可食,1.0,approved
 1394-3,1394,1828,虾米豆豉酱,默认可食,1.0,approved
 1394-4,1394,89,生抽,默认可食,1.0,approved
@@ -11502,6 +11668,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1413-8,1413,1843,火龙果,按可食部估重,1.0,approved
 1413-9,1413,1844,绿奇异果,按可食部估重,1.0,approved
 1413-10,1413,670,蓝莓,按可食部估重,1.0,approved
+1414-1,1414,91,排骨,带骨毛重,0.72,approved
 1414-2,1414,440,春笋,默认可食,1.0,approved
 1414-3,1414,281,火腿,默认可食,1.0,approved
 1414-4,1414,28,食用油,默认可食,1.0,approved
@@ -11510,6 +11677,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1414-7,1414,41,水,默认可食,1.0,approved
 1414-8,1414,33,葱,花,1.0,approved
 1415-1,1415,794,冬瓜,默认可食,1.0,approved
+1415-2,1415,1845,海虾,带壳毛重,0.51,approved
 1415-3,1415,281,火腿,默认可食,1.0,approved
 1415-4,1415,85,香菇,默认可食,1.0,approved
 1415-5,1415,1001,香芹,默认可食,1.0,approved
@@ -11534,6 +11702,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1420-3,1420,1849,栀子粉,按可食部估重,1.0,approved
 1420-5,1420,1850,盐焗鸡竹笋纸,按可食部估重,1.0,approved
 1420-6,1420,505,粗盐,默认可食,1.0,approved
+1421-1,1421,871,蛏子,带壳毛重,0.57,approved
 1421-2,1421,1526,水发粉丝,丝,1.0,approved
 1421-3,1421,50,蒜,蓉,1.0,approved
 1421-4,1421,33,葱,花,1.0,approved
@@ -11619,6 +11788,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1427-4,1427,188,酵母,干,1.0,approved
 1427-5,1427,41,水,默认可食,1.0,approved
 1427-6,1427,20,橄榄油,默认可食,1.0,approved
+1427-7,1427,363,鲜虾,带壳毛重,0.60,approved
 1427-8,1427,267,培根,默认可食,1.0,approved
 1427-9,1427,1299,黑橄榄,默认可食,1.0,approved
 1427-10,1427,811,马苏里拉奶酪,默认可食,1.0,approved
@@ -11635,6 +11805,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1428-9,1428,71,香菜,段,1.0,approved
 1429-1,1429,1224,澄粉,默认可食,1.0,approved
 1429-2,1429,48,淀粉,默认可食,1.0,approved
+1429-3,1429,363,鲜虾,带壳毛重,0.60,approved
 1429-4,1429,84,胡萝卜,按可食部估重,1.0,approved
 1429-5,1429,992,猪前腿肉,默认可食,1.0,approved
 1429-6,1429,208,猪油,默认可食,1.0,approved
@@ -12084,12 +12255,14 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1480-6,1480,17,盐,默认可食,1.0,approved
 1480-7,1480,98,料酒,默认可食,1.0,approved
 1480-8,1480,28,食用油,默认可食,1.0,approved
+1481-1,1481,477,虾,带壳毛重,0.60,approved
 1481-2,1481,17,盐,默认可食,1.0,approved
 1481-3,1481,996,烧烤汁,按可食部估重,1.0,approved
 1481-4,1481,25,烧烤粉,默认可食,1.0,approved
 1481-5,1481,27,孜然粉,默认可食,1.0,approved
 1481-6,1481,583,辣椒油,按可食部估重,1.0,approved
 1481-7,1481,66,芝麻油,按可食部估重,1.0,approved
+1482-1,1482,91,排骨,带骨毛重,0.72,approved
 1482-2,1482,109,毛豆,默认可食,1.0,approved
 1482-3,1482,1879,菜干,默认可食,1.0,approved
 1482-4,1482,50,蒜,默认可食,1.0,approved
@@ -12128,6 +12301,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1485-3,1485,39,红枣,按可食部估重,1.0,approved
 1485-4,1485,122,牛奶,按可食部估重,1.0,approved
 1485-5,1485,97,白糖,默认可食,1.0,approved
+1486-1,1486,1881,净三黄鸡,净膛整禽带骨毛重,0.66,approved
 1486-2,1486,1167,红葱头,默认可食,1.0,approved
 1486-3,1486,50,蒜,默认可食,1.0,approved
 1486-4,1486,6,姜,默认可食,1.0,approved
@@ -12147,6 +12321,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1488-1,1488,28,食用油,默认可食,1.0,approved
 1488-2,1488,210,葱白,碎,1.0,approved
 1488-3,1488,6,姜,蓉,1.0,approved
+1488-4,1488,1883,鲜活小龙虾,带壳整虾毛重,0.31,approved
 1488-5,1488,1003,黄灯笼辣椒酱,默认可食,1.0,approved
 1488-6,1488,1701,蒜香粉,按可食部估重,1.0,approved
 1488-7,1488,17,盐,默认可食,1.0,approved
@@ -12266,6 +12441,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1499-11,1499,20,橄榄油,默认可食,1.0,approved
 1499-12,1499,1893,橄榄,按可食部估重,1.0,approved
 1499-13,1499,1894,鲜欧芹碎,碎,1.0,approved
+1500-1,1500,282,鸭翅,带骨毛重,0.67,approved
 1500-2,1500,6,姜,片,1.0,approved
 1500-3,1500,98,料酒,默认可食,1.0,approved
 1500-4,1500,41,水,默认可食,1.0,approved
@@ -12278,6 +12454,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1500-12,1500,3,冰糖,默认可食,1.0,approved
 1500-13,1500,119,啤酒,默认可食,1.0,approved
 1500-14,1500,17,盐,默认可食,1.0,approved
+1501-1,1501,113,小龙虾,带壳整虾毛重,0.31,approved
 1501-2,1501,41,水,默认可食,1.0,approved
 1501-3,1501,89,生抽,默认可食,1.0,approved
 1501-4,1501,139,老抽,默认可食,1.0,approved
@@ -12342,6 +12519,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1508-11,1508,33,葱,花,1.0,approved
 1508-12,1508,50,蒜,蓉,1.0,approved
 1508-13,1508,194,小米椒,碎,1.0,approved
+1509-1,1509,1897,本港大鱿鱼,处理后整鱿鱼,0.97,approved
 1509-2,1509,50,蒜,粒,1.0,approved
 1509-3,1509,6,姜,片,1.0,approved
 1509-4,1509,65,小葱,段,1.0,approved
@@ -12402,6 +12580,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1517-10,1517,89,生抽,按可食部估重,1.0,approved
 1517-11,1517,48,淀粉,默认可食,1.0,approved
 1517-12,1517,208,猪油,默认可食,1.0,approved
+1518-1,1518,91,排骨,带骨毛重,0.72,approved
 1518-2,1518,6,姜,末,1.0,approved
 1518-3,1518,33,葱,花,1.0,approved
 1518-4,1518,1907,酸梅酱,默认可食,1.0,approved
@@ -12434,6 +12613,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1521-7,1521,176,蜂蜜,默认可食,1.0,approved
 1521-8,1521,122,牛奶,默认可食,1.0,approved
 1521-9,1521,46,黄油,默认可食,1.0,approved
+1522-1,1522,844,羊排,带骨毛重,0.70,approved
 1522-3,1522,1909,孜然/孜然粉,默认可食,1.0,approved
 1522-4,1522,66,芝麻油,默认可食,1.0,approved
 1522-5,1522,17,盐,按可食部估重,1.0,approved
@@ -12611,6 +12791,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1544-6,1544,677,高筋粉,默认可食,1.0,approved
 1544-7,1544,33,葱,花,1.0,approved
 1544-8,1544,17,盐,按可食部估重,1.0,approved
+1545-1,1545,1924,桂鱼,整鱼毛重,0.61,approved
 1545-2,1545,985,蕃茄酱,默认可食,1.0,approved
 1545-3,1545,88,米醋,默认可食,1.0,approved
 1545-4,1545,201,糖,默认可食,1.0,approved
@@ -12706,6 +12887,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1556-5,1556,27,孜然粉,默认可食,1.0,approved
 1556-6,1556,17,盐,默认可食,1.0,approved
 1556-7,1556,28,食用油,按可食部估重,1.0,approved
+1557-1,1557,113,小龙虾,带壳整虾毛重,0.31,approved
 1557-2,1557,1516,糟卤,按可食部估重,1.0,approved
 1557-3,1557,33,葱,段,1.0,approved
 1557-4,1557,6,姜,片,1.0,approved
@@ -12751,6 +12933,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1562-2,1562,447,糯米,默认可食,1.0,approved
 1562-3,1562,40,红糖,默认可食,1.0,approved
 1562-4,1562,41,水,默认可食,1.0,approved
+1563-1,1563,91,排骨,带骨毛重,0.72,approved
 1563-2,1563,744,腐竹,默认可食,1.0,approved
 1563-3,1563,48,淀粉,默认可食,1.0,approved
 1563-4,1563,50,蒜,末,1.0,approved
@@ -12813,6 +12996,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1568-7,1568,54,鸡蛋,按可食部估重,1.0,approved
 1568-8,1568,39,红枣,按可食部估重,1.0,approved
 1568-9,1568,164,枸杞,按可食部估重,1.0,approved
+1569-1,1569,91,排骨,带骨毛重,0.72,approved
 1569-2,1569,92,豆豉,默认可食,1.0,approved
 1569-3,1569,50,蒜,末,1.0,approved
 1569-4,1569,89,生抽,默认可食,1.0,approved
@@ -12865,6 +13049,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1573-14,1573,1224,澄粉,按可食部估重,1.0,approved
 1573-15,1573,28,食用油,默认可食,1.0,approved
 1574-1,1574,10,茄子,默认可食,1.0,approved
+1574-2,1574,1431,小鱼干,可食干制品,1.00,approved
 1574-3,1574,235,红椒,默认可食,1.0,approved
 1574-4,1574,6,姜,丝,1.0,approved
 1574-5,1574,33,葱,花,1.0,approved
@@ -13028,6 +13213,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1589-13,1589,66,芝麻油,按可食部估重,1.0,approved
 1589-14,1589,100,水淀粉,按可食部估重,1.0,approved
 1589-15,1589,52,蚝油,默认可食,1.0,approved
+1590-1,1590,91,排骨,带骨毛重,0.72,approved
 1590-2,1590,1954,荔浦芋头,默认可食,1.0,approved
 1590-3,1590,50,蒜,默认可食,1.0,approved
 1590-4,1590,98,料酒,按可食部估重,1.0,approved
@@ -13085,6 +13271,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1597-3,1597,3,冰糖,默认可食,1.0,approved
 1597-4,1597,164,枸杞,默认可食,1.0,approved
 1597-5,1597,726,桂圆肉,默认可食,1.0,approved
+1598-1,1598,1958,散养童子鸡,整禽带骨毛重,0.58,approved
 1598-2,1598,6,姜,片,1.0,approved
 1598-3,1598,1358,金华火腿,默认可食,1.0,approved
 1598-4,1598,730,虫草花,花,1.0,approved
@@ -13108,6 +13295,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1600-6,1600,28,食用油,默认可食,1.0,approved
 1600-7,1600,50,蒜,末,1.0,approved
 1601-1,1601,216,冬笋,默认可食,1.0,approved
+1601-2,1601,91,排骨,带骨毛重,0.72,approved
 1601-3,1601,64,咸肉,默认可食,1.0,approved
 1601-4,1601,65,小葱,按可食部估重,1.0,approved
 1601-5,1601,41,水,默认可食,1.0,approved
@@ -13176,6 +13364,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1611-2,1611,133,细砂糖,默认可食,1.0,approved
 1611-3,1611,154,柠檬汁,按可食部估重,1.0,approved
 1611-4,1611,122,牛奶,默认可食,1.0,approved
+1611-5,1611,129,红茶包,部分留存,0.67,approved
 1611-6,1611,28,食用油,默认可食,1.0,approved
 1611-7,1611,120,低筋面粉,默认可食,1.0,approved
 1611-8,1611,269,玉米淀粉,默认可食,1.0,approved
@@ -13328,6 +13517,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1625-2,1625,759,红酒,默认可食,1.0,approved
 1625-3,1625,3,冰糖,默认可食,1.0,approved
 1625-4,1625,1156,肉桂,默认可食,1.0,approved
+1626-1,1626,871,蛏子,带壳毛重,0.57,approved
 1626-2,1626,907,雪菜,默认可食,1.0,approved
 1626-3,1626,208,猪油,默认可食,1.0,approved
 1626-4,1626,89,生抽,默认可食,1.0,approved
@@ -13335,6 +13525,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1626-6,1626,33,葱,段,1.0,approved
 1626-7,1626,6,姜,片,1.0,approved
 1626-8,1626,98,料酒,默认可食,1.0,approved
+1627-1,1627,91,排骨,带骨毛重,0.72,approved
 1627-2,1627,97,白糖,按可食部估重,1.0,approved
 1627-3,1627,98,料酒,默认可食,1.0,approved
 1627-4,1627,89,生抽,默认可食,1.0,approved
@@ -13371,6 +13562,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1631-4,1631,40,红糖,默认可食,1.0,approved
 1631-5,1631,41,水,默认可食,1.0,approved
 1631-6,1631,164,枸杞,按可食部估重,1.0,approved
+1632-1,1632,471,鳜鱼,整鱼毛重,0.61,approved
 1632-2,1632,6,姜,默认可食,1.0,approved
 1632-3,1632,239,大葱,默认可食,1.0,approved
 1632-4,1632,235,红椒,默认可食,1.0,approved
@@ -13512,6 +13704,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1647-6,1647,17,盐,默认可食,1.0,approved
 1647-7,1647,98,料酒,按可食部估重,1.0,approved
 1647-8,1647,89,生抽,按可食部估重,1.0,approved
+1648-1,1648,113,小龙虾,带壳整虾毛重,0.31,approved
 1648-3,1648,65,小葱,段,1.0,approved
 1648-4,1648,6,姜,片,1.0,approved
 1648-5,1648,98,料酒,默认可食,1.0,approved
@@ -13525,6 +13718,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1649-6,1649,1986,粗玉米面,默认可食,1.0,approved
 1649-7,1649,741,原味酸奶,默认可食,1.0,approved
 1649-8,1649,54,鸡蛋,按可食部估重,1.0,approved
+1650-1,1650,1881,净三黄鸡,净膛整禽带骨毛重,0.66,approved
 1650-2,1650,98,料酒,默认可食,1.0,approved
 1650-3,1650,89,生抽,默认可食,1.0,approved
 1650-4,1650,139,老抽,默认可食,1.0,approved
@@ -13866,6 +14060,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1686-7,1686,133,细砂糖,默认可食,1.0,approved
 1686-8,1686,355,可可粉,默认可食,1.0,approved
 1686-9,1686,120,低筋面粉,默认可食,1.0,approved
+1687-1,1687,91,排骨,新鲜,0.72,approved
 1687-2,1687,89,生抽,默认可食,1.0,approved
 1687-3,1687,48,淀粉,默认可食,1.0,approved
 1687-4,1687,28,食用油,默认可食,1.0,approved
@@ -13889,6 +14084,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1690-3,1690,2003,古方红糖,默认可食,1.0,approved
 1690-4,1690,41,水,按可食部估重,1.0,approved
 1690-5,1690,147,白芝麻,按可食部估重,1.0,approved
+1691-1,1691,91,排骨,带骨毛重,0.72,approved
 1691-2,1691,41,水,默认可食,1.0,approved
 1691-3,1691,28,食用油,默认可食,1.0,approved
 1691-4,1691,65,小葱,段,1.0,approved
@@ -14032,6 +14228,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1707-4,1707,17,盐,按可食部估重,1.0,approved
 1707-5,1707,97,白糖,按可食部估重,1.0,approved
 1707-6,1707,2016,蚕豆米,默认可食,1.0,approved
+1708-1,1708,1774,咸鱼,可食干制品,1.00,approved
 1708-2,1708,245,豆腐,按可食部估重,1.0,approved
 1708-3,1708,2017,小青豆,默认可食,1.0,approved
 1708-4,1708,17,盐,默认可食,1.0,approved
@@ -14070,7 +14267,9 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1713-2,1713,133,细砂糖,默认可食,1.0,approved
 1713-3,1713,120,低筋面粉,默认可食,1.0,approved
 1713-4,1713,41,水,煮沸,1.0,approved
+1713-5,1713,1518,红茶茶叶,部分留存,0.285714,approved
 1713-6,1713,155,色拉油,默认可食,1.0,approved
+1714-1,1714,2020,鱼,整鱼毛重,0.58,approved
 1714-2,1714,84,胡萝卜,默认可食,1.0,approved
 1714-3,1714,74,土豆,默认可食,1.0,approved
 1714-4,1714,1292,花椰菜,默认可食,1.0,approved
@@ -14085,6 +14284,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1714-13,1714,62,花椒粉,默认可食,1.0,approved
 1714-14,1714,89,生抽,默认可食,1.0,approved
 1714-15,1714,181,豆瓣酱,默认可食,1.0,approved
+1715-1,1715,91,排骨,带骨毛重,0.72,approved
 1715-2,1715,401,芋头,默认可食,1.0,approved
 1715-3,1715,194,小米椒,按可食部估重,1.0,approved
 1715-4,1715,50,蒜,按可食部估重,1.0,approved
@@ -14179,6 +14379,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1724-3,1724,346,莲子,默认可食,1.0,approved
 1724-4,1724,1477,芡实,默认可食,1.0,approved
 1724-5,1724,465,山药,默认可食,1.0,approved
+1724-6,1724,91,排骨,带骨毛重,0.72,approved
 1724-7,1724,17,盐,按可食部估重,1.0,approved
 1724-8,1724,41,水,默认可食,1.0,approved
 1725-1,1725,104,红豆,默认可食,1.0,approved
@@ -14212,6 +14413,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1728-6,1728,54,鸡蛋,按可食部估重,1.0,approved
 1728-7,1728,133,细砂糖,默认可食,1.0,approved
 1728-8,1728,671,草莓,默认可食,1.0,approved
+1729-1,1729,152,鳕鱼,鱼块净料,1.00,approved
 1729-2,1729,6,姜,默认可食,1.0,approved
 1729-3,1729,65,小葱,按可食部估重,1.0,approved
 1729-4,1729,92,豆豉,默认可食,1.0,approved
@@ -14299,6 +14501,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1738-12,1738,283,花椒,默认可食,1.0,approved
 1738-13,1738,30,辣椒,干,1.0,approved
 1738-14,1738,41,水,默认可食,1.0,approved
+1739-1,1739,1356,老鸭,整禽带骨毛重,0.68,approved
 1739-2,1739,1357,笋干,默认可食,1.0,approved
 1739-3,1739,281,火腿,默认可食,1.0,approved
 1739-4,1739,6,姜,默认可食,1.0,approved
@@ -14344,8 +14547,10 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1744-6,1744,52,蚝油,默认可食,1.0,approved
 1744-7,1744,17,盐,按可食部估重,1.0,approved
 1744-8,1744,33,葱,花,1.0,approved
+1745-1,1745,2033,章鱼干,可食干制品,1.00,approved
 1745-2,1745,2034,洪湖莲藕,默认可食,1.0,approved
 1745-3,1745,346,莲子,去芯+鲜,1.0,approved
+1745-4,1745,2036,龙骨,骨多肉少毛重,0.30,approved
 1745-5,1745,1553,凤爪,默认可食,1.0,approved
 1745-6,1745,184,矿泉水,默认可食,1.0,approved
 1746-1,1746,170,糯米粉,默认可食,1.0,approved
@@ -14379,6 +14584,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1750-4,1750,66,芝麻油,按可食部估重,1.0,approved
 1751-1,1751,293,白萝卜,默认可食,1.0,approved
 1751-2,1751,1069,腊肠,默认可食,1.0,approved
+1751-3,1751,233,贝,干,1.00,approved
 1751-4,1751,1818,虾米,默认可食,1.0,approved
 1751-5,1751,28,食用油,默认可食,1.0,approved
 1751-6,1751,17,盐,默认可食,1.0,approved
@@ -14424,6 +14630,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1756-5,1756,6,姜,默认可食,1.0,approved
 1756-6,1756,166,黄酒,默认可食,1.0,approved
 1756-7,1756,356,油,默认可食,1.0,approved
+1757-1,1757,2042,草鸡,整禽带骨毛重,0.58,approved
 1757-2,1757,2043,青麦仁,默认可食,1.0,approved
 1757-3,1757,6,姜,丝,1.0,approved
 1757-4,1757,164,枸杞,默认可食,1.0,approved
@@ -14515,6 +14722,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1771-8,1771,17,盐,默认可食,1.0,approved
 1772-1,1772,245,豆腐,默认可食,1.0,approved
 1772-2,1772,792,水发冬菇,默认可食,1.0,approved
+1772-3,1772,233,贝,干,1.00,approved
 1772-4,1772,84,胡萝卜,默认可食,1.0,approved
 1772-5,1772,33,葱,花,1.0,approved
 1772-6,1772,17,盐,默认可食,1.0,approved
@@ -14649,6 +14857,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1787-4,1787,89,生抽,按可食部估重,1.0,approved
 1787-5,1787,28,食用油,按可食部估重,1.0,approved
 1788-1,1788,10,茄子,默认可食,1.0,approved
+1788-2,1788,91,排骨,带骨毛重,0.72,approved
 1788-3,1788,89,生抽,默认可食,1.0,approved
 1788-4,1788,17,盐,默认可食,1.0,approved
 1788-5,1788,50,蒜,默认可食,1.0,approved
@@ -14663,6 +14872,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1789-6,1789,89,生抽,按可食部估重,1.0,approved
 1789-7,1789,66,芝麻油,按可食部估重,1.0,approved
 1789-8,1789,28,食用油,按可食部估重,1.0,approved
+1790-1,1790,515,猪肋排,带骨毛重,0.72,approved
 1790-2,1790,98,料酒,默认可食,1.0,approved
 1790-3,1790,508,莲藕,默认可食,1.0,approved
 1790-4,1790,6,姜,默认可食,1.0,approved
@@ -14829,6 +15039,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1814-11,1814,33,葱,默认可食,1.0,approved
 1814-12,1814,17,盐,默认可食,1.0,approved
 1814-13,1814,201,糖,默认可食,1.0,approved
+1815-1,1815,91,排骨,带骨毛重,0.72,approved
 1815-2,1815,98,料酒,默认可食,1.0,approved
 1815-3,1815,6,姜,片,1.0,approved
 1815-4,1815,41,水,默认可食,1.0,approved
@@ -14925,6 +15136,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1827-10,1827,48,淀粉,默认可食,1.0,approved
 1827-11,1827,317,蛋黄,默认可食,1.0,approved
 1827-12,1827,46,黄油,默认可食,1.0,approved
+1828-1,1828,337,筒骨,骨多肉少毛重,0.30,approved
 1828-2,1828,6,姜,片,1.0,approved
 1828-3,1828,41,水,默认可食,1.0,approved
 1828-4,1828,1343,白扁豆,默认可食,1.0,approved
@@ -14999,6 +15211,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1837-5,1837,41,水,煮沸,1.0,approved
 1837-6,1837,97,白糖,按可食部估重,1.0,approved
 1837-7,1837,374,桂花酱,默认可食,1.0,approved
+1838-1,1838,1295,银鳕鱼,块,1.00,approved
 1838-2,1838,20,橄榄油,默认可食,1.0,approved
 1838-3,1838,17,盐,默认可食,1.0,approved
 1838-4,1838,1321,青柠檬,按可食部估重,1.0,approved
@@ -15088,6 +15301,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1846-1,1846,28,食用油,默认可食,1.0,approved
 1846-2,1846,6,姜,片,1.0,approved
 1846-3,1846,41,水,默认可食,1.0,approved
+1846-4,1846,91,排骨,带骨毛重,0.72,approved
 1846-5,1846,794,冬瓜,默认可食,1.0,approved
 1846-6,1846,973,海带结,默认可食,1.0,approved
 1846-7,1846,17,盐,按可食部估重,1.0,approved
@@ -15218,6 +15432,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1860-8,1860,89,生抽,默认可食,1.0,approved
 1860-9,1860,176,蜂蜜,默认可食,1.0,approved
 1860-10,1860,17,盐,默认可食,1.0,approved
+1863-1,1863,455,牛仔骨,带骨毛重,0.68,approved
 1863-2,1863,98,料酒,默认可食,1.0,approved
 1863-3,1863,41,水,默认可食,1.0,approved
 1863-4,1863,6,姜,片,1.0,approved
@@ -15237,11 +15452,13 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1865-8,1865,50,蒜,泥,1.0,approved
 1865-9,1865,155,色拉油,按可食部估重,1.0,approved
 1865-10,1865,19,黑胡椒,按可食部估重,1.0,approved
+1866-1,1866,515,猪肋排,切块,0.72,approved
 1866-2,1866,12,洋葱,按可食部估重,1.0,approved
 1866-6,1866,2110,烤肉酱汁,默认可食,1.0,approved
 1866-7,1866,17,盐,默认可食,1.0,approved
 1866-8,1866,19,黑胡椒,默认可食,1.0,approved
 1866-9,1866,20,橄榄油,按可食部估重,1.0,approved
+1867-1,1867,1245,鳙鱼头,鱼头毛重,0.35,approved
 1867-2,1867,210,葱白,默认可食,1.0,approved
 1867-3,1867,98,料酒,默认可食,1.0,approved
 1867-4,1867,6,姜,片,1.0,approved
@@ -15256,6 +15473,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1867-13,1867,41,水,默认可食,1.0,approved
 1867-14,1867,36,蒸鱼豉油,默认可食,1.0,approved
 1867-15,1867,33,葱,花,1.0,approved
+1868-1,1868,515,猪肋排,带骨毛重,0.72,approved
 1868-2,1868,4,罗汉果,按可食部估重,1.0,approved
 1868-3,1868,6,姜,默认可食,1.0,approved
 1868-4,1868,164,枸杞,默认可食,1.0,approved
@@ -15335,6 +15553,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1880-4,1880,89,生抽,按可食部估重,1.0,approved
 1880-5,1880,33,葱,默认可食,1.0,approved
 1880-6,1880,98,料酒,按可食部估重,1.0,approved
+1881-1,1881,91,排骨,带骨毛重,0.72,approved
 1881-2,1881,6,姜,片,1.0,approved
 1881-3,1881,98,料酒,默认可食,1.0,approved
 1881-4,1881,41,水,默认可食,1.0,approved
@@ -15431,10 +15650,12 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1890-7,1890,41,水,默认可食,1.0,approved
 1891-1,1891,6,姜,丝,1.0,approved
 1891-2,1891,28,食用油,默认可食,1.0,approved
+1891-3,1891,1177,河虾,带壳毛重,0.86,approved
 1891-4,1891,89,生抽,默认可食,1.0,approved
 1891-5,1891,139,老抽,默认可食,1.0,approved
 1891-6,1891,97,白糖,按可食部估重,1.0,approved
 1891-7,1891,59,韭菜,默认可食,1.0,approved
+1892-1,1892,2122,罗氏虾,带壳毛重,0.57,approved
 1892-2,1892,2123,蒲菜,默认可食,1.0,approved
 1892-3,1892,155,色拉油,默认可食,1.0,approved
 1892-4,1892,17,盐,默认可食,1.0,approved
@@ -15497,6 +15718,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1898-16,1898,41,水,默认可食,1.0,approved
 1899-1,1899,2128,鸡脚,按可食部估重,1.0,approved
 1899-2,1899,2129,猪展肉,默认可食,1.0,approved
+1899-3,1899,2130,老母鸡,整禽带骨毛重,0.58,approved
 1899-4,1899,39,红枣,按可食部估重,1.0,approved
 1899-5,1899,164,枸杞,按可食部估重,1.0,approved
 1899-6,1899,730,虫草花,干,1.0,approved
@@ -15544,6 +15766,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1904-3,1904,133,细砂糖,默认可食,1.0,approved
 1904-4,1904,68,纯牛奶,默认可食,1.0,approved
 1904-5,1904,408,冰块,块,1.0,approved
+1905-1,1905,152,鳕鱼,鱼块净料,1.00,approved
 1905-2,1905,6,姜,默认可食,1.0,approved
 1905-3,1905,356,油,按可食部估重,1.0,approved
 1905-4,1905,33,葱,默认可食,1.0,approved
@@ -15584,6 +15807,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1909-2,1909,188,酵母,干,1.0,approved
 1909-3,1909,243,中筋面粉,默认可食,1.0,approved
 1909-4,1909,495,红豆沙,默认可食,1.0,approved
+1910-1,1910,91,排骨,段,0.72,approved
 1910-2,1910,365,玉米,粒,1.0,approved
 1910-3,1910,514,蒸肉米粉,默认可食,1.0,approved
 1910-4,1910,33,葱,花,1.0,approved
@@ -15749,6 +15973,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1924-12,1924,17,盐,按可食部估重,1.0,approved
 1924-13,1924,432,白醋,默认可食,1.0,approved
 1924-14,1924,33,葱,花,1.0,approved
+1925-1,1925,1580,青头鸭,整禽带骨毛重,0.68,approved
 1925-2,1925,1581,八头鲜鲍鱼,按可食部估重,1.0,approved
 1925-3,1925,6,姜,片,1.0,approved
 1925-4,1925,41,水,默认可食,1.0,approved
@@ -15782,12 +16007,14 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1927-8,1927,2150,红黄绿彩椒块,块,1.0,approved
 1927-9,1927,89,生抽,默认可食,1.0,approved
 1927-10,1927,52,蚝油,默认可食,1.0,approved
+1928-1,1928,773,鸡,整禽带骨毛重,0.66,approved
 1928-2,1928,50,蒜,按可食部估重,1.0,approved
 1928-3,1928,504,盐焗鸡粉,按可食部估重,1.0,approved
 1928-4,1928,89,生抽,按可食部估重,1.0,approved
 1928-5,1928,52,蚝油,按可食部估重,1.0,approved
 1928-6,1928,461,花生油,按可食部估重,1.0,approved
 1929-1,1929,1150,香椿,默认可食,1.0,approved
+1929-2,1929,2151,笋壳鱼,整鱼毛重,0.58,approved
 1929-3,1929,542,松子,默认可食,1.0,approved
 1929-4,1929,50,蒜,默认可食,1.0,approved
 1929-5,1929,33,葱,默认可食,1.0,approved
@@ -15800,6 +16027,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1930-1,1930,866,竹荪,干,1.0,approved
 1930-2,1930,17,盐,按可食部估重,1.0,approved
 1930-3,1930,2152,纯椰子水,默认可食,1.0,approved
+1930-4,1930,503,三黄鸡,整禽带骨毛重,0.66,approved
 1930-5,1930,6,姜,片,1.0,approved
 1930-6,1930,98,料酒,默认可食,1.0,approved
 1930-7,1930,239,大葱,段,1.0,approved
@@ -15899,6 +16127,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1941-8,1941,17,盐,默认可食,1.0,approved
 1941-9,1941,62,花椒粉,默认可食,1.0,approved
 1941-10,1941,193,白胡椒粉,默认可食,1.0,approved
+1942-1,1942,91,排骨,块,0.72,approved
 1942-2,1942,465,山药,默认可食,1.0,approved
 1942-3,1942,1319,叉烧酱,默认可食,1.0,approved
 1942-4,1942,28,食用油,按可食部估重,1.0,approved
@@ -15978,6 +16207,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1950-4,1950,142,八角,按可食部估重,1.0,approved
 1950-5,1950,141,桂皮,默认可食,1.0,approved
 1950-6,1950,284,香叶,按可食部估重,1.0,approved
+1950-7,1950,773,鸡,整禽带骨毛重,0.66,approved
 1950-8,1950,98,料酒,默认可食,1.0,approved
 1950-9,1950,89,生抽,默认可食,1.0,approved
 1950-10,1950,139,老抽,默认可食,1.0,approved
@@ -16065,6 +16295,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1958-5,1958,28,食用油,默认可食,1.0,approved
 1958-6,1958,1791,年糕,片,1.0,approved
 1958-7,1958,17,盐,按可食部估重,1.0,approved
+1959-1,1959,773,鸡,块,0.66,approved
 1959-2,1959,205,水发木耳,默认可食,1.0,approved
 1959-3,1959,633,山楂,默认可食,1.0,approved
 1959-4,1959,33,葱,花,1.0,approved
@@ -16075,10 +16306,13 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1959-9,1959,28,食用油,按可食部估重,1.0,approved
 1960-1,1960,28,食用油,默认可食,1.0,approved
 1960-2,1960,98,料酒,默认可食,1.0,approved
+1960-3,1960,2181,虾头,虾头毛重,0.30,approved
+1960-4,1960,2182,虾尾,带壳虾尾毛重,0.60,approved
 1960-5,1960,794,冬瓜,默认可食,1.0,approved
 1960-6,1960,17,盐,按可食部估重,1.0,approved
 1960-7,1960,41,水,默认可食,1.0,approved
 1960-8,1960,33,葱,花,1.0,approved
+1961-1,1961,91,排骨,带骨毛重,0.72,approved
 1961-2,1961,98,料酒,默认可食,1.0,approved
 1961-3,1961,48,淀粉,默认可食,1.0,approved
 1961-4,1961,89,生抽,默认可食,1.0,approved
@@ -16127,6 +16361,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1966-10,1966,66,芝麻油,默认可食,1.0,approved
 1966-11,1966,89,生抽,默认可食,1.0,approved
 1966-12,1966,33,葱,花,1.0,approved
+1967-1,1967,248,梭子蟹,带壳整蟹毛重,0.55,approved
 1967-2,1967,54,鸡蛋,默认可食,1.0,approved
 1967-3,1967,357,酱油,默认可食,1.0,approved
 1967-4,1967,65,小葱,默认可食,1.0,approved
@@ -16171,6 +16406,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1973-2,1973,671,草莓,按可食部估重,1.0,approved
 1973-3,1973,121,糖粉,默认可食,1.0,approved
 1973-4,1973,404,椰蓉,蓉,1.0,approved
+1974-1,1974,1356,老鸭,整禽带骨毛重,0.68,approved
 1974-2,1974,6,姜,片,1.0,approved
 1974-3,1974,98,料酒,默认可食,1.0,approved
 1974-4,1974,41,水,默认可食,1.0,approved
@@ -16232,6 +16468,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 1981-6,1981,98,料酒,默认可食,1.0,approved
 1981-7,1981,41,水,默认可食,1.0,approved
 1981-8,1981,17,盐,默认可食,1.0,approved
+1982-1,1982,844,羊排,带骨毛重,0.70,approved
 1982-2,1982,1420,红葡萄酒,默认可食,1.0,approved
 1982-3,1982,17,盐,默认可食,1.0,approved
 1982-4,1982,125,鸡精,默认可食,1.0,approved

@@ -1,6 +1,7 @@
 import csv
 import os
 from collections import Counter
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -447,6 +448,7 @@ def test_edible_fractions_route_is_offline_and_uses_real_writer(monkeypatch, tmp
         nutrition_views = ()
 
     monkeypatch.setattr(data_review, "_build_review_views", lambda *_args: _Views())
+    monkeypatch.setattr(data_review, "_REVIEW_DIR", tmp_path)
 
     assert data_review._write_edible_fraction_review(
         (), (), tmp_path / "fractions.csv", sample=None
@@ -557,6 +559,29 @@ def test_repository_retention_decisions_reach_inputs_and_only_unresolved_are_que
     assert len(bundle.retention_exceptions) == 0
     assert len(bundle.usage_candidates) == 1_733
     assert len(bundle.usage_exceptions) == 8_684
+
+    edible_path = data_review._REVIEW_DIR / "ingredient_edible_fraction_decisions.csv"
+    with edible_path.open(encoding="utf-8", newline="") as handle:
+        edible_rows = list(csv.DictReader(handle))
+    edible_by_id = {row["occurrence_id"]: row for row in edible_rows}
+    fractions = [Decimal(row["edible_fraction"]) for row in edible_rows]
+    edible_decisions = data_review.load_edible_fraction_decisions(
+        edible_path, current_occurrence_ids=set(current_occurrences)
+    )
+    edible_rules = data_review.load_edible_fraction_rules(
+        data_review._REVIEW_DIR / "ingredient_edible_fraction_rules.csv"
+    )
+
+    assert len(edible_rows) == len(edible_by_id) == 16_636
+    assert sum(fraction == Decimal("1") for fraction in fractions) == 16_323
+    assert sum(fraction < Decimal("1") for fraction in fractions) == 313
+    assert all(Decimal("0") < fraction <= Decimal("1") for fraction in fractions)
+    assert edible_by_id["15-1"]["edible_fraction"] == "0.72"
+    assert edible_by_id["1611-5"]["edible_fraction"] == "0.67"
+    assert all("待判" not in row["decision_form"] for row in edible_rows)
+    assert data_review.generate_edible_fraction_candidates(
+        context.views.nutrition_views, edible_rules, edible_decisions
+    ) == ()
 
 
 @pytest.mark.parametrize(
