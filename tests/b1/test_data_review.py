@@ -276,6 +276,40 @@ def test_edible_fractions_route_is_offline_and_uses_real_writer(monkeypatch, tmp
     assert "review_status" in (tmp_path / "fractions.csv").read_text(encoding="utf-8")
 
 
+def test_repository_nutrition_queue_routes_audited_solids_and_non_suffix_fluids(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "nutrition-occurrences"
+
+    assert data_review.main(
+        ["--kind", "nutrition-occurrences", "--output", str(output)]
+    ) == 0
+
+    with (output / "nutrition_retention_candidates.csv").open(
+        encoding="utf-8", newline=""
+    ) as handle:
+        candidate_names = {
+            row["ingredient_name"] for row in csv.DictReader(handle)
+        }
+    with (output / "nutrition_retention_exceptions.csv").open(
+        encoding="utf-8", newline=""
+    ) as handle:
+        ambiguous_names = {
+            row["ingredient_name"]
+            for row in csv.DictReader(handle)
+            if row["exception_codes"] == "NUTRITION_RETENTION_AMBIGUOUS"
+        }
+
+    audited_solids = {"盐", "姜", "白糖", "酵母", "八角", "黑胡椒"}
+    audited_fluids = {
+        "生抽", "有机生抽", "老抽", "李锦记老抽", "金兰油膏", "香草精", "糟卤"
+    }
+    assert audited_solids <= candidate_names
+    assert audited_solids.isdisjoint(ambiguous_names)
+    assert audited_fluids <= ambiguous_names
+    assert audited_fluids.isdisjoint(candidate_names)
+
+
 @pytest.mark.parametrize(
     "filename",
     (

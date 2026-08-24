@@ -239,6 +239,46 @@ def test_unknown_physical_state_is_not_asserted_as_bound_solid() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "name",
+    (
+        "盐", "海盐", "粗盐", "精盐", "椒盐", "白糖", "细砂糖", "绵白糖",
+        "糖", "冰糖", "黄冰糖", "红糖", "麦芽糖", "糖霜",
+        "姜", "老姜", "嫩姜", "良姜", "沙姜", "葱", "小葱", "香葱", "大葱",
+        "蒜", "蒜瓣", "蒜苗", "八角", "花椒", "香叶", "桂皮", "黑胡椒",
+        "白胡椒", "孜然", "酵母", "枸杞", "豆豉", "紫薯", "莲子", "银耳",
+        "蔓越莓干", "饺子皮", "小苏打", "白扁豆", "赤小豆", "黑豆", "红豆",
+        "红小豆", "红腰豆", "黄豆", "绿豆", "脱皮绿豆", "芸豆",
+    ),
+)
+def test_audited_exact_solid_identity_is_a_bound_solid_candidate(name: str) -> None:
+    bundle = generate_nutrition_occurrence_review(
+        _context(name=name, category="其他")
+    )
+
+    assert [row.evidence_codes for row in bundle.retention_candidates] == [
+        ("NUTRITION_RETENTION_BOUND_SOLID",)
+    ]
+    assert bundle.retention_exceptions == ()
+
+
+@pytest.mark.parametrize(
+    "name",
+    ("生抽", "有机生抽", "老抽", "李锦记老抽", "金兰油膏", "香草精", "糟卤"),
+)
+def test_audited_non_suffix_fluid_identity_remains_retention_ambiguous(
+    name: str,
+) -> None:
+    bundle = generate_nutrition_occurrence_review(
+        _context(name=name, category="其他")
+    )
+
+    assert bundle.retention_candidates == ()
+    assert bundle.retention_exceptions[0].exception_codes == (
+        "NUTRITION_RETENTION_AMBIGUOUS",
+    )
+
+
 def _bundle_fixture():
     fat = generate_nutrition_occurrence_review(_context(name="食用油"))
     solid = generate_nutrition_occurrence_review(_context(name="鸡肉"))

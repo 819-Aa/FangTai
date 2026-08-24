@@ -44,13 +44,35 @@ _RETENTION_FLUID_IDENTITIES = frozenset(
         "柠檬汁",
         "烧烤汁",
         "水淀粉",
+        "生抽",
+        "有机生抽",
+        "老抽",
+        "李锦记老抽",
+        "金兰油膏",
+        "香草精",
+        "糟卤",
     }
 )
 _RETENTION_FLUID_SUFFIXES = (
     "油", "水", "汤", "汁", "奶", "乳", "液", "浆", "酒", "醋", "露",
     "茶", "饮", "羹", "糊", "酱", "蜜",
 )
-_RETENTION_SOLID_IDENTITIES = frozenset({"水果", "水牛芝士", "汤圆"})
+_RETENTION_SOLID_IDENTITIES = frozenset(
+    {
+        "水果", "水牛芝士", "汤圆",
+        "盐", "海盐", "粗盐", "精盐", "椒盐",
+        "白糖", "细砂糖", "绵白糖", "糖", "冰糖", "黄冰糖", "红糖", "麦芽糖",
+        "糖霜",
+        "姜", "老姜", "嫩姜", "良姜", "沙姜",
+        "葱", "小葱", "香葱", "大葱",
+        "蒜", "蒜瓣", "蒜苗",
+        "八角", "花椒", "香叶", "桂皮", "黑胡椒", "白胡椒", "孜然",
+        "酵母", "枸杞", "豆豉", "紫薯", "莲子", "银耳", "蔓越莓干", "饺子皮",
+        "小苏打",
+        "白扁豆", "赤小豆", "黑豆", "红豆", "红小豆", "红腰豆", "黄豆", "绿豆",
+        "脱皮绿豆", "芸豆",
+    }
+)
 _RETENTION_SOLID_CATEGORIES = frozenset(
     {
         "水果", "蔬菜", "菌菇", "坚果", "蛋奶", "豆制品", "谷物", "水产",
@@ -464,10 +486,10 @@ def _is_cooking_liquid(name: str) -> bool:
 def _retention_physical_state(identity: IngredientIdentityFact) -> RetentionPhysicalState:
     """Classify only physical states supported by closed, local evidence."""
     name = identity.name_canonical.lstrip("=+-@").strip()
-    if name in _RETENTION_SOLID_IDENTITIES:
-        return "solid"
     if name in _RETENTION_FLUID_IDENTITIES or name.endswith(_RETENTION_FLUID_SUFFIXES):
         return "fluid"
+    if name in _RETENTION_SOLID_IDENTITIES:
+        return "solid"
     if identity.category.strip() in _RETENTION_SOLID_CATEGORIES:
         return "solid"
     return "ambiguous"
