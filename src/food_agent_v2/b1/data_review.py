@@ -6,6 +6,7 @@ import argparse
 import csv
 import json
 import os
+from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from uuid import UUID
@@ -374,13 +375,44 @@ def _write_nutrition_occurrence_review(
     rows, facts, output: Path, *, sample: int | None
 ) -> dict[str, int]:
     _refuse_formal_review_target(output)
-    selected_rows = rows[:sample] if sample is not None else rows
-    selected_ids = {row.recipe_id for row in selected_rows}
-    context = _build_review_context(
-        selected_rows, tuple(fact for fact in facts if fact.recipe_id in selected_ids)
+    bundle = generate_nutrition_occurrence_review(
+        _build_review_context(rows, facts)
     )
     return write_nutrition_occurrence_review(
-        generate_nutrition_occurrence_review(context), output
+        _sample_nutrition_occurrence_review(bundle, sample), output
+    )
+
+
+def _sample_nutrition_occurrence_review(bundle, sample: int | None):
+    if sample is None:
+        return bundle
+    queues = (
+        bundle.usage_candidates,
+        bundle.usage_exceptions,
+        bundle.retention_candidates,
+        bundle.retention_exceptions,
+    )
+    selected_recipe_ids = set(
+        sorted({row.recipe_id for queue in queues for row in queue})[:sample]
+    )
+    return replace(
+        bundle,
+        usage_candidates=tuple(
+            row for row in bundle.usage_candidates
+            if row.recipe_id in selected_recipe_ids
+        ),
+        usage_exceptions=tuple(
+            row for row in bundle.usage_exceptions
+            if row.recipe_id in selected_recipe_ids
+        ),
+        retention_candidates=tuple(
+            row for row in bundle.retention_candidates
+            if row.recipe_id in selected_recipe_ids
+        ),
+        retention_exceptions=tuple(
+            row for row in bundle.retention_exceptions
+            if row.recipe_id in selected_recipe_ids
+        ),
     )
 
 

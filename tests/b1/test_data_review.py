@@ -1,8 +1,18 @@
+import csv
 from pathlib import Path
 
 import pytest
 
 import food_agent_v2.b1.data_review as data_review
+from food_agent_v2.b1.consumer_views import RecipeFact
+from food_agent_v2.b1.nutrition_occurrence_review import (
+    NutritionOccurrenceReviewBundle,
+    NutritionRetentionCandidate,
+    NutritionRetentionException,
+    NutritionUsageCandidate,
+    NutritionUsageException,
+)
+from food_agent_v2.b1.schemas import SourceRecipeRow
 
 
 @pytest.mark.parametrize("kind", ("quantity-rules", "edible-fractions", "nutrition-occurrences"))
@@ -56,6 +66,162 @@ def test_nutrition_occurrences_route_is_offline_and_returns_four_counts(monkeypa
         "usage_candidates": 1, "usage_exceptions": 1,
         "retention_candidates": 1, "retention_exceptions": 1,
     }
+
+
+def _write_nutrition_review_fixture(review_dir: Path) -> None:
+    review_dir.mkdir(parents=True)
+    (review_dir / "ingredient_identity_overrides.csv").write_text(
+        "source_key,operation,target_ingredient_ids,reason_code,form,review_status,reviewer,reviewed_at\n"
+        "姜丝,merge,1,processing_variant,丝,approved,owner,2026-08-24\n"
+        "蒜末,merge,3,processing_variant,末,approved,owner,2026-08-24\n",
+        encoding="utf-8",
+    )
+    (review_dir / "ingredient_condition_defaults.csv").write_text(
+        "recipe_name,choice_group,selected_ingredient,retained_alternatives,review_status\n"
+        "全局菜二,备选,姜,姜|姜丝,approved\n",
+        encoding="utf-8",
+    )
+    (review_dir / "ingredient_nutrition_usage_decisions.csv").write_text(
+        "occurrence_id,recipe_id,ingredient_id,ingredient_name,normalized_form,usage_code,review_status\n"
+        "2-1,2,1,姜,,supporting,approved\n",
+        encoding="utf-8",
+    )
+    (review_dir / "ingredient_nutrition_retention_decisions.csv").write_text(
+        "occurrence_id,recipe_id,ingredient_id,ingredient_name,normalized_form,retained_in_dish,review_status\n"
+        "2-1,2,1,姜,,true,approved\n",
+        encoding="utf-8",
+    )
+
+
+def _source_row(recipe_id: int, name: str, ingredients: str) -> SourceRecipeRow:
+    return SourceRecipeRow(
+        recipe_id=recipe_id,
+        source_row_number=recipe_id,
+        name=name,
+        ingredients_raw=ingredients,
+        steps_raw=f"加入{ingredients}炒熟",
+        labels_raw="",
+        row_sha256=str(recipe_id) * 64,
+    )
+
+
+def _read_queue_rows(output: Path) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for filename in (
+        "nutrition_usage_candidates.csv",
+        "nutrition_usage_exceptions.csv",
+        "nutrition_retention_candidates.csv",
+        "nutrition_retention_exceptions.csv",
+    ):
+        with (output / filename).open(encoding="utf-8", newline="") as handle:
+            rows.extend(csv.DictReader(handle))
+    return rows
+
+
+def test_nutrition_occurrence_sample_builds_full_context_before_selecting_queue_recipes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    review_dir = tmp_path / "review"
+    _write_nutrition_review_fixture(review_dir)
+    monkeypatch.setattr(data_review, "_REVIEW_DIR", review_dir)
+    rows = (
+        _source_row(1, "样本菜一", "姜丝5克"),
+        _source_row(2, "全局菜二", "姜10克"),
+        _source_row(3, "全局菜三", "蒜10克；蒜末5克"),
+    )
+    facts = tuple(
+        RecipeFact(row.recipe_id, row.name, "dish", (row.steps_raw,))
+        for row in rows
+    )
+    output = tmp_path / "queues"
+
+    data_review._write_nutrition_occurrence_review(
+        rows, facts, output, sample=1
+    )
+
+    queue_rows = _read_queue_rows(output)
+    assert {(row["recipe_id"], row["ingredient_id"]) for row in queue_rows} == {
+        ("1", "1")
+    }
+
+
+def _review_row_kwargs(recipe_id: int, occurrence_index: int) -> dict:
+    return {
+        "occurrence_id": f"{recipe_id}-{occurrence_index}",
+        "recipe_id": recipe_id,
+        "recipe_name": f"菜{recipe_id}",
+        "ingredient_id": recipe_id,
+        "ingredient_name": f"食材{recipe_id}",
+        "source_fragment": f"食材{recipe_id}10克",
+        "normalized_form": "",
+        "category": "其他",
+        "quantity_raw": "10克",
+        "bound_step_indexes": (1,),
+        "bound_step_text": (f"加入食材{recipe_id}",),
+        "evidence_codes": ("EVIDENCE",),
+    }
+
+
+def test_nutrition_occurrence_sample_filters_same_first_reviewable_recipes_in_all_files(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    bundle = NutritionOccurrenceReviewBundle(
+        usage_candidates=tuple(
+            NutritionUsageCandidate(
+                **_review_row_kwargs(recipe_id, 1),
+                candidate_usage_code="main",
+            )
+            for recipe_id in (3, 1, 2)
+        ),
+        usage_exceptions=tuple(
+            NutritionUsageException(
+                **_review_row_kwargs(recipe_id, 2),
+                exception_codes=("USAGE_AMBIGUOUS",),
+            )
+            for recipe_id in (2, 3, 1)
+        ),
+        retention_candidates=tuple(
+            NutritionRetentionCandidate(**_review_row_kwargs(recipe_id, 3))
+            for recipe_id in (1, 3, 2)
+        ),
+        retention_exceptions=tuple(
+            NutritionRetentionException(
+                **_review_row_kwargs(recipe_id, 4),
+                exception_codes=("RETENTION_AMBIGUOUS",),
+            )
+            for recipe_id in (3, 2, 1)
+        ),
+    )
+    rows = tuple(
+        _source_row(recipe_id, f"菜{recipe_id}", f"食材{recipe_id}10克")
+        for recipe_id in (1, 2, 3)
+    )
+    facts = tuple(
+        RecipeFact(recipe_id, f"菜{recipe_id}", "dish")
+        for recipe_id in (1, 2, 3)
+    )
+    monkeypatch.setattr(data_review, "_build_review_context", lambda *args: args)
+    monkeypatch.setattr(
+        data_review, "generate_nutrition_occurrence_review", lambda _context: bundle
+    )
+    output = tmp_path / "queues"
+
+    data_review._write_nutrition_occurrence_review(
+        rows, facts, output, sample=2
+    )
+
+    expected_rows = {
+        "nutrition_usage_candidates.csv": [("1", "1-1"), ("2", "2-1")],
+        "nutrition_usage_exceptions.csv": [("1", "1-2"), ("2", "2-2")],
+        "nutrition_retention_candidates.csv": [("1", "1-3"), ("2", "2-3")],
+        "nutrition_retention_exceptions.csv": [("1", "1-4"), ("2", "2-4")],
+    }
+    for filename, expected in expected_rows.items():
+        with (output / filename).open(encoding="utf-8", newline="") as handle:
+            assert [
+                (row["recipe_id"], row["occurrence_id"])
+                for row in csv.DictReader(handle)
+            ] == expected
 
 
 @pytest.mark.parametrize(
