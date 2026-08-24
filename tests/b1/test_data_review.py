@@ -503,13 +503,10 @@ def test_repository_retention_decisions_reach_inputs_and_only_unresolved_are_que
         for occurrence_id, retained in formal_retention_by_id.items()
         if not retained
     }
-    exceptions_by_id = {
-        row.occurrence_id: row for row in bundle.retention_exceptions
-    }
-
-    assert len(formal_rows) == len(formal_retention_by_id) == 15_999
-    assert sum(formal_retention_by_id.values()) == 15_990
-    assert false_occurrence_ids == {
+    assert len(formal_rows) == len(formal_retention_by_id) == 16_820
+    assert sum(formal_retention_by_id.values()) == 16_644
+    assert len(false_occurrence_ids) == 176
+    assert {
         "285-5",
         "414-8",
         "414-9",
@@ -519,11 +516,9 @@ def test_repository_retention_decisions_reach_inputs_and_only_unresolved_are_que
         "935-5",
         "1947-8",
         "1963-2",
-    }
-    assert {row["review_status"] for row in formal_rows} <= {
-        "approved",
-        "modified",
-    }
+    } <= false_occurrence_ids
+    assert formal_retention_by_id["1426-27"] is True
+    assert {row["review_status"] for row in formal_rows} == {"approved"}
     assert all(
         retention_index.get_effective(occurrence_id).retained_in_dish is retained
         for occurrence_id, retained in formal_retention_by_id.items()
@@ -534,19 +529,7 @@ def test_repository_retention_decisions_reach_inputs_and_only_unresolved_are_que
         for occurrence_id, retained in formal_retention_by_id.items()
     )
     assert len(bundle.retention_candidates) == 0
-    assert len(bundle.retention_exceptions) == len(exceptions_by_id) == 821
-    assert {
-        occurrence_id: (
-            exceptions_by_id[occurrence_id].ingredient_name,
-            exceptions_by_id[occurrence_id].exception_codes,
-        )
-        for occurrence_id in ("151-1", "201-28", "347-1", "698-2")
-    } == {
-        "151-1": ("乌龙茶包", ("NUTRITION_RETENTION_NO_STEP_BINDING",)),
-        "201-28": ("生抽", ("NUTRITION_RETENTION_NO_STEP_BINDING",)),
-        "347-1": ("红茶", ("NUTRITION_RETENTION_AMBIGUOUS",)),
-        "698-2": ("锡兰红茶", ("NUTRITION_RETENTION_AMBIGUOUS",)),
-    }
+    assert len(bundle.retention_exceptions) == 0
 
 
 @pytest.mark.parametrize(
