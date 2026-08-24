@@ -16,6 +16,20 @@ from food_agent_v2.b1.nutrition_occurrence_review import (
 from food_agent_v2.b1.schemas import SourceRecipeRow
 
 
+def _create_symlink_or_skip_windows_privilege(
+    alias: Path, formal: Path, context: str
+) -> None:
+    try:
+        alias.symlink_to(formal)
+    except OSError as exc:
+        if os.name == "nt" and getattr(exc, "winerror", None) == 1314:
+            pytest.skip(
+                "Windows symlink privilege unavailable for "
+                f"{context} formal-target alias test: {exc}"
+            )
+        raise
+
+
 @pytest.mark.parametrize("kind", ("quantity-rules", "edible-fractions", "nutrition-occurrences"))
 def test_offline_review_kinds_are_registered(monkeypatch, tmp_path: Path, kind: str) -> None:
     monkeypatch.setattr(data_review, "load_verified_recipe_source", lambda *_args: ())
@@ -40,7 +54,9 @@ def test_offline_review_kinds_are_registered(monkeypatch, tmp_path: Path, kind: 
     ) == 0
 
 
-def test_nutrition_occurrences_route_is_offline_and_returns_four_counts(monkeypatch, tmp_path: Path) -> None:
+def _install_nutrition_occurrence_offline_sentinels(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     def fail_offline_dependency(*_args, **_kwargs):
         raise AssertionError(
             "offline nutrition-occurrences route called an LLM or loaded configuration"
@@ -66,27 +82,47 @@ def test_nutrition_occurrences_route_is_offline_and_returns_four_counts(monkeypa
     monkeypatch.setattr(
         data_review, "load_config", fail_offline_dependency, raising=False
     )
-    monkeypatch.setattr(data_review, "_build_review_context", lambda *_args: object(), raising=False)
-    monkeypatch.setattr(
-        data_review,
-        "generate_nutrition_occurrence_review",
-        lambda _context: object(),
-        raising=False,
-    )
-    monkeypatch.setattr(
-        data_review,
-        "write_nutrition_occurrence_review",
-        lambda _bundle, _output: {
-            "usage_candidates": 1, "usage_exceptions": 1,
-            "retention_candidates": 1, "retention_exceptions": 1,
-        },
-        raising=False,
-    )
 
-    assert data_review._write_nutrition_occurrence_review((), (), tmp_path, sample=None) == {
-        "usage_candidates": 1, "usage_exceptions": 1,
-        "retention_candidates": 1, "retention_exceptions": 1,
+
+def test_nutrition_occurrences_public_route_is_fully_offline(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _install_nutrition_occurrence_offline_sentinels(monkeypatch)
+    review_dir = tmp_path / "review"
+    _write_nutrition_review_fixture(review_dir)
+    rows = (
+        _source_row(1, "样本菜一", "姜丝5克"),
+        _source_row(2, "全局菜二", "姜10克"),
+        _source_row(3, "全局菜三", "蒜10克；蒜末5克"),
+    )
+    monkeypatch.setattr(data_review, "_REVIEW_DIR", review_dir)
+    monkeypatch.setattr(
+        data_review, "load_verified_recipe_source", lambda *_args: rows
+    )
+    monkeypatch.setattr(
+        data_review, "canonical_source_manifest", lambda: {"fixture": "offline"}
+    )
+    monkeypatch.setattr(data_review, "load_overrides", lambda *_args: {})
+    monkeypatch.setattr(
+        data_review,
+        "load_recipe_profile_enrichments",
+        lambda *_args, **_kwargs: {},
+    )
+    output = tmp_path / "nutrition-occurrences"
+
+    assert data_review.main(
+        ["--kind", "nutrition-occurrences", "--output", str(output)]
+    ) == 0
+
+    assert {path.name for path in output.iterdir()} == {
+        "nutrition_usage_candidates.csv",
+        "nutrition_usage_exceptions.csv",
+        "nutrition_retention_candidates.csv",
+        "nutrition_retention_exceptions.csv",
     }
+    queue_rows = _read_queue_rows(output)
+    assert queue_rows
+    assert {row["review_status"] for row in queue_rows} == {"pending"}
 
 
 def _prepare_nutrition_occurrence_cli(
@@ -182,15 +218,7 @@ def test_nutrition_occurrence_cli_refuses_symlink_to_formal_target_when_allowed(
     formal.parent.mkdir(parents=True)
     formal.write_text("preserve formal", encoding="utf-8")
     alias = tmp_path / "retention-cli-symlink.csv"
-    try:
-        alias.symlink_to(formal)
-    except OSError as exc:
-        if isinstance(exc, PermissionError) or getattr(exc, "winerror", None) == 1314:
-            pytest.skip(
-                "Windows symlink privilege unavailable for CLI formal-target alias test: "
-                f"{exc}"
-            )
-        raise
+    _create_symlink_or_skip_windows_privilege(alias, formal, "CLI")
     _prepare_nutrition_occurrence_cli(monkeypatch, tmp_path)
 
     with pytest.raises(ValueError, match="候选不得写入正式规则或决定文件"):
@@ -199,6 +227,22 @@ def test_nutrition_occurrence_cli_refuses_symlink_to_formal_target_when_allowed(
         )
 
     assert formal.read_text(encoding="utf-8") == "preserve formal"
+
+
+def test_cli_symlink_coverage_reraises_other_permission_errors(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    error = PermissionError("unrelated symlink permission failure")
+
+    def fail_symlink(*_args, **_kwargs):
+        raise error
+
+    monkeypatch.setattr(Path, "symlink_to", fail_symlink)
+
+    with pytest.raises(PermissionError, match="unrelated symlink permission failure"):
+        _create_symlink_or_skip_windows_privilege(
+            tmp_path / "alias.csv", tmp_path / "formal.csv", "CLI"
+        )
 
 
 def _write_nutrition_review_fixture(review_dir: Path) -> None:

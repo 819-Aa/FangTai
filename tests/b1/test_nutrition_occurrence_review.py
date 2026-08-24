@@ -28,6 +28,20 @@ from food_agent_v2.b1.nutrition_occurrence_review import (
 from food_agent_v2.core.paths import PROJECT_ROOT
 
 
+def _create_symlink_or_skip_windows_privilege(
+    alias: Path, formal: Path, context: str
+) -> None:
+    try:
+        alias.symlink_to(formal)
+    except OSError as exc:
+        if os.name == "nt" and getattr(exc, "winerror", None) == 1314:
+            pytest.skip(
+                "Windows symlink privilege unavailable for "
+                f"{context} formal-target alias test: {exc}"
+            )
+        raise
+
+
 def _context(
     *,
     name: str = "鸡肉",
@@ -427,21 +441,29 @@ def test_writer_refuses_symlink_to_formal_target_when_windows_privilege_allows(
     formal.parent.mkdir(parents=True)
     formal.write_text("preserve formal", encoding="utf-8")
     alias = tmp_path / "retention-review-symlink.csv"
-    try:
-        alias.symlink_to(formal)
-    except OSError as exc:
-        if isinstance(exc, PermissionError) or getattr(exc, "winerror", None) == 1314:
-            pytest.skip(
-                "Windows symlink privilege unavailable for formal-target alias test: "
-                f"{exc}"
-            )
-        raise
+    _create_symlink_or_skip_windows_privilege(alias, formal, "direct writer")
     monkeypatch.setattr(nutrition_occurrence_review, "PROJECT_ROOT", tmp_path)
 
     with pytest.raises(ValueError, match="候选不得写入正式规则或决定文件"):
         write_nutrition_occurrence_review(_bundle_fixture(), alias)
 
     assert formal.read_text(encoding="utf-8") == "preserve formal"
+
+
+def test_writer_symlink_coverage_reraises_other_permission_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    error = PermissionError("unrelated symlink permission failure")
+
+    def fail_symlink(*_args, **_kwargs):
+        raise error
+
+    monkeypatch.setattr(Path, "symlink_to", fail_symlink)
+
+    with pytest.raises(PermissionError, match="unrelated symlink permission failure"):
+        _create_symlink_or_skip_windows_privilege(
+            tmp_path / "alias.csv", tmp_path / "formal.csv", "direct writer"
+        )
 
 
 def test_writer_rejects_invalid_status_duplicate_and_cross_queue_before_replace(
