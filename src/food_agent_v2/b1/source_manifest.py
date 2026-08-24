@@ -41,6 +41,7 @@ _BUILD_INPUT_PATHS = (
     "data/review/ingredient_edible_fraction_rules.csv",
     "data/review/ingredient_quantity_decisions.csv",
     "data/review/ingredient_nutrition_usage_decisions.csv",
+    "data/review/ingredient_nutrition_retention_decisions.csv",
     "data/review/ingredient_edible_fraction_decisions.csv",
     "data/review/ingredient_nutrition_crosswalk.jsonl",
     "data/review/recipe_time_graph_decisions.csv",

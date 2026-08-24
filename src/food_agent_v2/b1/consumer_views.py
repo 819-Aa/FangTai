@@ -901,7 +901,8 @@ def _nutrition_inputs(
     occurrences: list[IngredientOccurrenceFact],
     identities: dict[int, IngredientIdentityFact],
     steps: tuple[StructuredStep, ...],
-    decisions: NutritionUsageDecisionIndex,
+    usage_decisions: NutritionUsageDecisionIndex,
+    retention_decisions: NutritionRetentionDecisionIndex,
 ) -> tuple[NutritionOccurrenceInput, ...]:
     inputs: list[NutritionOccurrenceInput] = []
     for occurrence in occurrences:
