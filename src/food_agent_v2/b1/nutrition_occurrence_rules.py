@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
@@ -13,6 +14,7 @@ if TYPE_CHECKING:
     from food_agent_v2.b1.consumer_views import (
         IngredientIdentityFact,
         IngredientOccurrenceFact,
+        RecipeNutritionInputView,
         StructuredStep,
     )
 
@@ -102,6 +104,15 @@ class NutritionRetentionResolution:
     requires_review: bool
 
 
+@dataclass(frozen=True)
+class NutritionOccurrenceMetadata:
+    occurrence_id: str
+    recipe_id: int
+    ingredient_id: int
+    ingredient_name: str
+    normalized_form: str
+
+
 class NutritionUsageDecisionIndex:
     """Usage decisions whose approved/modified rows are effective."""
 
@@ -127,7 +138,9 @@ class NutritionRetentionDecisionIndex:
 
 
 def load_nutrition_usage_decisions(
-    path: Path, *, current_occurrence_ids: set[str] | None = None
+    path: Path,
+    *,
+    current_occurrences: Mapping[str, NutritionOccurrenceMetadata] | None = None,
 ) -> NutritionUsageDecisionIndex:
     """Load the strict usage decision sheet, retaining inactive rows for audit."""
     decisions = _load_decisions(
@@ -136,12 +149,14 @@ def load_nutrition_usage_decisions(
         kind="营养用途",
         parser=_parse_usage_decision_row,
     )
-    _ensure_known_occurrences(decisions, current_occurrence_ids)
+    _ensure_current_occurrences(decisions, current_occurrences)
     return NutritionUsageDecisionIndex(decisions)
 
 
 def load_nutrition_retention_decisions(
-    path: Path, *, current_occurrence_ids: set[str] | None = None
+    path: Path,
+    *,
+    current_occurrences: Mapping[str, NutritionOccurrenceMetadata] | None = None,
 ) -> NutritionRetentionDecisionIndex:
     """Load the strict retention decision sheet, retaining inactive rows for audit."""
     decisions = _load_decisions(
@@ -150,8 +165,29 @@ def load_nutrition_retention_decisions(
         kind="营养留存",
         parser=_parse_retention_decision_row,
     )
-    _ensure_known_occurrences(decisions, current_occurrence_ids)
+    _ensure_current_occurrences(decisions, current_occurrences)
     return NutritionRetentionDecisionIndex(decisions)
+
+
+def nutrition_occurrence_metadata_from_views(
+    views: tuple[RecipeNutritionInputView, ...],
+) -> dict[str, NutritionOccurrenceMetadata]:
+    """Flatten the final nutrition input views into their formal-decision authority."""
+    current: dict[str, NutritionOccurrenceMetadata] = {}
+    for view in views:
+        for ingredient in view.ingredients:
+            if ingredient.occurrence_id in current:
+                raise ValueError(
+                    f"最终营养输入存在重复 occurrence_id: {ingredient.occurrence_id}"
+                )
+            current[ingredient.occurrence_id] = NutritionOccurrenceMetadata(
+                occurrence_id=ingredient.occurrence_id,
+                recipe_id=view.recipe_id,
+                ingredient_id=ingredient.ingredient_id,
+                ingredient_name=ingredient.ingredient_name,
+                normalized_form=ingredient.normalized_form,
+            )
+    return current
 
 
 def classify_fuzzy_token(
@@ -253,16 +289,36 @@ def _load_decisions(path: Path, *, fields, kind: str, parser):
         return tuple(parser(row, line_number) for line_number, row in enumerate(reader, start=2))
 
 
-def _ensure_known_occurrences(decisions, current_occurrence_ids: set[str] | None) -> None:
-    if current_occurrence_ids is None:
+def _ensure_current_occurrences(
+    decisions,
+    current_occurrences: Mapping[str, NutritionOccurrenceMetadata] | None,
+) -> None:
+    if current_occurrences is None:
         return
     unknown = sorted(
         decision.occurrence_id
         for decision in decisions
-        if decision.occurrence_id not in current_occurrence_ids
+        if decision.occurrence_id not in current_occurrences
     )
     if unknown:
         raise ValueError(f"未知 occurrence_id: {unknown[:5]}")
+    mismatched = sorted(
+        decision.occurrence_id
+        for decision in decisions
+        if not _metadata_matches(decision, current_occurrences[decision.occurrence_id])
+    )
+    if mismatched:
+        raise ValueError(f"occurrence 元数据不一致: {mismatched[:5]}")
+
+
+def _metadata_matches(decision, current: NutritionOccurrenceMetadata) -> bool:
+    return (
+        decision.occurrence_id == current.occurrence_id
+        and decision.recipe_id == current.recipe_id
+        and decision.ingredient_id == current.ingredient_id
+        and decision.ingredient_name == current.ingredient_name
+        and decision.normalized_form == current.normalized_form
+    )
 
 
 def _decision_matches(decision, occurrence, identity) -> bool:

@@ -18,6 +18,7 @@ from food_agent_v2.b1.consumer_views import (
     build_consumer_views,
 )
 from food_agent_v2.b1.nutrition_occurrence_rules import (
+    NutritionOccurrenceMetadata,
     load_nutrition_retention_decisions,
     load_nutrition_usage_decisions,
 )
@@ -67,8 +68,11 @@ class TestFixedSource:
             "1-1,1,10,鸡肉,,main,approved\n",
             encoding="utf-8",
         )
+        current_occurrences = {
+            "1-1": NutritionOccurrenceMetadata("1-1", 1, 10, "鸡肉", "")
+        }
         usage_decisions = load_nutrition_usage_decisions(
-            decision_path, current_occurrence_ids={"1-1"}
+            decision_path, current_occurrences=current_occurrences
         )
         retention_path = tmp_path / "nutrition-retention.csv"
         retention_path.write_text(
@@ -77,7 +81,7 @@ class TestFixedSource:
             encoding="utf-8",
         )
         retention_decisions = load_nutrition_retention_decisions(
-            retention_path, current_occurrence_ids={"1-1"}
+            retention_path, current_occurrences=current_occurrences
         )
 
         views = build_consumer_views(

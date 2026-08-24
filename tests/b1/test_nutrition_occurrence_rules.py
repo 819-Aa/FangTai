@@ -9,6 +9,7 @@ from food_agent_v2.b1.consumer_views import (
     StructuredStep,
 )
 from food_agent_v2.b1.nutrition_occurrence_rules import (
+    NutritionOccurrenceMetadata,
     NutritionRetentionDecision,
     NutritionRetentionDecisionIndex,
     NutritionRetentionResolution,
@@ -161,7 +162,12 @@ def test_decision_loaders_reject_unknown_occurrences_for_every_status(loader, he
     path = tmp_path / "decisions.csv"
     path.write_text(f"{header}\n{row}\n", encoding="utf-8")
     with pytest.raises(ValueError, match="未知 occurrence_id"):
-        loader(path, current_occurrence_ids={"1-1"})
+        loader(
+            path,
+            current_occurrences={
+                "1-1": NutritionOccurrenceMetadata("1-1", 1, 10, "盐", "")
+            },
+        )
 
 
 @pytest.mark.parametrize(

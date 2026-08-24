@@ -31,6 +31,7 @@ from food_agent_v2.b1.ingredient_identity import rebuild_ingredient_identities
 from food_agent_v2.b1.nutrition_occurrence_rules import (
     load_nutrition_retention_decisions,
     load_nutrition_usage_decisions,
+    nutrition_occurrence_metadata_from_views,
 )
 from food_agent_v2.b1.quality_gates import (
     artifact_entry,
@@ -332,20 +333,30 @@ def build_fixed_data_staging(
         tuple(classifications),
         occurrence_facts_from_records(_read_jsonl(t06 / "ingredient_occurrences.jsonl")),
     )
+    consumer_build = BuildIdentity(resolved_build_id, manifest_hash)
+    decision_free_views = build_consumer_views(
+        build=consumer_build,
+        recipes=recipe_facts,
+        occurrences=occurrence_facts,
+        identities=identities,
+    )
+    current_nutrition_occurrences = nutrition_occurrence_metadata_from_views(
+        decision_free_views.nutrition_views
+    )
     nutrition_usage_decisions = load_nutrition_usage_decisions(
         NUTRITION_USAGE_DECISIONS,
-        current_occurrence_ids={item.occurrence_id for item in occurrence_facts},
+        current_occurrences=current_nutrition_occurrences,
     )
     nutrition_retention_decisions = load_nutrition_retention_decisions(
         NUTRITION_RETENTION_DECISIONS,
-        current_occurrence_ids={item.occurrence_id for item in occurrence_facts},
+        current_occurrences=current_nutrition_occurrences,
     )
     edible_fraction_decisions = load_edible_fraction_decisions(
         EDIBLE_FRACTION_DECISIONS,
         current_occurrence_ids={item.occurrence_id for item in occurrence_facts},
     )
     views = build_consumer_views(
-        build=BuildIdentity(resolved_build_id, manifest_hash),
+        build=consumer_build,
         recipes=recipe_facts,
         occurrences=occurrence_facts,
         identities=identities,

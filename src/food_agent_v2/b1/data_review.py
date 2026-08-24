@@ -39,6 +39,7 @@ from food_agent_v2.b1.nutrition_occurrence_review import (
 from food_agent_v2.b1.nutrition_occurrence_rules import (
     load_nutrition_retention_decisions,
     load_nutrition_usage_decisions,
+    nutrition_occurrence_metadata_from_views,
 )
 from food_agent_v2.b1.nutrition_reference import (
     load_nutrition_references,
@@ -602,19 +603,29 @@ def _build_review_context(rows, facts) -> NutritionOccurrenceReviewContext:
             recipe_names={fact.recipe_id: fact.name for fact in facts},
             decisions=condition_defaults,
         )
+        review_build = BuildIdentity(
+            UUID(int=0),
+            source_manifest_hash(canonical_source_manifest()),
+        )
+        decision_free_views = build_consumer_views(
+            build=review_build,
+            recipes=facts,
+            occurrences=occurrences,
+            identities=identities,
+        )
+        current_nutrition_occurrences = nutrition_occurrence_metadata_from_views(
+            decision_free_views.nutrition_views
+        )
         usage_decisions = load_nutrition_usage_decisions(
             _REVIEW_DIR / "ingredient_nutrition_usage_decisions.csv",
-            current_occurrence_ids={item.occurrence_id for item in occurrences},
+            current_occurrences=current_nutrition_occurrences,
         )
         retention_decisions = load_nutrition_retention_decisions(
             _REVIEW_DIR / "ingredient_nutrition_retention_decisions.csv",
-            current_occurrence_ids={item.occurrence_id for item in occurrences},
+            current_occurrences=current_nutrition_occurrences,
         )
         views = build_consumer_views(
-            build=BuildIdentity(
-                UUID(int=0),
-                source_manifest_hash(canonical_source_manifest()),
-            ),
+            build=review_build,
             recipes=facts,
             occurrences=occurrences,
             identities=identities,
