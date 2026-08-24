@@ -17,7 +17,10 @@ from food_agent_v2.b1.consumer_views import (
     RecipeFact,
     build_consumer_views,
 )
-from food_agent_v2.b1.nutrition_occurrence_rules import load_nutrition_usage_decisions
+from food_agent_v2.b1.nutrition_occurrence_rules import (
+    load_nutrition_retention_decisions,
+    load_nutrition_usage_decisions,
+)
 from food_agent_v2.b1.schemas import (
     SOURCE_BYTE_SIZE,
     SOURCE_ENCODING,
@@ -55,17 +58,26 @@ def canonical_manifest() -> SourceManifest:
 
 
 class TestFixedSource:
-    def test_nonempty_usage_decision_reaches_fixed_consumer_projection(
+    def test_nonempty_nutrition_decisions_reach_fixed_consumer_projection(
         self, tmp_path: Path
     ) -> None:
         decision_path = tmp_path / "nutrition-usage.csv"
         decision_path.write_text(
-            "occurrence_id,recipe_id,ingredient_id,ingredient_name,normalized_form,usage_code,retained_in_dish,review_status\n"
-            "1-1,1,10,鸡肉,,main,true,approved\n",
+            "occurrence_id,recipe_id,ingredient_id,ingredient_name,normalized_form,usage_code,review_status\n"
+            "1-1,1,10,鸡肉,,main,approved\n",
             encoding="utf-8",
         )
-        decisions = load_nutrition_usage_decisions(
+        usage_decisions = load_nutrition_usage_decisions(
             decision_path, current_occurrence_ids={"1-1"}
+        )
+        retention_path = tmp_path / "nutrition-retention.csv"
+        retention_path.write_text(
+            "occurrence_id,recipe_id,ingredient_id,ingredient_name,normalized_form,retained_in_dish,review_status\n"
+            "1-1,1,10,鸡肉,,true,approved\n",
+            encoding="utf-8",
+        )
+        retention_decisions = load_nutrition_retention_decisions(
+            retention_path, current_occurrence_ids={"1-1"}
         )
 
         views = build_consumer_views(
@@ -75,7 +87,8 @@ class TestFixedSource:
                 IngredientOccurrenceFact("1-1", 1, "鸡肉", "鸡肉", 10, "edible"),
             ),
             identities=(IngredientIdentityFact(10, "鸡肉", 1, category="肉禽"),),
-            nutrition_usage_decisions=decisions,
+            nutrition_usage_decisions=usage_decisions,
+            nutrition_retention_decisions=retention_decisions,
         )
 
         nutrition_input = views.nutrition_views[0].ingredients[0]
@@ -93,6 +106,7 @@ class TestFixedSource:
         manifest = canonical_build_input_manifest()
         paths = {entry["relative_path"] for entry in manifest["inputs"]}
         assert "data/review/ingredient_nutrition_usage_decisions.csv" in paths
+        assert "data/review/ingredient_nutrition_retention_decisions.csv" in paths
         assert "data/review/ingredient_edible_fraction_decisions.csv" in paths
 
         for relative_path in paths:
@@ -108,6 +122,13 @@ class TestFixedSource:
         usage_changed = source_manifest_hash(source_manifest_module.canonical_build_input_manifest())
         assert usage_changed != baseline
 
+        retention_path = tmp_path / "data/review/ingredient_nutrition_retention_decisions.csv"
+        retention_path.write_bytes(retention_path.read_bytes() + b"\n")
+        retention_changed = source_manifest_hash(
+            source_manifest_module.canonical_build_input_manifest()
+        )
+        assert retention_changed != usage_changed
+
         edible_path = tmp_path / "data/review/ingredient_edible_fraction_decisions.csv"
         edible_path.write_bytes(edible_path.read_bytes() + b"\n")
         edible_changed = source_manifest_hash(source_manifest_module.canonical_build_input_manifest())
@@ -118,6 +139,7 @@ class TestFixedSource:
         paths = {entry["relative_path"] for entry in manifest["inputs"]}
 
         assert "data/review/recipe_profile_enrichment.jsonl" in paths
+        assert "data/review/ingredient_nutrition_retention_decisions.csv" in paths
         assert "data/review/ingredient_quantity_decisions.csv" in paths
         assert "data/review/ingredient_nutrition_crosswalk.jsonl" in paths
         assert "data/review/recipe_time_graph_decisions.csv" in paths

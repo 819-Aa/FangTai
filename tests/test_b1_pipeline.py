@@ -154,7 +154,7 @@ class TestQualityGates:
             "rag_documents": "2.0.0",
             "nutrition_features": "2.0.0",
             "step_tasks": "2.0.0",
-            "recipe_nutrition_input_views": "2.0.0",
+            "recipe_nutrition_input_views": "2.1.0",
             "recipe_health_views": "1.0.0",
         }
 

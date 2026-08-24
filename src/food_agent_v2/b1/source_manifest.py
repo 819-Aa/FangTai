@@ -48,6 +48,18 @@ _BUILD_INPUT_PATHS = (
     "data/reference/usda_fooddata_central_manifest.json",
 )
 
+_ARTIFACT_SCHEMA_VERSIONS = {
+    "rag_documents": "2.0.0",
+    "nutrition_features": "2.0.0",
+    "step_tasks": "2.0.0",
+    "recipe_nutrition_input_views": "2.1.0",
+}
+
+
+def artifact_schema_version(artifact_name: str) -> str:
+    """Return the canonical schema version for a declared runtime artifact."""
+    return _ARTIFACT_SCHEMA_VERSIONS.get(artifact_name, "1.0.0")
+
 
 def canonical_source_manifest() -> SourceManifest:
     """批准固定源的规范 SourceManifest（单一来源）。"""

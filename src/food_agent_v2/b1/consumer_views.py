@@ -17,9 +17,11 @@ from uuid import UUID
 
 from food_agent_v2.b1.nutrition_occurrence_rules import (
     FuzzyTokenClass,
+    NutritionRetentionDecisionIndex,
     NutritionUsageDecisionIndex,
     UsageCode,
     classify_fuzzy_token,
+    derive_nutrition_retention,
     derive_nutrition_usage,
 )
 from food_agent_v2.b1.review_inputs import RecipeProfileEnrichment
@@ -159,7 +161,16 @@ class NutritionOccurrenceInput:
     usage_code: UsageCode | None = None
     fuzzy_token_class: FuzzyTokenClass | None = None
     retained_in_dish: bool | None = None
-    requires_review: bool = False
+    usage_requires_review: bool = False
+    retention_requires_review: bool = False
+    requires_review: bool = field(init=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "requires_review",
+            self.usage_requires_review or self.retention_requires_review,
+        )
 
 
 @dataclass(frozen=True)
@@ -637,12 +648,16 @@ def build_consumer_views(
     occurrences: tuple[IngredientOccurrenceFact, ...],
     identities: tuple[IngredientIdentityFact, ...],
     nutrition_usage_decisions: NutritionUsageDecisionIndex | None = None,
+    nutrition_retention_decisions: NutritionRetentionDecisionIndex | None = None,
 ) -> ConsumerViewSet:
     """投影同构建的 B4/B5/B6/C1 视图；仅发布 eligible dish。"""
     _validate_build_identity(build)
     recipe_by_id = _unique_by(recipes, "recipe_id")
     identity_by_id = _unique_by(identities, "ingredient_id")
     usage_decisions = nutrition_usage_decisions or NutritionUsageDecisionIndex(())
+    retention_decisions = (
+        nutrition_retention_decisions or NutritionRetentionDecisionIndex(())
+    )
     _unique_by(occurrences, "occurrence_id")
 
     occurrences_by_recipe: dict[int, list[IngredientOccurrenceFact]] = {
@@ -752,6 +767,7 @@ def build_consumer_views(
                     identity_by_id,
                     steps,
                     usage_decisions,
+                    retention_decisions,
                 ),
             )
         )
@@ -892,11 +908,17 @@ def _nutrition_inputs(
         if occurrence.ingredient_id is None:
             continue
         identity = identities[occurrence.ingredient_id]
-        resolution = derive_nutrition_usage(
+        usage_resolution = derive_nutrition_usage(
             occurrence=occurrence,
             identity=identity,
             steps=steps,
-            decisions=decisions,
+            decisions=usage_decisions,
+        )
+        retention_resolution = derive_nutrition_retention(
+            occurrence=occurrence,
+            identity=identity,
+            steps=steps,
+            decisions=retention_decisions,
         )
         inputs.append(
             NutritionOccurrenceInput(
@@ -908,12 +930,13 @@ def _nutrition_inputs(
                 quantity_raw=occurrence.quantity_raw,
                 unit_raw=occurrence.unit_raw,
                 quantity_status=_quantity_status(occurrence.quantity_raw),
-                usage_code=resolution.usage_code,
+                usage_code=usage_resolution.usage_code,
                 fuzzy_token_class=classify_fuzzy_token(
                     occurrence.quantity_raw, occurrence.source_fragment
                 ),
-                retained_in_dish=resolution.retained_in_dish,
-                requires_review=resolution.requires_review,
+                retained_in_dish=retention_resolution.retained_in_dish,
+                usage_requires_review=usage_resolution.requires_review,
+                retention_requires_review=retention_resolution.requires_review,
             )
         )
     return tuple(inputs)

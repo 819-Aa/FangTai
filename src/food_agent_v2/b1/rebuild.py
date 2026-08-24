@@ -28,7 +28,10 @@ from food_agent_v2.b1.health_relation_builder import (
     run_health_relation_stage as build_health_relation_stage,
 )
 from food_agent_v2.b1.ingredient_identity import rebuild_ingredient_identities
-from food_agent_v2.b1.nutrition_occurrence_rules import load_nutrition_usage_decisions
+from food_agent_v2.b1.nutrition_occurrence_rules import (
+    load_nutrition_retention_decisions,
+    load_nutrition_usage_decisions,
+)
 from food_agent_v2.b1.quality_gates import (
     artifact_entry,
     build_artifact_entries,
@@ -47,6 +50,7 @@ from food_agent_v2.b1.review_inputs import (
     load_recipe_profile_enrichments,
 )
 from food_agent_v2.b1.source_manifest import (
+    artifact_schema_version,
     canonical_build_input_manifest,
     canonical_source_manifest,
     load_verified_recipe_source,
@@ -55,16 +59,15 @@ from food_agent_v2.b1.user_cleaning import clean_one, load_raw_users
 from food_agent_v2.contracts.build import BuildManifest, QualityGateReport, source_manifest_hash
 from food_agent_v2.core.paths import PROJECT_ROOT, RECIPES_RAW, USERS_RAW
 
-V2_RUNTIME_ARTIFACTS = frozenset(
-    {"rag_documents", "nutrition_features", "step_tasks", "recipe_nutrition_input_views"}
-)
-
 CLASSIFICATION_OVERRIDES = PROJECT_ROOT / "data" / "review" / "recipe_classification_overrides.csv"
 INGREDIENT_OVERRIDES = PROJECT_ROOT / "data" / "review" / "ingredient_identity_overrides.csv"
 HEALTH_DECISIONS = PROJECT_ROOT / "data" / "review" / "health_relation_decisions.csv"
 RECIPE_PROFILE_ENRICHMENTS = PROJECT_ROOT / "data" / "review" / "recipe_profile_enrichment.jsonl"
 NUTRITION_USAGE_DECISIONS = (
     PROJECT_ROOT / "data" / "review" / "ingredient_nutrition_usage_decisions.csv"
+)
+NUTRITION_RETENTION_DECISIONS = (
+    PROJECT_ROOT / "data" / "review" / "ingredient_nutrition_retention_decisions.csv"
 )
 EDIBLE_FRACTION_DECISIONS = (
     PROJECT_ROOT / "data" / "review" / "ingredient_edible_fraction_decisions.csv"
@@ -84,11 +87,8 @@ class DataPipelineError(RuntimeError):
 
 
 def artifact_schema_versions(artifacts: dict[str, object]) -> dict[str, str]:
-    """仅四个重建的运行时 Artifact 升级为 2.0.0。"""
-    return {
-        name: "2.0.0" if name in V2_RUNTIME_ARTIFACTS else "1.0.0"
-        for name in artifacts
-    }
+    """Use the shared runtime schema matrix for every declared artifact."""
+    return {name: artifact_schema_version(name) for name in artifacts}
 
 
 def _prepare_empty_staging(staging_dir: Path) -> Path:
@@ -336,6 +336,10 @@ def build_fixed_data_staging(
         NUTRITION_USAGE_DECISIONS,
         current_occurrence_ids={item.occurrence_id for item in occurrence_facts},
     )
+    nutrition_retention_decisions = load_nutrition_retention_decisions(
+        NUTRITION_RETENTION_DECISIONS,
+        current_occurrence_ids={item.occurrence_id for item in occurrence_facts},
+    )
     edible_fraction_decisions = load_edible_fraction_decisions(
         EDIBLE_FRACTION_DECISIONS,
         current_occurrence_ids={item.occurrence_id for item in occurrence_facts},
@@ -346,6 +350,7 @@ def build_fixed_data_staging(
         occurrences=occurrence_facts,
         identities=identities,
         nutrition_usage_decisions=nutrition_usage_decisions,
+        nutrition_retention_decisions=nutrition_retention_decisions,
     )
     downstream_report = publish_downstream_build_views(
         views,

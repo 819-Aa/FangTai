@@ -31,7 +31,10 @@ from food_agent_v2.b1.food_origin_review import (
     write_food_origin_candidates,
 )
 from food_agent_v2.b1.ingredient_identity import rebuild_ingredient_identities
-from food_agent_v2.b1.nutrition_occurrence_rules import load_nutrition_usage_decisions
+from food_agent_v2.b1.nutrition_occurrence_rules import (
+    load_nutrition_retention_decisions,
+    load_nutrition_usage_decisions,
+)
 from food_agent_v2.b1.nutrition_reference import (
     load_nutrition_references,
     nutrition_form_from_occurrence,
@@ -578,6 +581,10 @@ def _build_review_views(rows, facts):
             _REVIEW_DIR / "ingredient_nutrition_usage_decisions.csv",
             current_occurrence_ids={item.occurrence_id for item in occurrences},
         )
+        retention_decisions = load_nutrition_retention_decisions(
+            _REVIEW_DIR / "ingredient_nutrition_retention_decisions.csv",
+            current_occurrence_ids={item.occurrence_id for item in occurrences},
+        )
         views = build_consumer_views(
             build=BuildIdentity(
                 UUID(int=0),
@@ -587,5 +594,6 @@ def _build_review_views(rows, facts):
             occurrences=occurrences,
             identities=identities,
             nutrition_usage_decisions=usage_decisions,
+            nutrition_retention_decisions=retention_decisions,
         )
     return views

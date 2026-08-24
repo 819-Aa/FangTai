@@ -17,6 +17,8 @@ from food_agent_v2.b1.consumer_views import (
 )
 from food_agent_v2.b1.ingredient_identity import rebuild_ingredient_identities
 from food_agent_v2.b1.nutrition_occurrence_rules import (
+    NutritionRetentionDecision,
+    NutritionRetentionDecisionIndex,
     NutritionUsageDecision,
     NutritionUsageDecisionIndex,
 )
@@ -110,7 +112,10 @@ def test_all_consumer_views_share_build_recipe_and_ingredient_identity() -> None
     assert views.nutrition_views[0].ingredients[0].normalized_form == "丝"
     assert views.nutrition_views[0].ingredients[0].usage_code == "seasoning"
     assert views.nutrition_views[0].ingredients[0].fuzzy_token_class is None
-    assert views.nutrition_views[0].ingredients[0].retained_in_dish is True
+    assert views.nutrition_views[0].ingredients[0].retained_in_dish is None
+    assert views.nutrition_views[0].ingredients[0].usage_requires_review is False
+    assert views.nutrition_views[0].ingredients[0].retention_requires_review is True
+    assert views.nutrition_views[0].ingredients[0].requires_review is True
     assert views.retrieval_views[0].ingredient_ids == (10, 20)
     assert views.step_views[0].ingredient_ids == (10, 20)
     assert views.step_views[0].steps[0].bound_occurrence_ids == ("1-1", "1-2")
@@ -221,20 +226,25 @@ def test_ambiguous_nutrition_usage_is_published_as_review_required() -> None:
     assert ingredient.requires_review is True
 
 
-def test_nutrition_usage_decision_is_applied_through_consumer_projection() -> None:
+def test_nutrition_decision_dimensions_are_applied_through_consumer_projection() -> None:
     views = build_consumer_views(
         build=BUILD,
         recipes=(RecipeFact(1, "测试菜", "dish", ("加入鸡肉",)),),
         occurrences=(IngredientOccurrenceFact("1-1", 1, "鸡肉块", "鸡肉", 10, "edible", form="块"),),
         identities=(IngredientIdentityFact(10, "鸡肉", 1, category="肉禽"),),
         nutrition_usage_decisions=NutritionUsageDecisionIndex(
-            (NutritionUsageDecision("1-1", 1, 10, "鸡肉", "块", "main", True, "approved"),)
+            (NutritionUsageDecision("1-1", 1, 10, "鸡肉", "块", "main", "approved"),)
+        ),
+        nutrition_retention_decisions=NutritionRetentionDecisionIndex(
+            (NutritionRetentionDecision("1-1", 1, 10, "鸡肉", "块", True, "approved"),)
         ),
     )
 
     ingredient = views.nutrition_views[0].ingredients[0]
     assert ingredient.usage_code == "main"
     assert ingredient.retained_in_dish is True
+    assert ingredient.usage_requires_review is False
+    assert ingredient.retention_requires_review is False
     assert ingredient.requires_review is False
 
 
@@ -252,8 +262,8 @@ def test_shared_step_does_not_leak_fuzzy_evidence_between_occurrences() -> None:
         ),
         nutrition_usage_decisions=NutritionUsageDecisionIndex(
             (
-                NutritionUsageDecision("1-1", 1, 10, "盐", "", "seasoning", True, "approved"),
-                NutritionUsageDecision("1-2", 1, 20, "面粉", "", "main", True, "approved"),
+                NutritionUsageDecision("1-1", 1, 10, "盐", "", "seasoning", "approved"),
+                NutritionUsageDecision("1-2", 1, 20, "面粉", "", "main", "approved"),
             )
         ),
     )

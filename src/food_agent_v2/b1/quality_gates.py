@@ -17,6 +17,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from food_agent_v2.b1.health_relation_builder import ALLOWED_CONSTRAINT_CODES
+from food_agent_v2.b1.source_manifest import artifact_schema_version
 from food_agent_v2.b1.source_manifest import (
     canonical_build_input_manifest,
     canonical_source_manifest,
@@ -662,12 +663,7 @@ def verify_build_manifest(
     invalid_schema_versions = {
         name: version
         for name, version in manifest.schema_versions.items()
-        if version
-        != (
-            "2.0.0"
-            if name in {"rag_documents", "nutrition_features", "step_tasks"}
-            else "1.0.0"
-        )
+        if version != artifact_schema_version(name)
     }
     if invalid_schema_versions:
         _fail("SCHEMA_VERSION_MISMATCH", str(invalid_schema_versions))
