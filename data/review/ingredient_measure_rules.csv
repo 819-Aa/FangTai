@@ -1,1 +1,8 @@
 schema_version,rule_id,rule_type,ingredient_id,ingredient_name,normalized_form,normalized_unit,usage_code,fuzzy_token_class,to_grams,mass_density_g_per_ml,review_status
+2.0.0,density-111-default,density,111,纯净水,,毫升,,,,1.000,approved
+2.0.0,density-72-default,density,72,醋,,毫升,,,,1.000,approved
+2.0.0,density-122-default,density,122,牛奶,,毫升,,,,1.020,approved
+2.0.0,density-154-default,density,154,柠檬汁,,毫升,,,,1.020,approved
+2.0.0,density-155-default,density,155,色拉油,,毫升,,,,0.920,approved
+2.0.0,density-20-default,density,20,橄榄油,,毫升,,,,0.913,approved
+2.0.0,density-996-default,density,996,烧烤汁,,毫升,,,,1.130,approved
