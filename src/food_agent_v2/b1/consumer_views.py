@@ -442,13 +442,10 @@ def publish_downstream_build_views(
     *,
     time_graph_cache=None,
     time_graph_generator_model_id: str | None = None,
-    edible_fraction_decisions=None,
     time_graph_verifier_model_id: str | None = None,
+    edible_fraction_decisions=None,
 ) -> dict:
     """运行只接收结构化视图的 B5/B6/C1 构建器并发布派生产物。"""
-    from food_agent_v2.b1.nutrition_feature_builder import (
-        build_nutrition_features_from_views,
-    )
     from food_agent_v2.b1.nutrition_reference import (
         load_nutrition_crosswalk,
         load_nutrition_references,
@@ -534,23 +531,14 @@ def publish_downstream_build_views(
         review_dir / "ingredient_nutrition_crosswalk.jsonl",
         nutrition_references,
     )
-    if edible_fraction_decisions is None:
-        nutrition_features, nutrition_report = build_nutrition_features_from_views(
-            views.nutrition_views,
-            measure_rules=measure_rules,
-            quantity_decisions=quantity_decisions,
-            edible_fractions=edible_fractions,
-            nutrition_crosswalk=nutrition_crosswalk,
-        )
-    else:
-        nutrition_features, nutrition_report = _build_nutrition_features_with_decisions(
-            views.nutrition_views,
-            measure_rules=measure_rules,
-            quantity_decisions=quantity_decisions,
-            edible_fractions=edible_fractions,
-            edible_fraction_decisions=edible_fraction_decisions,
-            nutrition_crosswalk=nutrition_crosswalk,
-        )
+    nutrition_features, nutrition_report = _build_nutrition_features_with_decisions(
+        views.nutrition_views,
+        measure_rules=measure_rules,
+        quantity_decisions=quantity_decisions,
+        edible_fractions=edible_fractions,
+        edible_fraction_decisions=edible_fraction_decisions,
+        nutrition_crosswalk=nutrition_crosswalk,
+    )
     rag_documents, rag_report = build_rag_documents_from_views(views.retrieval_views)
 
     base_report = publish_consumer_views(views, staging)
@@ -594,10 +582,13 @@ def _build_nutrition_features_with_decisions(
     measure_rules,
     quantity_decisions,
     edible_fractions,
-    edible_fraction_decisions,
+    edible_fraction_decisions=None,
     nutrition_crosswalk,
 ):
+    from food_agent_v2.b1.edible_fraction_review import EdibleFractionDecisionIndex
     from food_agent_v2.b1.nutrition_calculator import calculate_raw_recipe_nutrition
+
+    decisions = edible_fraction_decisions or EdibleFractionDecisionIndex(())
 
     features = [
         calculate_raw_recipe_nutrition(
@@ -605,7 +596,7 @@ def _build_nutrition_features_with_decisions(
             measure_rules=measure_rules,
             quantity_decisions=quantity_decisions,
             edible_fractions=edible_fractions,
-            edible_fraction_decisions=edible_fraction_decisions,
+            edible_fraction_decisions=decisions,
             nutrition_crosswalk=nutrition_crosswalk,
         )
         for view in views

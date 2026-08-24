@@ -63,6 +63,7 @@ class NutritionUsageDecisionIndex:
 
     def __init__(self, decisions: tuple[NutritionUsageDecision, ...]) -> None:
         effective_by_occurrence: dict[str, NutritionUsageDecision] = {}
+        seen_occurrence_ids: set[str] = set()
         for decision in decisions:
             if not decision.occurrence_id:
                 raise ValueError("occurrence_id 不能为空")
@@ -74,9 +75,10 @@ class NutritionUsageDecisionIndex:
                 raise ValueError("usage_code 越出封闭词表")
             if decision.review_status not in _REVIEW_STATUSES:
                 raise ValueError("review_status 越出封闭词表")
+            if decision.occurrence_id in seen_occurrence_ids:
+                raise ValueError("同一 occurrence 存在重复营养用途决定")
+            seen_occurrence_ids.add(decision.occurrence_id)
             if decision.review_status in _ACTIVE_REVIEW_STATUSES:
-                if decision.occurrence_id in effective_by_occurrence:
-                    raise ValueError("同一 occurrence 存在重复有效营养用途决定")
                 effective_by_occurrence[decision.occurrence_id] = decision
         self._effective_by_occurrence = effective_by_occurrence
 
@@ -84,7 +86,9 @@ class NutritionUsageDecisionIndex:
         return self._effective_by_occurrence.get(occurrence_id)
 
 
-def load_nutrition_usage_decisions(path: Path) -> NutritionUsageDecisionIndex:
+def load_nutrition_usage_decisions(
+    path: Path, *, current_occurrence_ids: set[str] | None = None
+) -> NutritionUsageDecisionIndex:
     """Load the strict occurrence decision sheet; inactive rows remain auditable."""
     decision_path = Path(path)
     if not decision_path.exists():
@@ -97,6 +101,14 @@ def load_nutrition_usage_decisions(path: Path) -> NutritionUsageDecisionIndex:
             _parse_decision_row(row, line_number)
             for line_number, row in enumerate(reader, start=2)
         )
+    if current_occurrence_ids is not None:
+        unknown = sorted(
+            decision.occurrence_id
+            for decision in decisions
+            if decision.occurrence_id not in current_occurrence_ids
+        )
+        if unknown:
+            raise ValueError(f"未知 occurrence_id: {unknown[:5]}")
     return NutritionUsageDecisionIndex(decisions)
 
 

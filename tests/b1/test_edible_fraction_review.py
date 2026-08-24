@@ -155,6 +155,20 @@ def test_loaders_require_the_formal_headers_and_reject_cooking_yield_fields(
         load_edible_fraction_decisions(stale_decisions)
 
 
+def test_edible_fraction_loader_rejects_unknown_occurrence_ids_for_any_review_status(
+    tmp_path: Path,
+) -> None:
+    decisions = tmp_path / "decisions.csv"
+    decisions.write_text(
+        "occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fraction,review_status\n"
+        "9-9,9,7,苹果,带皮,0.65,pending\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="未知 occurrence_id"):
+        load_edible_fraction_decisions(decisions, current_occurrence_ids={"1-1"})
+
+
 def test_resolver_accepts_the_frozen_occurrence_input_type() -> None:
     assert get_type_hints(resolve_edible_fraction)["occurrence"] is NutritionOccurrenceInput
 

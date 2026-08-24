@@ -125,9 +125,20 @@ def load_edible_fraction_rules(path: Path) -> EdibleFractionRuleIndex:
     return EdibleFractionRuleIndex(_read(path, _RULE_HEADERS, _parse_rule, "可食比例规则"))
 
 
-def load_edible_fraction_decisions(path: Path) -> EdibleFractionDecisionIndex:
+def load_edible_fraction_decisions(
+    path: Path, *, current_occurrence_ids: set[str] | None = None
+) -> EdibleFractionDecisionIndex:
+    decisions = _read(path, _DECISION_HEADERS, _parse_decision, "可食比例决定")
+    if current_occurrence_ids is not None:
+        unknown = sorted(
+            decision.occurrence_id
+            for decision in decisions
+            if decision.occurrence_id not in current_occurrence_ids
+        )
+        if unknown:
+            raise ValueError(f"未知 occurrence_id: {unknown[:5]}")
     return EdibleFractionDecisionIndex(
-        _read(path, _DECISION_HEADERS, _parse_decision, "可食比例决定")
+        decisions
     )
 
 

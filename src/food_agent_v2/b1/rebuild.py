@@ -84,7 +84,7 @@ class DataPipelineError(RuntimeError):
 
 
 def artifact_schema_versions(artifacts: dict[str, object]) -> dict[str, str]:
-    """仅三个重建的运行时 Artifact 升级为 2.0.0。"""
+    """仅四个重建的运行时 Artifact 升级为 2.0.0。"""
     return {
         name: "2.0.0" if name in V2_RUNTIME_ARTIFACTS else "1.0.0"
         for name in artifacts
@@ -333,10 +333,12 @@ def build_fixed_data_staging(
         occurrence_facts_from_records(_read_jsonl(t06 / "ingredient_occurrences.jsonl")),
     )
     nutrition_usage_decisions = load_nutrition_usage_decisions(
-        NUTRITION_USAGE_DECISIONS
+        NUTRITION_USAGE_DECISIONS,
+        current_occurrence_ids={item.occurrence_id for item in occurrence_facts},
     )
     edible_fraction_decisions = load_edible_fraction_decisions(
-        EDIBLE_FRACTION_DECISIONS
+        EDIBLE_FRACTION_DECISIONS,
+        current_occurrence_ids={item.occurrence_id for item in occurrence_facts},
     )
     views = build_consumer_views(
         build=BuildIdentity(resolved_build_id, manifest_hash),

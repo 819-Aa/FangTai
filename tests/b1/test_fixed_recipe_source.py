@@ -6,9 +6,18 @@ SOURCE_MANIFEST_MISMATCH。
 """
 
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 
+from food_agent_v2.b1.consumer_views import (
+    BuildIdentity,
+    IngredientIdentityFact,
+    IngredientOccurrenceFact,
+    RecipeFact,
+    build_consumer_views,
+)
+from food_agent_v2.b1.nutrition_occurrence_rules import load_nutrition_usage_decisions
 from food_agent_v2.b1.schemas import (
     SOURCE_BYTE_SIZE,
     SOURCE_ENCODING,
@@ -46,6 +55,34 @@ def canonical_manifest() -> SourceManifest:
 
 
 class TestFixedSource:
+    def test_nonempty_usage_decision_reaches_fixed_consumer_projection(
+        self, tmp_path: Path
+    ) -> None:
+        decision_path = tmp_path / "nutrition-usage.csv"
+        decision_path.write_text(
+            "occurrence_id,recipe_id,ingredient_id,ingredient_name,normalized_form,usage_code,retained_in_dish,review_status\n"
+            "1-1,1,10,鸡肉,,main,true,approved\n",
+            encoding="utf-8",
+        )
+        decisions = load_nutrition_usage_decisions(
+            decision_path, current_occurrence_ids={"1-1"}
+        )
+
+        views = build_consumer_views(
+            build=BuildIdentity(UUID("11111111-1111-1111-1111-111111111111"), "a" * 64),
+            recipes=(RecipeFact(1, "固定菜品", "dish", ("加入鸡肉",)),),
+            occurrences=(
+                IngredientOccurrenceFact("1-1", 1, "鸡肉", "鸡肉", 10, "edible"),
+            ),
+            identities=(IngredientIdentityFact(10, "鸡肉", 1, category="肉禽"),),
+            nutrition_usage_decisions=decisions,
+        )
+
+        nutrition_input = views.nutrition_views[0].ingredients[0]
+        assert nutrition_input.usage_code == "main"
+        assert nutrition_input.retained_in_dish is True
+        assert nutrition_input.requires_review is False
+
     def test_h06_nutrition_review_inputs_are_hashed(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

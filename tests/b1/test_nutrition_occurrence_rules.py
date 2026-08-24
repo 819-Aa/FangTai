@@ -214,6 +214,19 @@ def test_decision_index_rejects_duplicate_effective_decisions_and_illegal_enums(
         )
 
 
+@pytest.mark.parametrize(("first_status", "second_status"), [("pending", "pending"), ("approved", "rejected")])
+def test_decision_index_rejects_duplicate_occurrence_ids_across_all_statuses(
+    first_status: str, second_status: str
+) -> None:
+    with pytest.raises(ValueError, match="重复"):
+        NutritionUsageDecisionIndex(
+            (
+                NutritionUsageDecision("1-1", 1, 10, "盐", "", "main", True, first_status),  # type: ignore[arg-type]
+                NutritionUsageDecision("1-1", 1, 10, "盐", "", "main", True, second_status),  # type: ignore[arg-type]
+            )
+        )
+
+
 def test_usage_decision_loader_keeps_only_approved_or_modified_rows_effective(tmp_path) -> None:
     path = tmp_path / "nutrition-usage.csv"
     path.write_text(
@@ -251,6 +264,18 @@ def test_usage_decision_rejects_invalid_boolean_and_metadata_drift(tmp_path) -> 
         decisions=drifted,
     )
     assert resolution.requires_review is True
+
+
+def test_usage_loader_rejects_unknown_occurrence_ids_for_any_review_status(tmp_path) -> None:
+    path = tmp_path / "nutrition-usage.csv"
+    path.write_text(
+        "occurrence_id,recipe_id,ingredient_id,ingredient_name,normalized_form,usage_code,retained_in_dish,review_status\n"
+        "9-9,9,10,盐,,main,true,pending\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="未知 occurrence_id"):
+        load_nutrition_usage_decisions(path, current_occurrence_ids={"1-1"})
 
 
 def test_effective_decision_is_applied_only_when_metadata_matches() -> None:
