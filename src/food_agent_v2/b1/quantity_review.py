@@ -8,7 +8,7 @@ import json
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
@@ -27,6 +27,38 @@ _SYSTEM_PROMPT = """你是家庭烹饪食材用量估算器。请基于整道菜
 不补充新食材，不输出区间、置信度、来源或解释。输出严格 JSON：
 {"grams":{"occurrence_id":克重数值}}。"""
 QUANTITY_PROMPT_VERSION = "quantity-review-v1"
+
+_LEGACY_CANDIDATE_HEADERS = (
+    "occurrence_id",
+    "recipe_id",
+    "recipe_name",
+    "ingredient_name",
+    "raw_quantity",
+    "step_context",
+    "deterministic_calculation",
+    "candidate_basis",
+    "candidate_grams",
+    "decision_grams",
+    "review_status",
+)
+_V2_CANDIDATE_HEADERS = (
+    "occurrence_id",
+    "recipe_id",
+    "recipe_name",
+    "ingredient_id",
+    "ingredient_name",
+    "normalized_form",
+    "normalized_unit",
+    "usage_code",
+    "fuzzy_token_class",
+    "raw_quantity",
+    "step_context",
+    "deterministic_calculation",
+    "candidate_basis",
+    "candidate_grams",
+    "decision_grams",
+    "review_status",
+)
 
 
 @dataclass(frozen=True)
@@ -355,6 +387,122 @@ def write_quantity_candidates(candidates, output_path: Path) -> None:
         raise
 
 
+def load_quantity_review_candidates(path: Path, views, facts) -> tuple[QuantityReviewCandidate, ...]:
+    """Load legacy or V2 occurrence candidates and bind them to current views."""
+    candidate_path = Path(path)
+    if not candidate_path.exists():
+        raise ValueError(f"数量候选文件不存在: {candidate_path}")
+    facts_by_id = {fact.recipe_id: fact for fact in facts}
+    occurrences = {
+        item.occurrence_id: (view.recipe_id, item)
+        for view in views.nutrition_views
+        for item in view.ingredients
+    }
+    with candidate_path.open(encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        headers = tuple(reader.fieldnames or ())
+        if headers not in {_LEGACY_CANDIDATE_HEADERS, _V2_CANDIDATE_HEADERS}:
+            raise ValueError("数量候选 CSV 表头非法")
+        output = []
+        for line_number, row in enumerate(reader, 2):
+            output.append(
+                _parse_review_candidate_row(
+                    row, line_number, occurrences=occurrences, facts_by_id=facts_by_id,
+                    is_v2=headers == _V2_CANDIDATE_HEADERS,
+                )
+            )
+    return tuple(output)
+
+
+def _parse_review_candidate_row(
+    row: dict[str, str],
+    line_number: int,
+    *,
+    occurrences: dict,
+    facts_by_id: dict,
+    is_v2: bool,
+) -> QuantityReviewCandidate:
+    try:
+        occurrence_id = _required_candidate_text(row, "occurrence_id")
+        current = occurrences.get(occurrence_id)
+        if current is None:
+            raise ValueError(f"未知 occurrence_id: {occurrence_id}")
+        recipe_id, occurrence = current
+        recipe_id_value = int(_required_candidate_text(row, "recipe_id"))
+        if recipe_id_value != recipe_id:
+            raise ValueError(f"recipe_id 与 occurrence 不一致: {occurrence_id}")
+        fact = facts_by_id.get(recipe_id)
+        if fact is None:
+            raise ValueError(f"occurrence 缺少菜品事实: {occurrence_id}")
+        recipe_name = _required_candidate_text(row, "recipe_name")
+        if recipe_name != fact.name:
+            raise ValueError(f"recipe_name 与当前事实不一致: {occurrence_id}")
+        ingredient_name = _required_candidate_text(row, "ingredient_name")
+        if ingredient_name != occurrence.ingredient_name:
+            raise ValueError(f"ingredient_name 与当前事实不一致: {occurrence_id}")
+        raw_quantity = row.get("raw_quantity") or ""
+        if raw_quantity != (occurrence.quantity_raw or ""):
+            raise ValueError(f"raw_quantity 与当前 occurrence 不一致: {occurrence_id}")
+        normalized_form = occurrence.normalized_form
+        normalized_unit = occurrence.unit_raw
+        usage_code = occurrence.usage_code
+        fuzzy_token_class = occurrence.fuzzy_token_class
+        if is_v2:
+            if int(_required_candidate_text(row, "ingredient_id")) != occurrence.ingredient_id:
+                raise ValueError(f"ingredient_id 与当前 occurrence 不一致: {occurrence_id}")
+            if (row.get("normalized_form") or "") != normalized_form:
+                raise ValueError(f"normalized_form 与当前 occurrence 不一致: {occurrence_id}")
+            if (row.get("normalized_unit") or "") != (normalized_unit or ""):
+                raise ValueError(f"normalized_unit 与当前 occurrence 不一致: {occurrence_id}")
+            if (row.get("usage_code") or "") != (usage_code or ""):
+                raise ValueError(f"usage_code 与当前 occurrence 不一致: {occurrence_id}")
+            if (row.get("fuzzy_token_class") or "") != (fuzzy_token_class or ""):
+                raise ValueError(f"fuzzy_token_class 与当前 occurrence 不一致: {occurrence_id}")
+        candidate_grams = _candidate_decimal(row, "candidate_grams")
+        decision_text = (row.get("decision_grams") or "").strip()
+        decision_grams = _candidate_decimal(row, "decision_grams") if decision_text else None
+        if (row.get("review_status") or "").strip() != "pending":
+            raise ValueError("数量候选必须保持 pending")
+        candidate = QuantityReviewCandidate(
+            occurrence_id=occurrence_id,
+            recipe_id=recipe_id,
+            recipe_name=recipe_name,
+            ingredient_id=occurrence.ingredient_id,
+            ingredient_name=ingredient_name,
+            normalized_form=normalized_form,
+            normalized_unit=normalized_unit,
+            usage_code=usage_code,
+            fuzzy_token_class=fuzzy_token_class,
+            raw_quantity=raw_quantity,
+            step_context=row.get("step_context") or "",
+            deterministic_calculation=row.get("deterministic_calculation") or "",
+            candidate_basis=row.get("candidate_basis") or "",
+            candidate_grams=candidate_grams,
+            decision_grams=decision_grams,
+        )
+        _validate_output_candidate(candidate)
+        return candidate
+    except (KeyError, TypeError, ValueError, InvalidOperation) as exc:
+        raise ValueError(f"数量候选 CSV 第 {line_number} 行非法: {exc}") from exc
+
+
+def _required_candidate_text(row: dict[str, str], field: str) -> str:
+    value = row[field]
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field} 不能为空")
+    return value.strip()
+
+
+def _candidate_decimal(row: dict[str, str], field: str) -> Decimal:
+    try:
+        value = Decimal(_required_candidate_text(row, field))
+    except InvalidOperation as exc:
+        raise ValueError(f"{field} 必须为十进制数") from exc
+    if not _is_finite_positive_decimal(value):
+        raise ValueError(f"{field} 必须为有限正数")
+    return value
+
+
 def _is_finite_positive_decimal(value: object) -> bool:
     return isinstance(value, Decimal) and value.is_finite() and value > 0
 
@@ -424,14 +572,20 @@ def _safe_csv_text(value: str | None) -> str:
 
 
 def _is_formal_measure_rule_path(path: Path) -> bool:
-    formal = PROJECT_ROOT / "data" / "review" / "ingredient_measure_rules.csv"
-    if path.name.casefold() == formal.name.casefold():
+    formal_paths = (
+        PROJECT_ROOT / "data" / "review" / "ingredient_measure_rules.csv",
+        PROJECT_ROOT / "data" / "review" / "ingredient_edible_fraction_rules.csv",
+        PROJECT_ROOT / "data" / "review" / "ingredient_edible_fraction_decisions.csv",
+    )
+    if any(path.name.casefold() == formal.name.casefold() for formal in formal_paths):
         return True
     try:
-        if str(path.resolve(strict=False)).casefold() == str(
-            formal.resolve(strict=False)
-        ).casefold():
-            return True
-        return path.exists() and formal.exists() and path.samefile(formal)
+        resolved = str(path.resolve(strict=False)).casefold()
+        for formal in formal_paths:
+            if resolved == str(formal.resolve(strict=False)).casefold():
+                return True
+            if path.exists() and formal.exists() and path.samefile(formal):
+                return True
+        return False
     except OSError:
         return True

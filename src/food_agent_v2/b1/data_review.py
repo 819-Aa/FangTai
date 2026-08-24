@@ -17,6 +17,12 @@ from food_agent_v2.b1.consumer_views import (
     occurrence_facts_from_records,
     recipe_facts_from_source,
 )
+from food_agent_v2.b1.edible_fraction_review import (
+    generate_edible_fraction_candidates,
+    load_edible_fraction_decisions,
+    load_edible_fraction_rules,
+    write_edible_fraction_candidates,
+)
 from food_agent_v2.b1.food_origin_review import (
     FoodOriginCandidateCache,
     FoodOriginReviewInput,
@@ -25,6 +31,7 @@ from food_agent_v2.b1.food_origin_review import (
     write_food_origin_candidates,
 )
 from food_agent_v2.b1.ingredient_identity import rebuild_ingredient_identities
+from food_agent_v2.b1.nutrition_occurrence_rules import load_nutrition_usage_decisions
 from food_agent_v2.b1.nutrition_reference import (
     load_nutrition_references,
     nutrition_form_from_occurrence,
@@ -46,6 +53,8 @@ from food_agent_v2.b1.quantity_review import (
     QuantityEstimateCache,
     build_quantity_review_contexts,
     generate_quantity_candidates,
+    load_quantity_review_candidates,
+    write_quantity_candidates,
 )
 from food_agent_v2.b1.quantity_rule_review import (
     generate_quantity_rule_candidates,
@@ -95,15 +104,22 @@ def main(argv: list[str] | None = None) -> int:
         choices=(
             "profiles",
             "quantities",
+            "quantity-rules",
             "nutrition",
             "usda-nutrition",
             "food-origins",
             "time-graphs",
+            "edible-fractions",
         ),
         required=True,
     )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--workers", type=int, default=8)
+    parser.add_argument(
+        "--input",
+        type=Path,
+        help="离线阶段的 occurrence 候选输入；默认使用 reports/data_review/quantity_candidates.csv",
+    )
     parser.add_argument(
         "--sample",
         type=int,
@@ -141,6 +157,10 @@ def main(argv: list[str] | None = None) -> int:
         count = _write_quantity_review(
             rows, facts, args.output, sample=args.sample, workers=args.workers
         )
+    elif args.kind == "quantity-rules":
+        count = _write_quantity_rule_review(
+            rows, facts, args.output, input_path=args.input, sample=args.sample
+        )
     elif args.kind == "nutrition":
         count = _write_nutrition_review(rows, facts, args.output, sample=args.sample)
     elif args.kind == "usda-nutrition":
@@ -158,6 +178,10 @@ def main(argv: list[str] | None = None) -> int:
             args.output,
             sample=args.sample,
             workers=args.workers,
+        )
+    elif args.kind == "edible-fractions":
+        count = _write_edible_fraction_review(
+            rows, facts, args.output, sample=args.sample
         )
     else:
         count = _write_time_graph_review(
@@ -232,12 +256,71 @@ def _write_quantity_review(
         model_id=load_config().llm.model_for_role("quantity_estimation"),
         max_workers=workers,
     )
+    write_quantity_candidates(candidates, output)
+    return len(candidates)
+
+
+def _write_quantity_rule_review(
+    rows, facts, output: Path, *, input_path: Path | None, sample: int | None
+) -> int:
+    _refuse_formal_review_target(output)
+    views = _build_review_views(rows, facts)
+    source = input_path or PROJECT_ROOT / "reports" / "data_review" / "quantity_candidates.csv"
+    candidates = load_quantity_review_candidates(source, views, facts)
+    if sample is not None:
+        candidates = candidates[:sample]
     rule_candidates = generate_quantity_rule_candidates(
         candidates,
         load_measure_rules(_REVIEW_DIR / "ingredient_measure_rules.csv"),
     )
     write_quantity_rule_candidates(rule_candidates, output)
     return len(rule_candidates)
+
+
+def _write_edible_fraction_review(
+    rows, facts, output: Path, *, sample: int | None
+) -> int:
+    _refuse_formal_review_target(output)
+    views = _build_review_views(rows, facts)
+    rules = load_edible_fraction_rules(
+        _REVIEW_DIR / "ingredient_edible_fraction_rules.csv"
+    )
+    occurrence_ids = {
+        item.occurrence_id
+        for view in views.nutrition_views
+        for item in view.ingredients
+    }
+    decisions = load_edible_fraction_decisions(
+        _REVIEW_DIR / "ingredient_edible_fraction_decisions.csv",
+        current_occurrence_ids=occurrence_ids,
+    )
+    candidates = generate_edible_fraction_candidates(
+        views.nutrition_views, rules, decisions
+    )
+    if sample is not None:
+        candidates = candidates[:sample]
+    write_edible_fraction_candidates(candidates, output)
+    return len(candidates)
+
+
+def _refuse_formal_review_target(path: Path) -> None:
+    formal_root = PROJECT_ROOT / "data" / "review"
+    formal_paths = (
+        formal_root / "ingredient_measure_rules.csv",
+        formal_root / "ingredient_edible_fraction_rules.csv",
+        formal_root / "ingredient_edible_fraction_decisions.csv",
+    )
+    if any(path.name.casefold() == formal.name.casefold() for formal in formal_paths):
+        raise ValueError("候选不得写入正式规则或决定文件")
+    try:
+        resolved = str(path.resolve(strict=False)).casefold()
+        for formal in formal_paths:
+            if resolved == str(formal.resolve(strict=False)).casefold():
+                raise ValueError("候选不得写入正式规则或决定文件")
+            if path.exists() and formal.exists() and path.samefile(formal):
+                raise ValueError("候选不得写入正式规则或决定文件")
+    except OSError as exc:
+        raise ValueError("候选目标路径无法安全校验") from exc
 
 
 def _write_nutrition_review(rows, facts, output: Path, *, sample: int | None) -> int:
@@ -485,6 +568,10 @@ def _build_review_views(rows, facts):
             recipe_names={fact.recipe_id: fact.name for fact in facts},
             decisions=condition_defaults,
         )
+        usage_decisions = load_nutrition_usage_decisions(
+            _REVIEW_DIR / "ingredient_nutrition_usage_decisions.csv",
+            current_occurrence_ids={item.occurrence_id for item in occurrences},
+        )
         views = build_consumer_views(
             build=BuildIdentity(
                 UUID(int=0),
@@ -493,5 +580,6 @@ def _build_review_views(rows, facts):
             recipes=facts,
             occurrences=occurrences,
             identities=identities,
+            nutrition_usage_decisions=usage_decisions,
         )
     return views

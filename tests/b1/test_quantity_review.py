@@ -18,6 +18,7 @@ from food_agent_v2.b1.quantity_review import (
     RecipeQuantityReviewContext,
     build_quantity_review_contexts,
     generate_quantity_candidates,
+    load_quantity_review_candidates,
     write_quantity_candidates,
 )
 
@@ -390,3 +391,65 @@ def test_model_writer_rejects_unknown_usage_enum_before_opening(tmp_path) -> Non
         write_quantity_candidates((replace(candidate, usage_code="unknown"),), output)
 
     assert output.read_bytes() == original
+
+
+def _candidate_view(*, occurrence_id: str = "1-1", raw_quantity: str = "1个"):
+    return RecipeNutritionInputView(
+        build_id=UUID("00000000-0000-0000-0000-000000000001"),
+        source_manifest_hash="a" * 64,
+        recipe_id=1,
+        ingredients=(
+            NutritionOccurrenceInput(
+                occurrence_id=occurrence_id,
+                ingredient_id=10,
+                quantity_raw=raw_quantity,
+                unit_raw=None,
+                quantity_status="explicit",
+                ingredient_name="苹果",
+                normalized_form="带皮",
+                usage_code="main",
+                fuzzy_token_class=None,
+                retained_in_dish=True,
+            ),
+        ),
+    )
+
+
+def _candidate_file(path, *, occurrence_id="1-1", candidate_grams="120"):
+    path.write_text(
+        "occurrence_id,recipe_id,recipe_name,ingredient_name,raw_quantity,step_context,"
+        "deterministic_calculation,candidate_basis,candidate_grams,decision_grams,review_status\n"
+        f"{occurrence_id},1,测试菜,苹果,1个,加入苹果,not_available,whole_recipe_context_model,"
+        f"{candidate_grams},,pending\n",
+        encoding="utf-8",
+    )
+
+
+def test_quantity_rule_loader_enriches_legacy_rows_from_current_occurrence(tmp_path) -> None:
+    source = tmp_path / "legacy.csv"
+    _candidate_file(source)
+    fact = RecipeFact(recipe_id=1, name="测试菜", record_type="dish")
+
+    candidates = load_quantity_review_candidates(source, type("Views", (), {"nutrition_views": (_candidate_view(),)})(), (fact,))
+
+    assert candidates[0].ingredient_id == 10
+    assert candidates[0].normalized_form == "带皮"
+    assert candidates[0].usage_code == "main"
+    assert candidates[0].candidate_grams == Decimal("120")
+    assert candidates[0].review_status == "pending"
+
+
+@pytest.mark.parametrize("value", ("NaN", "Infinity", "0", "-1"))
+def test_quantity_rule_loader_rejects_unknown_or_nonfinite_candidates(tmp_path, value) -> None:
+    source = tmp_path / "legacy.csv"
+    _candidate_file(source, candidate_grams=value)
+    fact = RecipeFact(recipe_id=1, name="测试菜", record_type="dish")
+    views = type("Views", (), {"nutrition_views": (_candidate_view(),)})()
+
+    with pytest.raises(ValueError, match="有限正数"):
+        load_quantity_review_candidates(source, views, (fact,))
+
+    unknown = tmp_path / "unknown.csv"
+    _candidate_file(unknown, occurrence_id="9-9")
+    with pytest.raises(ValueError, match="未知 occurrence_id"):
+        load_quantity_review_candidates(unknown, views, (fact,))

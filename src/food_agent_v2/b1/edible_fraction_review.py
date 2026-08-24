@@ -6,9 +6,11 @@ import csv
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Literal
 
 from food_agent_v2.b1.consumer_views import NutritionOccurrenceInput
+from food_agent_v2.core.paths import PROJECT_ROOT
 
 ReviewStatus = Literal["pending", "approved", "modified", "rejected"]
 _STATUSES = frozenset({"pending", "approved", "modified", "rejected"})
@@ -28,6 +30,12 @@ _DECISION_HEADERS = (
     "decision_form",
     "edible_fraction",
     "review_status",
+)
+_DIAGNOSTIC_REASONS = (
+    "blank_form",
+    "multi_form_ingredient",
+    "unresolved_usage",
+    "no_effective_rule_or_occurrence_decision",
 )
 
 
@@ -96,6 +104,196 @@ class EdibleFractionDecisionIndex:
 
     def get_effective(self, occurrence_id: str) -> EdibleFractionDecision | None:
         return self._effective.get(occurrence_id)
+
+
+@dataclass(frozen=True)
+class EdibleFractionReviewCandidate:
+    occurrence_id: str
+    recipe_id: int
+    ingredient_id: int
+    ingredient_name: str
+    source_form: str
+    decision_form: str
+    candidate_edible_fraction: Decimal | None = None
+    candidate_basis: str = "no_effective_rule_or_occurrence_decision"
+    quantity_raw: str = ""
+    usage_code: str | None = None
+    retained_in_dish: bool | None = None
+    exception_reasons: tuple[str, ...] = ()
+    review_status: Literal["pending"] = "pending"
+
+
+def generate_edible_fraction_candidates(views, rules, decisions):
+    """Emit one pending, no-fraction diagnostic for each unresolved retained occurrence."""
+    forms_by_ingredient: dict[int, set[str]] = {}
+    for view in views:
+        for occurrence in view.ingredients:
+            forms_by_ingredient.setdefault(occurrence.ingredient_id, set()).add(
+                (occurrence.normalized_form or "").strip()
+            )
+    candidates = []
+    for view in views:
+        for occurrence in view.ingredients:
+            if occurrence.retained_in_dish is False:
+                continue
+            resolution = resolve_edible_fraction(occurrence, rules, decisions)
+            if resolution.edible_fraction is not None and not resolution.requires_review:
+                continue
+            reasons: list[str] = []
+            if not (occurrence.normalized_form or "").strip():
+                reasons.append("blank_form")
+            if len(forms_by_ingredient.get(occurrence.ingredient_id, ())) > 1:
+                reasons.append("multi_form_ingredient")
+            if occurrence.retained_in_dish is None or occurrence.usage_code is None:
+                reasons.append("unresolved_usage")
+            reasons.append("no_effective_rule_or_occurrence_decision")
+            decision = decisions.get_effective(occurrence.occurrence_id)
+            candidates.append(
+                EdibleFractionReviewCandidate(
+                    occurrence_id=occurrence.occurrence_id,
+                    recipe_id=view.recipe_id,
+                    ingredient_id=occurrence.ingredient_id,
+                    ingredient_name=occurrence.ingredient_name,
+                    source_form=(occurrence.normalized_form or "").strip(),
+                    decision_form=decision.decision_form if decision is not None else "",
+                    candidate_basis="no_effective_rule_or_occurrence_decision",
+                    quantity_raw=occurrence.quantity_raw or "",
+                    usage_code=occurrence.usage_code,
+                    retained_in_dish=occurrence.retained_in_dish,
+                    exception_reasons=tuple(
+                        reason for reason in _DIAGNOSTIC_REASONS if reason in reasons
+                    ),
+                )
+            )
+    return tuple(candidates)
+
+
+def write_edible_fraction_candidates(candidates, output_path: Path) -> None:
+    """Write pending diagnostics atomically without creating a fraction."""
+    path = Path(output_path)
+    candidate_rows = tuple(candidates)
+    if _is_formal_edible_fraction_path(path) or _is_formal_measure_rule_path(path):
+        raise ValueError("可食比例候选不得写入正式规则或决定文件")
+    for candidate in candidate_rows:
+        _validate_output_candidate(candidate)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = (
+        "occurrence_id",
+        "recipe_id",
+        "ingredient_id",
+        "ingredient_name",
+        "source_form",
+        "decision_form",
+        "candidate_edible_fraction",
+        "candidate_basis",
+        "quantity_raw",
+        "usage_code",
+        "retained_in_dish",
+        "exception_reasons",
+        "review_status",
+    )
+    temporary_path: Path | None = None
+    try:
+        with NamedTemporaryFile(
+            "w", encoding="utf-8", newline="", dir=path.parent,
+            prefix=f".{path.name}.", suffix=".tmp", delete=False,
+        ) as handle:
+            temporary_path = Path(handle.name)
+            writer = csv.DictWriter(handle, fieldnames=fieldnames)
+            writer.writeheader()
+            for candidate in candidate_rows:
+                writer.writerow(
+                    {
+                        "occurrence_id": _safe_csv_text(candidate.occurrence_id),
+                        "recipe_id": candidate.recipe_id,
+                        "ingredient_id": candidate.ingredient_id,
+                        "ingredient_name": _safe_csv_text(candidate.ingredient_name),
+                        "source_form": _safe_csv_text(candidate.source_form),
+                        "decision_form": _safe_csv_text(candidate.decision_form),
+                        "candidate_edible_fraction": "",
+                        "candidate_basis": _safe_csv_text(candidate.candidate_basis),
+                        "quantity_raw": _safe_csv_text(candidate.quantity_raw),
+                        "usage_code": _safe_csv_text(candidate.usage_code),
+                        "retained_in_dish": (
+                            "" if candidate.retained_in_dish is None
+                            else str(candidate.retained_in_dish).lower()
+                        ),
+                        "exception_reasons": _safe_csv_text(
+                            "|".join(candidate.exception_reasons)
+                        ),
+                        "review_status": _safe_csv_text(candidate.review_status),
+                    }
+                )
+        if _is_formal_edible_fraction_path(path) or _is_formal_measure_rule_path(path):
+            raise ValueError("可食比例候选不得写入正式规则或决定文件")
+        temporary_path.replace(path)
+    except BaseException:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+        raise
+
+
+def _validate_output_candidate(candidate: EdibleFractionReviewCandidate) -> None:
+    if candidate.review_status != "pending":
+        raise ValueError("可食比例候选必须保持 pending")
+    if candidate.candidate_edible_fraction is not None:
+        raise ValueError("可食比例候选不得填写比例")
+    if type(candidate.recipe_id) is not int or candidate.recipe_id < 1:
+        raise ValueError("可食比例候选 recipe_id 非法")
+    if type(candidate.ingredient_id) is not int or candidate.ingredient_id < 1:
+        raise ValueError("可食比例候选 ingredient_id 非法")
+    for field in (
+        "occurrence_id", "ingredient_name", "source_form", "decision_form",
+        "candidate_basis", "quantity_raw",
+    ):
+        if not isinstance(getattr(candidate, field), str):
+            raise ValueError("可食比例候选文本字段非法")
+    if not candidate.occurrence_id.strip() or not candidate.ingredient_name.strip():
+        raise ValueError("可食比例候选必填文本不能为空")
+    if candidate.usage_code is not None and not isinstance(candidate.usage_code, str):
+        raise ValueError("可食比例候选 usage_code 非法")
+    if candidate.retained_in_dish not in (True, None):
+        raise ValueError("可食比例候选必须为 retained 或未决")
+    if not candidate.exception_reasons or any(
+        reason not in _DIAGNOSTIC_REASONS for reason in candidate.exception_reasons
+    ):
+        raise ValueError("可食比例候选诊断原因非法")
+
+
+def _safe_csv_text(value: str | None) -> str:
+    text = value or ""
+    if text.lstrip(" \t\r\n").startswith(("=", "+", "-", "@")):
+        return "'" + text
+    return text
+
+
+def _is_formal_edible_fraction_path(path: Path) -> bool:
+    formal_paths = (
+        PROJECT_ROOT / "data" / "review" / "ingredient_edible_fraction_rules.csv",
+        PROJECT_ROOT / "data" / "review" / "ingredient_edible_fraction_decisions.csv",
+    )
+    return _is_formal_alias(path, formal_paths)
+
+
+def _is_formal_measure_rule_path(path: Path) -> bool:
+    return _is_formal_alias(
+        path, (PROJECT_ROOT / "data" / "review" / "ingredient_measure_rules.csv",)
+    )
+
+
+def _is_formal_alias(path: Path, formal_paths: tuple[Path, ...]) -> bool:
+    if any(path.name.casefold() == formal.name.casefold() for formal in formal_paths):
+        return True
+    try:
+        resolved = str(path.resolve(strict=False)).casefold()
+        for formal in formal_paths:
+            if resolved == str(formal.resolve(strict=False)).casefold():
+                return True
+            if path.exists() and formal.exists() and path.samefile(formal):
+                return True
+    except OSError:
+        return True
+    return False
 
 
 @dataclass(frozen=True)
