@@ -23,12 +23,14 @@ from food_agent_v2.b1.nutrition_occurrence_review import (
     generate_nutrition_occurrence_review,
     write_nutrition_occurrence_review,
 )
+from food_agent_v2.core.paths import PROJECT_ROOT
 
 
 def _context(
     *,
     name: str = "鸡肉",
     category: str = "肉类",
+    ingredient_id: int = 7,
     step: str | None = "加入鸡肉炒熟",
     usage_requires_review: bool = True,
     retention_requires_review: bool = True,
@@ -41,14 +43,14 @@ def _context(
         recipe_id=1,
         source_fragment="鸡肉 200g",
         name_clean=name,
-        ingredient_id=7,
+        ingredient_id=ingredient_id,
         consumption_role="edible",
         quantity_raw="200g",
         form="切块",
     )
     input_item = NutritionOccurrenceInput(
         occurrence_id="1-1",
-        ingredient_id=7,
+        ingredient_id=ingredient_id,
         quantity_raw="200g",
         unit_raw="g",
         quantity_status="explicit",
@@ -72,7 +74,7 @@ def _context(
         build_id=build.build_id,
         source_manifest_hash=build.source_manifest_hash,
         recipe_id=1,
-        ingredient_ids=(7,),
+        ingredient_ids=(ingredient_id,),
         steps=steps,
     )
     return NutritionOccurrenceReviewContext(
@@ -80,7 +82,10 @@ def _context(
         occurrences=(occurrence,),
         identities=(
             IngredientIdentityFact(
-                ingredient_id=7, name_canonical=name, family_id=7, category=category
+                ingredient_id=ingredient_id,
+                name_canonical=name,
+                family_id=ingredient_id,
+                category=category,
             ),
         ),
         recipes=(RecipeFact(recipe_id=1, name="测试菜", record_type="dish"),),
@@ -157,6 +162,76 @@ def test_solid_names_with_liquid_characters_are_not_controlled_liquids(name: str
 @pytest.mark.parametrize("name", ("食用油", "清水"))
 def test_oil_and_liquid_retention_never_auto_true(name: str) -> None:
     bundle = generate_nutrition_occurrence_review(_context(name=name))
+
+    assert bundle.retention_candidates == ()
+    assert bundle.retention_exceptions[0].exception_codes == (
+        "NUTRITION_RETENTION_AMBIGUOUS",
+    )
+
+
+@pytest.mark.parametrize(
+    ("name", "category"),
+    (("芝麻油", "坚果"), ("牛奶", "蛋奶")),
+)
+def test_real_oil_and_milk_identities_never_enter_bound_solid_candidates(
+    name: str, category: str
+) -> None:
+    bundle = generate_nutrition_occurrence_review(
+        _context(name=name, category=category)
+    )
+
+    assert bundle.retention_candidates == ()
+    assert bundle.retention_exceptions[0].exception_codes == (
+        "NUTRITION_RETENTION_AMBIGUOUS",
+    )
+
+
+def test_approved_density_identities_from_repository_are_retention_ambiguous() -> None:
+    categories = {
+        "纯净水": "其他",
+        "醋": "调料",
+        "牛奶": "蛋奶",
+        "柠檬汁": "水果",
+        "色拉油": "调料",
+        "橄榄油": "调料",
+        "烧烤汁": "调料",
+    }
+    with (PROJECT_ROOT / "data" / "review" / "ingredient_measure_rules.csv").open(
+        encoding="utf-8", newline=""
+    ) as handle:
+        approved_density_identities = {
+            (int(row["ingredient_id"]), row["ingredient_name"])
+            for row in csv.DictReader(handle)
+            if row["rule_type"] == "density" and row["review_status"] == "approved"
+        }
+
+    assert approved_density_identities == {
+        (111, "纯净水"),
+        (72, "醋"),
+        (122, "牛奶"),
+        (154, "柠檬汁"),
+        (155, "色拉油"),
+        (20, "橄榄油"),
+        (996, "烧烤汁"),
+    }
+    for ingredient_id, name in sorted(approved_density_identities):
+        bundle = generate_nutrition_occurrence_review(
+            _context(
+                name=name,
+                category=categories[name],
+                ingredient_id=ingredient_id,
+            )
+        )
+        assert bundle.retention_candidates == (), name
+        assert bundle.retention_exceptions[0].exception_codes == (
+            "NUTRITION_RETENTION_AMBIGUOUS",
+        )
+
+
+def test_unknown_physical_state_is_not_asserted_as_bound_solid() -> None:
+    bundle = generate_nutrition_occurrence_review(
+        _context(name="未分类食材", category="其他")
+    )
 
     assert bundle.retention_candidates == ()
     assert bundle.retention_exceptions[0].exception_codes == (

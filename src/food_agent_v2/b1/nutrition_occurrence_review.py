@@ -18,6 +18,7 @@ from food_agent_v2.b1.consumer_views import (
 from food_agent_v2.core.paths import PROJECT_ROOT
 
 ReviewStatus = Literal["pending"]
+RetentionPhysicalState = Literal["solid", "fluid", "ambiguous"]
 _PENDING: ReviewStatus = "pending"
 _USAGE_CODES = frozenset({"main", "supporting", "seasoning", "cooking_fat", "cooking_liquid"})
 _COOKING_FAT_IDENTITIES = frozenset(
@@ -30,6 +31,30 @@ _COOKING_LIQUID_IDENTITIES = frozenset(
     {
         "水", "清水", "凉水", "热水", "开水", "汤", "高汤", "清汤", "鸡汤",
         "骨汤", "肉汤", "汤汁",
+    }
+)
+_RETENTION_FLUID_IDENTITIES = frozenset(
+    {
+        *_COOKING_FAT_IDENTITIES,
+        *_COOKING_LIQUID_IDENTITIES,
+        "芝麻油",
+        "纯净水",
+        "醋",
+        "牛奶",
+        "柠檬汁",
+        "烧烤汁",
+        "水淀粉",
+    }
+)
+_RETENTION_FLUID_SUFFIXES = (
+    "油", "水", "汤", "汁", "奶", "乳", "液", "浆", "酒", "醋", "露",
+    "茶", "饮", "羹", "糊", "酱", "蜜",
+)
+_RETENTION_SOLID_IDENTITIES = frozenset({"水果", "水牛芝士", "汤圆"})
+_RETENTION_SOLID_CATEGORIES = frozenset(
+    {
+        "水果", "蔬菜", "菌菇", "坚果", "蛋奶", "豆制品", "谷物", "水产",
+        "肉禽", "肉类",
     }
 )
 _DISCARD_MARKERS = ("倒掉", "弃去", "过滤", "滤出", "捞出", "沥干", "去除", "倒出")
@@ -165,6 +190,7 @@ def generate_nutrition_occurrence_review(
                         )
                     )
             if nutrition.retention_requires_review:
+                physical_state = _retention_physical_state(identity)
                 if not bound_steps:
                     retention_exceptions.append(
                         NutritionRetentionException(
@@ -181,19 +207,27 @@ def generate_nutrition_occurrence_review(
                             exception_codes=("NUTRITION_RETENTION_DISCARD_RISK",),
                         )
                     )
-                elif _is_cooking_fat(identity.name_canonical) or _is_cooking_liquid(identity.name_canonical):
+                elif physical_state == "fluid":
                     retention_exceptions.append(
                         NutritionRetentionException(
                             **common,
-                            evidence_codes=("NUTRITION_RETENTION_COOKING_MEDIUM",),
+                            evidence_codes=("NUTRITION_RETENTION_BOUND_FLUID",),
                             exception_codes=("NUTRITION_RETENTION_AMBIGUOUS",),
                         )
                     )
-                else:
+                elif physical_state == "solid":
                     retention_candidates.append(
                         NutritionRetentionCandidate(
                             **common,
                             evidence_codes=("NUTRITION_RETENTION_BOUND_SOLID",),
+                        )
+                    )
+                else:
+                    retention_exceptions.append(
+                        NutritionRetentionException(
+                            **common,
+                            evidence_codes=("NUTRITION_RETENTION_PHYSICAL_STATE_AMBIGUOUS",),
+                            exception_codes=("NUTRITION_RETENTION_AMBIGUOUS",),
                         )
                     )
 
@@ -425,6 +459,18 @@ def _is_cooking_fat(name: str) -> bool:
 
 def _is_cooking_liquid(name: str) -> bool:
     return name.lstrip("=+-@") in _COOKING_LIQUID_IDENTITIES
+
+
+def _retention_physical_state(identity: IngredientIdentityFact) -> RetentionPhysicalState:
+    """Classify only physical states supported by closed, local evidence."""
+    name = identity.name_canonical.lstrip("=+-@").strip()
+    if name in _RETENTION_SOLID_IDENTITIES:
+        return "solid"
+    if name in _RETENTION_FLUID_IDENTITIES or name.endswith(_RETENTION_FLUID_SUFFIXES):
+        return "fluid"
+    if identity.category.strip() in _RETENTION_SOLID_CATEGORIES:
+        return "solid"
+    return "ambiguous"
 
 
 def _safe_csv_text(value: str) -> str:
