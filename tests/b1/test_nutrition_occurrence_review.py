@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import os
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -8,6 +9,7 @@ from uuid import UUID
 
 import pytest
 
+import food_agent_v2.b1.nutrition_occurrence_review as nutrition_occurrence_review
 from food_agent_v2.b1.consumer_views import (
     BuildIdentity,
     IngredientIdentityFact,
@@ -359,6 +361,87 @@ def test_writer_escapes_formulas_in_every_text_field(tmp_path: Path) -> None:
     assert "'=食用油" in text
     assert "'+油类" in text
     assert "'@加入油" in text
+
+
+@pytest.mark.parametrize("alias_kind", ("relative", "case_variant"))
+def test_writer_refuses_relative_and_case_variant_formal_aliases(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, alias_kind: str
+) -> None:
+    formal = (
+        tmp_path
+        / "data"
+        / "review"
+        / "ingredient_nutrition_retention_decisions.csv"
+    )
+    formal.parent.mkdir(parents=True)
+    formal.write_text("preserve formal", encoding="utf-8")
+    monkeypatch.setattr(nutrition_occurrence_review, "PROJECT_ROOT", tmp_path)
+    if alias_kind == "relative":
+        monkeypatch.chdir(tmp_path)
+        alias = Path("data/review/ingredient_nutrition_retention_decisions.csv")
+    else:
+        alias = (
+            tmp_path
+            / "DATA"
+            / "REVIEW"
+            / "INGREDIENT_NUTRITION_RETENTION_DECISIONS.CSV"
+        )
+
+    with pytest.raises(ValueError, match="候选不得写入正式规则或决定文件"):
+        write_nutrition_occurrence_review(_bundle_fixture(), alias)
+
+    assert formal.read_text(encoding="utf-8") == "preserve formal"
+
+
+def test_writer_refuses_hard_link_to_formal_target_on_windows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    formal = (
+        tmp_path
+        / "data"
+        / "review"
+        / "ingredient_nutrition_retention_decisions.csv"
+    )
+    formal.parent.mkdir(parents=True)
+    formal.write_text("preserve formal", encoding="utf-8")
+    alias = tmp_path / "retention-review-hard-link.csv"
+    os.link(formal, alias)
+    monkeypatch.setattr(nutrition_occurrence_review, "PROJECT_ROOT", tmp_path)
+
+    with pytest.raises(ValueError, match="候选不得写入正式规则或决定文件"):
+        write_nutrition_occurrence_review(_bundle_fixture(), alias)
+
+    assert formal.read_text(encoding="utf-8") == "preserve formal"
+    assert alias.read_text(encoding="utf-8") == "preserve formal"
+
+
+def test_writer_refuses_symlink_to_formal_target_when_windows_privilege_allows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    formal = (
+        tmp_path
+        / "data"
+        / "review"
+        / "ingredient_nutrition_retention_decisions.csv"
+    )
+    formal.parent.mkdir(parents=True)
+    formal.write_text("preserve formal", encoding="utf-8")
+    alias = tmp_path / "retention-review-symlink.csv"
+    try:
+        alias.symlink_to(formal)
+    except OSError as exc:
+        if isinstance(exc, PermissionError) or getattr(exc, "winerror", None) == 1314:
+            pytest.skip(
+                "Windows symlink privilege unavailable for formal-target alias test: "
+                f"{exc}"
+            )
+        raise
+    monkeypatch.setattr(nutrition_occurrence_review, "PROJECT_ROOT", tmp_path)
+
+    with pytest.raises(ValueError, match="候选不得写入正式规则或决定文件"):
+        write_nutrition_occurrence_review(_bundle_fixture(), alias)
+
+    assert formal.read_text(encoding="utf-8") == "preserve formal"
 
 
 def test_writer_rejects_invalid_status_duplicate_and_cross_queue_before_replace(

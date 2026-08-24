@@ -1,4 +1,5 @@
 from decimal import Decimal
+from typing import get_args, get_type_hints
 
 import pytest
 
@@ -73,6 +74,21 @@ def _rule(
 
 def _fuzzy_rule(**kwargs) -> MeasureRule:
     return _rule(rule_type="fuzzy_single_value", **kwargs)
+
+
+def test_quantity_unresolved_reason_is_public_and_covers_the_runtime_domain() -> None:
+    from food_agent_v2.b1.quantity_normalizer import (
+        QuantityNormalizationResult,
+        QuantityUnresolvedReason,
+    )
+
+    assert set(get_args(QuantityUnresolvedReason)) == {
+        "quantity_unapproved",
+        "usage_unresolved_for_fuzzy",
+    }
+    assert get_type_hints(QuantityNormalizationResult)["reason"] == (
+        QuantityUnresolvedReason | None
+    )
 
 
 @pytest.fixture

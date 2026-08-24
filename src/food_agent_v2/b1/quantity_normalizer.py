@@ -21,6 +21,9 @@ from food_agent_v2.b1.edible_fraction_review import (
 from food_agent_v2.b1.nutrition_occurrence_rules import FuzzyTokenClass, UsageCode
 
 ReviewStatus = Literal["pending", "approved", "modified", "rejected"]
+QuantityUnresolvedReason = Literal[
+    "quantity_unapproved", "usage_unresolved_for_fuzzy"
+]
 _REVIEW_STATUSES = frozenset({"pending", "approved", "modified", "rejected"})
 _USAGE_CODES = frozenset({"main", "supporting", "seasoning", "cooking_fat", "cooking_liquid"})
 _FUZZY_TOKEN_CLASSES = frozenset({"as_needed", "small_amount", "several_count", "few_drops"})
@@ -282,7 +285,7 @@ class QuantityNormalizationResult:
     standardized_grams: Decimal | None
     requires_review: bool
     review_status: ReviewStatus | None
-    reason: Literal["quantity_unapproved", "usage_unresolved_for_fuzzy"] | None
+    reason: QuantityUnresolvedReason | None
 
 
 def normalize_quantity(occurrence, measure_rules, decisions) -> QuantityNormalizationResult:

@@ -1,4 +1,5 @@
 import csv
+import os
 from pathlib import Path
 
 import pytest
@@ -40,11 +41,31 @@ def test_offline_review_kinds_are_registered(monkeypatch, tmp_path: Path, kind: 
 
 
 def test_nutrition_occurrences_route_is_offline_and_returns_four_counts(monkeypatch, tmp_path: Path) -> None:
-    class _LLMSentinel:
-        def __init__(self, *_args, **_kwargs):
-            raise AssertionError("offline nutrition-occurrences route called an LLM")
+    def fail_offline_dependency(*_args, **_kwargs):
+        raise AssertionError(
+            "offline nutrition-occurrences route called an LLM or loaded configuration"
+        )
 
-    monkeypatch.setattr(data_review, "LLMQuantityEstimator", _LLMSentinel)
+    for adapter_name in (
+        "LLMFoodOriginEstimator",
+        "LLMProfileEstimator",
+        "LLMQuantityEstimator",
+        "LLMUsdaCandidateSelector",
+        "LLMUsdaSearchTermEstimator",
+    ):
+        monkeypatch.setattr(data_review, adapter_name, fail_offline_dependency)
+    monkeypatch.setattr(
+        "food_agent_v2.c3.llm_client.get_llm_client", fail_offline_dependency
+    )
+    monkeypatch.setattr(
+        "food_agent_v2.core.config.load_config", fail_offline_dependency
+    )
+    monkeypatch.setattr(
+        data_review, "get_llm_client", fail_offline_dependency, raising=False
+    )
+    monkeypatch.setattr(
+        data_review, "load_config", fail_offline_dependency, raising=False
+    )
     monkeypatch.setattr(data_review, "_build_review_context", lambda *_args: object(), raising=False)
     monkeypatch.setattr(
         data_review,
@@ -66,6 +87,118 @@ def test_nutrition_occurrences_route_is_offline_and_returns_four_counts(monkeypa
         "usage_candidates": 1, "usage_exceptions": 1,
         "retention_candidates": 1, "retention_exceptions": 1,
     }
+
+
+def _prepare_nutrition_occurrence_cli(
+    monkeypatch: pytest.MonkeyPatch, project_root: Path
+) -> None:
+    monkeypatch.setattr(data_review, "PROJECT_ROOT", project_root)
+    monkeypatch.setattr(data_review, "load_verified_recipe_source", lambda *_args: ())
+    monkeypatch.setattr(data_review, "canonical_source_manifest", lambda: ())
+    monkeypatch.setattr(data_review, "classify_all", lambda *_args: ())
+    monkeypatch.setattr(data_review, "load_overrides", lambda *_args: {})
+    monkeypatch.setattr(
+        data_review,
+        "load_recipe_profile_enrichments",
+        lambda *_args, **_kwargs: {},
+    )
+    monkeypatch.setattr(data_review, "recipe_facts_from_source", lambda *_args: ())
+    monkeypatch.setattr(
+        data_review,
+        "_build_review_context",
+        lambda *_args: (_ for _ in ()).throw(
+            AssertionError("formal target reached nutrition occurrence context build")
+        ),
+    )
+
+
+@pytest.mark.parametrize("alias_kind", ("relative", "case_variant"))
+def test_nutrition_occurrence_cli_refuses_relative_and_case_formal_aliases(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    alias_kind: str,
+) -> None:
+    formal = (
+        tmp_path
+        / "data"
+        / "review"
+        / "ingredient_nutrition_retention_decisions.csv"
+    )
+    formal.parent.mkdir(parents=True)
+    formal.write_text("preserve formal", encoding="utf-8")
+    _prepare_nutrition_occurrence_cli(monkeypatch, tmp_path)
+    if alias_kind == "relative":
+        monkeypatch.chdir(tmp_path)
+        alias = Path("data/review/ingredient_nutrition_retention_decisions.csv")
+    else:
+        alias = (
+            tmp_path
+            / "DATA"
+            / "REVIEW"
+            / "INGREDIENT_NUTRITION_RETENTION_DECISIONS.CSV"
+        )
+
+    with pytest.raises(ValueError, match="候选不得写入正式规则或决定文件"):
+        data_review.main(
+            ["--kind", "nutrition-occurrences", "--output", str(alias)]
+        )
+
+    assert formal.read_text(encoding="utf-8") == "preserve formal"
+
+
+def test_nutrition_occurrence_cli_refuses_hard_link_to_formal_target_on_windows(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    formal = (
+        tmp_path
+        / "data"
+        / "review"
+        / "ingredient_nutrition_retention_decisions.csv"
+    )
+    formal.parent.mkdir(parents=True)
+    formal.write_text("preserve formal", encoding="utf-8")
+    alias = tmp_path / "retention-cli-hard-link.csv"
+    os.link(formal, alias)
+    _prepare_nutrition_occurrence_cli(monkeypatch, tmp_path)
+
+    with pytest.raises(ValueError, match="候选不得写入正式规则或决定文件"):
+        data_review.main(
+            ["--kind", "nutrition-occurrences", "--output", str(alias)]
+        )
+
+    assert formal.read_text(encoding="utf-8") == "preserve formal"
+    assert alias.read_text(encoding="utf-8") == "preserve formal"
+
+
+def test_nutrition_occurrence_cli_refuses_symlink_to_formal_target_when_allowed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    formal = (
+        tmp_path
+        / "data"
+        / "review"
+        / "ingredient_nutrition_retention_decisions.csv"
+    )
+    formal.parent.mkdir(parents=True)
+    formal.write_text("preserve formal", encoding="utf-8")
+    alias = tmp_path / "retention-cli-symlink.csv"
+    try:
+        alias.symlink_to(formal)
+    except OSError as exc:
+        if isinstance(exc, PermissionError) or getattr(exc, "winerror", None) == 1314:
+            pytest.skip(
+                "Windows symlink privilege unavailable for CLI formal-target alias test: "
+                f"{exc}"
+            )
+        raise
+    _prepare_nutrition_occurrence_cli(monkeypatch, tmp_path)
+
+    with pytest.raises(ValueError, match="候选不得写入正式规则或决定文件"):
+        data_review.main(
+            ["--kind", "nutrition-occurrences", "--output", str(alias)]
+        )
+
+    assert formal.read_text(encoding="utf-8") == "preserve formal"
 
 
 def _write_nutrition_review_fixture(review_dir: Path) -> None:
