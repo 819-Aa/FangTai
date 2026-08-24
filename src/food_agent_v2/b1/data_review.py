@@ -313,7 +313,15 @@ def _refuse_formal_review_target(path: Path) -> None:
     if any(path.name.casefold() == formal.name.casefold() for formal in formal_paths):
         raise ValueError("候选不得写入正式规则或决定文件")
     try:
-        resolved = str(path.resolve(strict=False)).casefold()
+        resolved_path = path.resolve(strict=False)
+        review_root = formal_root.resolve(strict=False)
+        review_prefix = str(review_root).casefold().rstrip("\\/") + "\\"
+        if (
+            str(resolved_path).casefold() == str(review_root).casefold()
+            or str(resolved_path).casefold().startswith(review_prefix)
+        ):
+            raise ValueError("候选不得写入正式规则或决定文件")
+        resolved = str(resolved_path).casefold()
         for formal in formal_paths:
             if resolved == str(formal.resolve(strict=False)).casefold():
                 raise ValueError("候选不得写入正式规则或决定文件")

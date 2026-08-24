@@ -404,7 +404,14 @@ def load_quantity_review_candidates(path: Path, views, facts) -> tuple[QuantityR
         if headers not in {_LEGACY_CANDIDATE_HEADERS, _V2_CANDIDATE_HEADERS}:
             raise ValueError("数量候选 CSV 表头非法")
         output = []
+        seen_occurrence_ids: set[str] = set()
         for line_number, row in enumerate(reader, 2):
+            if None in row or any(value is None for value in row.values()):
+                raise ValueError(f"数量候选 CSV 第 {line_number} 行列数非法")
+            occurrence_id = (row.get("occurrence_id") or "").strip()
+            if occurrence_id in seen_occurrence_ids:
+                raise ValueError(f"重复 occurrence_id: {occurrence_id}")
+            seen_occurrence_ids.add(occurrence_id)
             output.append(
                 _parse_review_candidate_row(
                     row, line_number, occurrences=occurrences, facts_by_id=facts_by_id,
@@ -572,15 +579,26 @@ def _safe_csv_text(value: str | None) -> str:
 
 
 def _is_formal_measure_rule_path(path: Path) -> bool:
+    review_root = PROJECT_ROOT / "data" / "review"
     formal_paths = (
-        PROJECT_ROOT / "data" / "review" / "ingredient_measure_rules.csv",
-        PROJECT_ROOT / "data" / "review" / "ingredient_edible_fraction_rules.csv",
-        PROJECT_ROOT / "data" / "review" / "ingredient_edible_fraction_decisions.csv",
+        review_root / "ingredient_measure_rules.csv",
+        review_root / "ingredient_quantity_decisions.csv",
+        review_root / "ingredient_nutrition_usage_decisions.csv",
+        review_root / "ingredient_edible_fraction_rules.csv",
+        review_root / "ingredient_edible_fraction_decisions.csv",
     )
     if any(path.name.casefold() == formal.name.casefold() for formal in formal_paths):
         return True
     try:
-        resolved = str(path.resolve(strict=False)).casefold()
+        resolved_path = path.resolve(strict=False)
+        resolved = str(resolved_path).casefold()
+        resolved_root = review_root.resolve(strict=False)
+        review_prefix = str(resolved_root).casefold().rstrip("\\/") + "\\"
+        if (
+            str(resolved_path).casefold() == str(resolved_root).casefold()
+            or str(resolved_path).casefold().startswith(review_prefix)
+        ):
+            return True
         for formal in formal_paths:
             if resolved == str(formal.resolve(strict=False)).casefold():
                 return True

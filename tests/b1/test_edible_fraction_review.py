@@ -1,3 +1,4 @@
+from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
 from typing import get_type_hints
@@ -242,8 +243,27 @@ def test_generator_is_pending_only_excludes_nonretained_and_diagnoses_usage() ->
     assert candidates[0].candidate_edible_fraction is None
     assert candidates[0].review_status == "pending"
     assert "blank_form" in candidates[0].exception_reasons
-    assert "no_effective_rule_or_occurrence_decision" in candidates[0].exception_reasons
+    assert "unresolved_usage" in candidates[0].exception_reasons
     assert "unresolved_usage" in candidates[1].exception_reasons
+
+
+def test_usage_unresolved_does_not_skip_existing_effective_fraction() -> None:
+    occurrence = NutritionOccurrenceInput(
+        occurrence_id="1-1", ingredient_id=7, quantity_raw="1个", unit_raw=None,
+        quantity_status="explicit", ingredient_name="苹果", normalized_form="带皮",
+        usage_code="main", retained_in_dish=None, requires_review=False,
+    )
+    view = RecipeNutritionInputView(
+        build_id=UUID("00000000-0000-0000-0000-000000000001"),
+        source_manifest_hash="a" * 64, recipe_id=1, ingredients=(occurrence,),
+    )
+    candidates = generate_edible_fraction_candidates(
+        (view,), EdibleFractionRuleIndex((_rule(7, "带皮", "0.8"),)), EdibleFractionDecisionIndex(())
+    )
+
+    assert len(candidates) == 1
+    assert candidates[0].candidate_basis == "unresolved_usage"
+    assert candidates[0].exception_reasons == ("unresolved_usage",)
 
 
 def test_writer_escapes_formulas_and_preserves_old_queue_on_formal_alias(tmp_path, monkeypatch) -> None:
@@ -253,7 +273,8 @@ def test_writer_escapes_formulas_and_preserves_old_queue_on_formal_alias(tmp_pat
     candidate = EdibleFractionReviewCandidate(
         occurrence_id="1-1", recipe_id=1, ingredient_id=7, ingredient_name="=苹果",
         source_form="", decision_form="", quantity_raw="少许", usage_code="seasoning",
-        retained_in_dish=True, exception_reasons=("blank_form",),
+        retained_in_dish=True,
+        exception_reasons=("blank_form", "no_effective_rule_or_occurrence_decision"),
     )
     output = tmp_path / "candidates.csv"
     write_edible_fraction_candidates((candidate,), output)
@@ -262,6 +283,59 @@ def test_writer_escapes_formulas_and_preserves_old_queue_on_formal_alias(tmp_pat
     formal = tmp_path / "data" / "review" / "ingredient_edible_fraction_rules.csv"
     formal.parent.mkdir(parents=True)
     formal.write_text("preserve", encoding="utf-8")
+    with pytest.raises(ValueError, match="正式"):
+        write_edible_fraction_candidates((candidate,), formal)
+    assert formal.read_text(encoding="utf-8") == "preserve"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("usage_code", "garbage"),
+        ("candidate_basis", "garbage"),
+        ("candidate_basis", "unresolved_usage"),
+        ("exception_reasons", ("blank_form", "blank_form")),
+        ("exception_reasons", ("no_effective_rule_or_occurrence_decision", "blank_form")),
+    ),
+)
+def test_writer_rejects_invalid_diagnostic_fields_before_opening(tmp_path, field, value) -> None:
+    candidate = EdibleFractionReviewCandidate(
+        occurrence_id="1-1", recipe_id=1, ingredient_id=7, ingredient_name="苹果",
+        source_form="", decision_form="", quantity_raw="少许", usage_code="seasoning",
+        retained_in_dish=True, exception_reasons=("blank_form",),
+    )
+    output = tmp_path / "queue.csv"
+    original = b"preserve\r\n"
+    output.write_bytes(original)
+
+    with pytest.raises(ValueError):
+        write_edible_fraction_candidates((replace(candidate, **{field: value}),), output)
+    assert output.read_bytes() == original
+
+
+@pytest.mark.parametrize(
+    "filename",
+    (
+        "ingredient_measure_rules.csv",
+        "ingredient_quantity_decisions.csv",
+        "ingredient_nutrition_usage_decisions.csv",
+        "ingredient_edible_fraction_rules.csv",
+        "ingredient_edible_fraction_decisions.csv",
+    ),
+)
+def test_edible_writer_refuses_all_formal_targets(tmp_path, monkeypatch, filename) -> None:
+    monkeypatch.setattr(
+        "food_agent_v2.b1.edible_fraction_review.PROJECT_ROOT", tmp_path
+    )
+    candidate = EdibleFractionReviewCandidate(
+        occurrence_id="1-1", recipe_id=1, ingredient_id=7, ingredient_name="苹果",
+        source_form="", decision_form="", retained_in_dish=True,
+        exception_reasons=("blank_form", "no_effective_rule_or_occurrence_decision"),
+    )
+    formal = tmp_path / "data" / "review" / filename
+    formal.parent.mkdir(parents=True, exist_ok=True)
+    formal.write_text("preserve", encoding="utf-8")
+
     with pytest.raises(ValueError, match="正式"):
         write_edible_fraction_candidates((candidate,), formal)
     assert formal.read_text(encoding="utf-8") == "preserve"

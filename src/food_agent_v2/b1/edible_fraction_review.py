@@ -37,6 +37,12 @@ _DIAGNOSTIC_REASONS = (
     "unresolved_usage",
     "no_effective_rule_or_occurrence_decision",
 )
+_USAGE_CODES = frozenset(
+    {"main", "supporting", "seasoning", "cooking_fat", "retained_liquid"}
+)
+_CANDIDATE_BASES = frozenset(
+    {"no_effective_rule_or_occurrence_decision", "unresolved_usage"}
+)
 
 
 @dataclass(frozen=True)
@@ -128,6 +134,8 @@ def generate_edible_fraction_candidates(views, rules, decisions):
     forms_by_ingredient: dict[int, set[str]] = {}
     for view in views:
         for occurrence in view.ingredients:
+            if occurrence.retained_in_dish is False:
+                continue
             forms_by_ingredient.setdefault(occurrence.ingredient_id, set()).add(
                 (occurrence.normalized_form or "").strip()
             )
@@ -136,18 +144,33 @@ def generate_edible_fraction_candidates(views, rules, decisions):
         for occurrence in view.ingredients:
             if occurrence.retained_in_dish is False:
                 continue
+            usage_unresolved = (
+                occurrence.usage_code is None
+                or occurrence.retained_in_dish is None
+                or occurrence.requires_review
+            )
             resolution = resolve_edible_fraction(occurrence, rules, decisions)
-            if resolution.edible_fraction is not None and not resolution.requires_review:
+            if (
+                not usage_unresolved
+                and resolution.edible_fraction is not None
+                and not resolution.requires_review
+            ):
                 continue
             reasons: list[str] = []
             if not (occurrence.normalized_form or "").strip():
                 reasons.append("blank_form")
             if len(forms_by_ingredient.get(occurrence.ingredient_id, ())) > 1:
                 reasons.append("multi_form_ingredient")
-            if occurrence.retained_in_dish is None or occurrence.usage_code is None:
+            if usage_unresolved:
                 reasons.append("unresolved_usage")
-            reasons.append("no_effective_rule_or_occurrence_decision")
+            elif resolution.edible_fraction is None or resolution.requires_review:
+                reasons.append("no_effective_rule_or_occurrence_decision")
             decision = decisions.get_effective(occurrence.occurrence_id)
+            candidate_basis = (
+                "unresolved_usage"
+                if usage_unresolved
+                else "no_effective_rule_or_occurrence_decision"
+            )
             candidates.append(
                 EdibleFractionReviewCandidate(
                     occurrence_id=occurrence.occurrence_id,
@@ -156,7 +179,7 @@ def generate_edible_fraction_candidates(views, rules, decisions):
                     ingredient_name=occurrence.ingredient_name,
                     source_form=(occurrence.normalized_form or "").strip(),
                     decision_form=decision.decision_form if decision is not None else "",
-                    candidate_basis="no_effective_rule_or_occurrence_decision",
+                    candidate_basis=candidate_basis,
                     quantity_raw=occurrence.quantity_raw or "",
                     usage_code=occurrence.usage_code,
                     retained_in_dish=occurrence.retained_in_dish,
@@ -252,12 +275,31 @@ def _validate_output_candidate(candidate: EdibleFractionReviewCandidate) -> None
         raise ValueError("可食比例候选必填文本不能为空")
     if candidate.usage_code is not None and not isinstance(candidate.usage_code, str):
         raise ValueError("可食比例候选 usage_code 非法")
+    if candidate.usage_code is not None and candidate.usage_code not in _USAGE_CODES:
+        raise ValueError("可食比例候选 usage_code 非法")
+    if candidate.candidate_basis not in _CANDIDATE_BASES:
+        raise ValueError("可食比例候选 candidate_basis 非法")
     if candidate.retained_in_dish not in (True, None):
         raise ValueError("可食比例候选必须为 retained 或未决")
-    if not candidate.exception_reasons or any(
-        reason not in _DIAGNOSTIC_REASONS for reason in candidate.exception_reasons
+    if (
+        not isinstance(candidate.exception_reasons, tuple)
+        or not candidate.exception_reasons
+        or len(set(candidate.exception_reasons)) != len(candidate.exception_reasons)
+        or any(reason not in _DIAGNOSTIC_REASONS for reason in candidate.exception_reasons)
+        or candidate.exception_reasons
+        != tuple(reason for reason in _DIAGNOSTIC_REASONS if reason in candidate.exception_reasons)
     ):
         raise ValueError("可食比例候选诊断原因非法")
+    unresolved = "unresolved_usage" in candidate.exception_reasons
+    if (candidate.candidate_basis == "unresolved_usage") != unresolved:
+        raise ValueError("可食比例候选 candidate_basis 与诊断原因不一致")
+    if unresolved and "no_effective_rule_or_occurrence_decision" in candidate.exception_reasons:
+        raise ValueError("usage 未决时不得伪造有效规则诊断")
+    if (
+        candidate.candidate_basis == "no_effective_rule_or_occurrence_decision"
+        and "no_effective_rule_or_occurrence_decision" not in candidate.exception_reasons
+    ):
+        raise ValueError("可食比例候选缺少有效规则诊断原因")
 
 
 def _safe_csv_text(value: str | None) -> str:
@@ -268,16 +310,21 @@ def _safe_csv_text(value: str | None) -> str:
 
 
 def _is_formal_edible_fraction_path(path: Path) -> bool:
-    formal_paths = (
-        PROJECT_ROOT / "data" / "review" / "ingredient_edible_fraction_rules.csv",
-        PROJECT_ROOT / "data" / "review" / "ingredient_edible_fraction_decisions.csv",
-    )
-    return _is_formal_alias(path, formal_paths)
+    return _is_formal_alias(path, _formal_review_paths())
 
 
 def _is_formal_measure_rule_path(path: Path) -> bool:
-    return _is_formal_alias(
-        path, (PROJECT_ROOT / "data" / "review" / "ingredient_measure_rules.csv",)
+    return _is_formal_alias(path, _formal_review_paths())
+
+
+def _formal_review_paths() -> tuple[Path, ...]:
+    review_root = PROJECT_ROOT / "data" / "review"
+    return (
+        review_root / "ingredient_measure_rules.csv",
+        review_root / "ingredient_quantity_decisions.csv",
+        review_root / "ingredient_nutrition_usage_decisions.csv",
+        review_root / "ingredient_edible_fraction_rules.csv",
+        review_root / "ingredient_edible_fraction_decisions.csv",
     )
 
 
@@ -285,7 +332,15 @@ def _is_formal_alias(path: Path, formal_paths: tuple[Path, ...]) -> bool:
     if any(path.name.casefold() == formal.name.casefold() for formal in formal_paths):
         return True
     try:
-        resolved = str(path.resolve(strict=False)).casefold()
+        resolved_path = path.resolve(strict=False)
+        resolved = str(resolved_path).casefold()
+        review_root = (PROJECT_ROOT / "data" / "review").resolve(strict=False)
+        review_prefix = str(review_root).casefold().rstrip("\\/") + "\\"
+        if (
+            str(resolved_path).casefold() == str(review_root).casefold()
+            or str(resolved_path).casefold().startswith(review_prefix)
+        ):
+            return True
         for formal in formal_paths:
             if resolved == str(formal.resolve(strict=False)).casefold():
                 return True

@@ -453,3 +453,70 @@ def test_quantity_rule_loader_rejects_unknown_or_nonfinite_candidates(tmp_path, 
     _candidate_file(unknown, occurrence_id="9-9")
     with pytest.raises(ValueError, match="未知 occurrence_id"):
         load_quantity_review_candidates(unknown, views, (fact,))
+
+
+def test_quantity_rule_loader_rejects_extra_or_missing_cells(tmp_path) -> None:
+    source = tmp_path / "extra.csv"
+    _candidate_file(source)
+    source.write_text(source.read_text(encoding="utf-8").replace("pending\n", "pending,extra\n"), encoding="utf-8")
+    views = type("Views", (), {"nutrition_views": (_candidate_view(),)})()
+    fact = RecipeFact(recipe_id=1, name="测试菜", record_type="dish")
+    with pytest.raises(ValueError, match="列|表头"):
+        load_quantity_review_candidates(source, views, (fact,))
+
+    missing = tmp_path / "missing.csv"
+    _candidate_file(missing)
+    missing.write_text(missing.read_text(encoding="utf-8").replace(",,pending\n", ",\n"), encoding="utf-8")
+    with pytest.raises(ValueError, match="列|非法"):
+        load_quantity_review_candidates(missing, views, (fact,))
+
+
+def test_quantity_rule_loader_rejects_duplicate_occurrence_ids(tmp_path) -> None:
+    source = tmp_path / "duplicate.csv"
+    _candidate_file(source)
+    source.write_text(source.read_text(encoding="utf-8") + source.read_text(encoding="utf-8").splitlines(True)[1], encoding="utf-8")
+    views = type("Views", (), {"nutrition_views": (_candidate_view(),)})()
+    fact = RecipeFact(recipe_id=1, name="测试菜", record_type="dish")
+    with pytest.raises(ValueError, match="重复"):
+        load_quantity_review_candidates(source, views, (fact,))
+
+
+def test_quantity_rule_loader_rejects_v2_metadata_conflict(tmp_path) -> None:
+    source = tmp_path / "v2.csv"
+    source.write_text(
+        "occurrence_id,recipe_id,recipe_name,ingredient_id,ingredient_name,normalized_form,"
+        "normalized_unit,usage_code,fuzzy_token_class,raw_quantity,step_context,"
+        "deterministic_calculation,candidate_basis,candidate_grams,decision_grams,review_status\n"
+        "1-1,1,测试菜,10,苹果,错误形态,,main,,1个,加入苹果,not_available,"
+        "whole_recipe_context_model,120,,pending\n",
+        encoding="utf-8",
+    )
+    views = type("Views", (), {"nutrition_views": (_candidate_view(),)})()
+    fact = RecipeFact(recipe_id=1, name="测试菜", record_type="dish")
+    with pytest.raises(ValueError, match="normalized_form"):
+        load_quantity_review_candidates(source, views, (fact,))
+
+
+@pytest.mark.parametrize("filename", (
+    "ingredient_measure_rules.csv",
+    "ingredient_quantity_decisions.csv",
+    "ingredient_nutrition_usage_decisions.csv",
+    "ingredient_edible_fraction_rules.csv",
+    "ingredient_edible_fraction_decisions.csv",
+))
+def test_quantity_writer_refuses_all_formal_targets(tmp_path, monkeypatch, filename) -> None:
+    monkeypatch.setattr(quantity_review, "PROJECT_ROOT", tmp_path)
+    formal = tmp_path / "data" / "review" / filename
+    formal.parent.mkdir(parents=True, exist_ok=True)
+    formal.write_text("preserve", encoding="utf-8")
+    candidate = generate_quantity_candidates(
+        (RecipeQuantityReviewContext(
+            recipe_id=1, recipe_name="测试菜", step_context="加入盐",
+            ingredients=(_pending("1-1", "盐"),),
+        ),),
+        type("Estimator", (), {"estimate": lambda _self, _context: {"1-1": Decimal("2")}})(),
+    )[0]
+
+    with pytest.raises(ValueError, match="正式"):
+        write_quantity_candidates((candidate,), formal)
+    assert formal.read_text(encoding="utf-8") == "preserve"
