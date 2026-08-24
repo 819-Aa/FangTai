@@ -26,7 +26,12 @@ _COOKING_FAT_IDENTITIES = frozenset(
         "大豆油", "葵花籽油", "猪油", "色拉油",
     }
 )
-_LIQUID_NAME_MARKERS = ("汤", "水", "汁")
+_COOKING_LIQUID_IDENTITIES = frozenset(
+    {
+        "水", "清水", "凉水", "热水", "开水", "汤", "高汤", "清汤", "鸡汤",
+        "骨汤", "肉汤", "汤汁",
+    }
+)
 _DISCARD_MARKERS = ("倒掉", "弃去", "过滤", "滤出", "捞出", "沥干", "去除", "倒出")
 _FORMAL_FILENAMES = frozenset(
     {
@@ -44,10 +49,10 @@ _BASE_HEADERS = (
     "bound_step_indexes", "bound_step_text",
 )
 _FILES = (
-    ("usage_candidates", "nutrition_usage_candidates.csv", "candidate_usage_code"),
-    ("usage_exceptions", "nutrition_usage_exceptions.csv", "exception_codes"),
-    ("retention_candidates", "nutrition_retention_candidates.csv", "candidate_retained_in_dish"),
-    ("retention_exceptions", "nutrition_retention_exceptions.csv", "exception_codes"),
+    ("usage_candidates", "nutrition_usage_candidates.csv", "candidate_usage_code", True),
+    ("usage_exceptions", "nutrition_usage_exceptions.csv", "exception_codes", False),
+    ("retention_candidates", "nutrition_retention_candidates.csv", "candidate_retained_in_dish", True),
+    ("retention_exceptions", "nutrition_retention_exceptions.csv", "exception_codes", False),
 )
 
 
@@ -143,7 +148,7 @@ def generate_nutrition_occurrence_review(
                             evidence_codes=("NUTRITION_USAGE_CONTROLLED_COOKING_FAT",),
                         )
                     )
-                elif _is_cooking_liquid(occurrence.name_clean):
+                elif _is_cooking_liquid(identity.name_canonical):
                     usage_candidates.append(
                         NutritionUsageCandidate(
                             **common,
@@ -176,7 +181,7 @@ def generate_nutrition_occurrence_review(
                             exception_codes=("NUTRITION_RETENTION_DISCARD_RISK",),
                         )
                     )
-                elif _is_cooking_fat(identity.name_canonical) or _is_cooking_liquid(occurrence.name_clean):
+                elif _is_cooking_fat(identity.name_canonical) or _is_cooking_liquid(identity.name_canonical):
                     retention_exceptions.append(
                         NutritionRetentionException(
                             **common,
@@ -207,14 +212,14 @@ def write_nutrition_occurrence_review(
     directory = Path(output_dir)
     _refuse_formal_target(directory)
     rows_by_name = {
-        "usage_candidates": tuple(bundle.usage_candidates),
-        "usage_exceptions": tuple(bundle.usage_exceptions),
-        "retention_candidates": tuple(bundle.retention_candidates),
-        "retention_exceptions": tuple(bundle.retention_exceptions),
+        "usage_candidates": _sorted_rows(bundle.usage_candidates),
+        "usage_exceptions": _sorted_rows(bundle.usage_exceptions),
+        "retention_candidates": _sorted_rows(bundle.retention_candidates),
+        "retention_exceptions": _sorted_rows(bundle.retention_exceptions),
     }
     _validate_bundle(rows_by_name)
     directory.mkdir(parents=True, exist_ok=True)
-    targets = {key: directory / filename for key, filename, _ in _FILES}
+    targets = {key: directory / filename for key, filename, _, _ in _FILES}
     for target in targets.values():
         _refuse_formal_target(directory)
         _refuse_formal_target(target)
@@ -223,9 +228,13 @@ def write_nutrition_occurrence_review(
     backup_paths: dict[str, Path] = {}
     replaced: list[str] = []
     try:
-        for key, _, special_header in _FILES:
+        for key, _, special_header, include_evidence_codes in _FILES:
             temporary_paths[key] = _write_temporary(
-                directory, targets[key], rows_by_name[key], special_header
+                directory,
+                targets[key],
+                rows_by_name[key],
+                special_header,
+                include_evidence_codes,
             )
         for key, target in targets.items():
             if target.exists():
@@ -233,14 +242,14 @@ def write_nutrition_occurrence_review(
                     "wb", dir=directory, prefix=f".{target.name}.", suffix=".bak", delete=False
                 ) as handle:
                     backup = Path(handle.name)
-                shutil.copyfile(target, backup)
                 backup_paths[key] = backup
+                shutil.copyfile(target, backup)
         for key, target in targets.items():
             _refuse_formal_target(directory)
             _refuse_formal_target(target)
             temporary_paths[key].replace(target)
             replaced.append(key)
-        return {key: len(rows_by_name[key]) for key, _, _ in _FILES}
+        return {key: len(rows_by_name[key]) for key, _, _, _ in _FILES}
     except BaseException:
         for key in reversed(replaced):
             target = targets[key]
@@ -272,21 +281,36 @@ def _row_kwargs(recipe, occurrence, identity, normalized_form, bound_steps) -> d
     }
 
 
-def _write_temporary(directory: Path, target: Path, rows, special_header: str) -> Path:
-    fieldnames = (*_BASE_HEADERS, special_header, "evidence_codes", "review_status")
-    with NamedTemporaryFile(
-        "w", encoding="utf-8", newline="", dir=directory,
-        prefix=f".{target.name}.", suffix=".tmp", delete=False,
-    ) as handle:
-        temporary_path = Path(handle.name)
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow(_csv_row(row, special_header))
+def _write_temporary(
+    directory: Path, target: Path, rows, special_header: str, include_evidence_codes: bool
+) -> Path:
+    fieldnames = (*_BASE_HEADERS, special_header)
+    if include_evidence_codes:
+        fieldnames = (*fieldnames, "evidence_codes")
+    fieldnames = (*fieldnames, "review_status")
+    temporary_path: Path | None = None
+    try:
+        with NamedTemporaryFile(
+            "w", encoding="utf-8", newline="", dir=directory,
+            prefix=f".{target.name}.", suffix=".tmp", delete=False,
+        ) as handle:
+            temporary_path = Path(handle.name)
+            writer = csv.DictWriter(handle, fieldnames=fieldnames)
+            writer.writeheader()
+            for row in rows:
+                writer.writerow(_csv_row(row, special_header, include_evidence_codes))
+    except BaseException:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+        raise
+    if temporary_path is None:
+        raise RuntimeError("营养审阅临时文件未创建")
     return temporary_path
 
 
-def _csv_row(row: _ReviewRow, special_header: str) -> dict[str, str | int]:
+def _csv_row(
+    row: _ReviewRow, special_header: str, include_evidence_codes: bool
+) -> dict[str, str | int]:
     result: dict[str, str | int] = {
         "occurrence_id": _safe_csv_text(row.occurrence_id),
         "recipe_id": row.recipe_id,
@@ -299,9 +323,10 @@ def _csv_row(row: _ReviewRow, special_header: str) -> dict[str, str | int]:
         "quantity_raw": _safe_csv_text(row.quantity_raw),
         "bound_step_indexes": _safe_csv_text(";".join(map(str, row.bound_step_indexes))),
         "bound_step_text": _safe_csv_text(";".join(row.bound_step_text)),
-        "evidence_codes": _safe_csv_text(";".join(row.evidence_codes)),
         "review_status": row.review_status,
     }
+    if include_evidence_codes:
+        result["evidence_codes"] = _safe_csv_text(";".join(row.evidence_codes))
     value = getattr(row, special_header)
     result[special_header] = (
         str(value).lower() if isinstance(value, bool) else _safe_csv_text(";".join(value) if isinstance(value, tuple) else value)
@@ -399,7 +424,7 @@ def _is_cooking_fat(name: str) -> bool:
 
 
 def _is_cooking_liquid(name: str) -> bool:
-    return any(marker in name.lstrip("=+-@") for marker in _LIQUID_NAME_MARKERS)
+    return name.lstrip("=+-@") in _COOKING_LIQUID_IDENTITIES
 
 
 def _safe_csv_text(value: str) -> str:

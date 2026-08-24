@@ -144,6 +144,16 @@ def test_uncontrolled_usage_is_ambiguous_exception() -> None:
     assert bundle.usage_exceptions[0].exception_codes == ("NUTRITION_USAGE_AMBIGUOUS",)
 
 
+@pytest.mark.parametrize("name", ("水果", "水牛芝士", "汤圆"))
+def test_solid_names_with_liquid_characters_are_not_controlled_liquids(name: str) -> None:
+    bundle = generate_nutrition_occurrence_review(_context(name=name))
+
+    assert bundle.usage_candidates == ()
+    assert bundle.usage_exceptions[0].exception_codes == ("NUTRITION_USAGE_AMBIGUOUS",)
+    assert [row.candidate_retained_in_dish for row in bundle.retention_candidates] == [True]
+    assert bundle.retention_exceptions == ()
+
+
 @pytest.mark.parametrize("name", ("食用油", "清水"))
 def test_oil_and_liquid_retention_never_auto_true(name: str) -> None:
     bundle = generate_nutrition_occurrence_review(_context(name=name))
@@ -179,13 +189,48 @@ def test_writer_outputs_four_pending_only_atomic_csvs(tmp_path: Path) -> None:
         "nutrition_retention_candidates.csv",
         "nutrition_retention_exceptions.csv",
     }
-    with (tmp_path / "nutrition_usage_candidates.csv").open(encoding="utf-8", newline="") as handle:
-        assert tuple(csv.DictReader(handle).fieldnames or ()) == (
+    expected_headers = {
+        "nutrition_usage_candidates.csv": (
             "occurrence_id", "recipe_id", "recipe_name", "ingredient_id",
             "ingredient_name", "source_fragment", "normalized_form", "category",
             "quantity_raw", "bound_step_indexes", "bound_step_text",
             "candidate_usage_code", "evidence_codes", "review_status",
-        )
+        ),
+        "nutrition_usage_exceptions.csv": (
+            "occurrence_id", "recipe_id", "recipe_name", "ingredient_id",
+            "ingredient_name", "source_fragment", "normalized_form", "category",
+            "quantity_raw", "bound_step_indexes", "bound_step_text",
+            "exception_codes", "review_status",
+        ),
+        "nutrition_retention_candidates.csv": (
+            "occurrence_id", "recipe_id", "recipe_name", "ingredient_id",
+            "ingredient_name", "source_fragment", "normalized_form", "category",
+            "quantity_raw", "bound_step_indexes", "bound_step_text",
+            "candidate_retained_in_dish", "evidence_codes", "review_status",
+        ),
+        "nutrition_retention_exceptions.csv": (
+            "occurrence_id", "recipe_id", "recipe_name", "ingredient_id",
+            "ingredient_name", "source_fragment", "normalized_form", "category",
+            "quantity_raw", "bound_step_indexes", "bound_step_text",
+            "exception_codes", "review_status",
+        ),
+    }
+    for filename, expected_header in expected_headers.items():
+        with (tmp_path / filename).open(encoding="utf-8", newline="") as handle:
+            assert tuple(csv.DictReader(handle).fieldnames or ()) == expected_header
+
+
+def test_writer_sorts_directly_supplied_rows_by_recipe_and_occurrence(tmp_path: Path) -> None:
+    bundle = _bundle_fixture()
+    later = replace(bundle.usage_candidates[0], occurrence_id="2-1", recipe_id=2)
+    earlier = replace(bundle.usage_candidates[0], occurrence_id="1-3", recipe_id=1)
+
+    write_nutrition_occurrence_review(
+        replace(bundle, usage_candidates=(later, earlier)), tmp_path
+    )
+
+    with (tmp_path / "nutrition_usage_candidates.csv").open(encoding="utf-8", newline="") as handle:
+        assert [row["occurrence_id"] for row in csv.DictReader(handle)] == ["1-3", "2-1"]
 
 
 def test_writer_escapes_formulas_in_every_text_field(tmp_path: Path) -> None:
@@ -263,3 +308,39 @@ def test_writer_rolls_back_every_queue_when_a_replace_fails(tmp_path: Path, monk
     assert [target.read_text(encoding="utf-8") for target in targets] == [
         f"old:{target.name}" for target in targets
     ]
+
+
+def test_writer_removes_untracked_temp_file_when_csv_write_fails(tmp_path: Path, monkeypatch) -> None:
+    original_writerow = csv.DictWriter.writerow
+    calls = 0
+
+    def fail_first_data_row(writer, row):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise RuntimeError("injected CSV failure")
+        return original_writerow(writer, row)
+
+    monkeypatch.setattr(csv.DictWriter, "writerow", fail_first_data_row)
+
+    with pytest.raises(RuntimeError, match="injected CSV failure"):
+        write_nutrition_occurrence_review(_bundle_fixture(), tmp_path)
+
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_writer_removes_untracked_backup_when_copy_fails(tmp_path: Path, monkeypatch) -> None:
+    target = tmp_path / "nutrition_usage_candidates.csv"
+    target.write_text("old", encoding="utf-8")
+
+    def fail_copy(*_args, **_kwargs):
+        raise RuntimeError("injected copy failure")
+
+    monkeypatch.setattr("food_agent_v2.b1.nutrition_occurrence_review.shutil.copyfile", fail_copy)
+
+    with pytest.raises(RuntimeError, match="injected copy failure"):
+        write_nutrition_occurrence_review(_bundle_fixture(), tmp_path)
+
+    assert target.read_text(encoding="utf-8") == "old"
+    assert not list(tmp_path.glob("*.tmp"))
+    assert not list(tmp_path.glob("*.bak"))
