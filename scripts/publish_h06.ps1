@@ -24,11 +24,11 @@ $Script:H05Containers = @{
     redis = "food_agent_v2_h05_redis"
 }
 $Script:PortMap = @{
-    mysql = 3309
-    qdrant_rest = 6339
-    qdrant_grpc = 6340
-    redis = 6382
-    api = 8002
+    mysql = 3306
+    qdrant_rest = 6333
+    qdrant_grpc = 6334
+    redis = 6379
+    api = 8000
 }
 $Script:TestDockerState = $null
 $Script:TestDockerSequence = $null
@@ -322,7 +322,7 @@ function Assert-StorePortRestorable {
 function Assert-ApiPortFree {
     $occupant = Get-PortOccupant -Port $Script:PortMap.api
     if ($occupant) {
-        Write-FailureAndExit -Message "Port 8002 is occupied by unexpected listener."
+        Write-FailureAndExit -Message "Port $($Script:PortMap.api) is occupied by unexpected listener."
     }
 }
 
@@ -528,6 +528,7 @@ function Start-H06ApiProcess {
             API_PORT = $env:API_PORT
             MYSQL_PORT = $env:MYSQL_PORT
             QDRANT_REST_PORT = $env:QDRANT_REST_PORT
+            QDRANT_GRPC_PORT = $env:QDRANT_GRPC_PORT
             REDIS_PORT = $env:REDIS_PORT
             RAG_WARMUP_ON_STARTUP = $env:RAG_WARMUP_ON_STARTUP
             LLM_API_KEY = $env:LLM_API_KEY
@@ -718,8 +719,8 @@ function Wait-ForH06Readiness {
     $lastReady = $null
 
     for ($attempt = 0; $attempt -lt $attempts; $attempt += 1) {
-        $health = Invoke-H06HttpJson -Uri "http://127.0.0.1:8002/health"
-        $ready = Invoke-H06HttpJson -Uri "http://127.0.0.1:8002/ready"
+        $health = Invoke-H06HttpJson -Uri "http://127.0.0.1:$($Script:PortMap.api)/health"
+        $ready = Invoke-H06HttpJson -Uri "http://127.0.0.1:$($Script:PortMap.api)/ready"
         $lastHealth = $health
         $lastReady = $ready
 
@@ -822,7 +823,7 @@ try {
             [ordered]@{
                 action = "StartApi"
                 build_id = $manifestInfo.build_id
-                api_base = "http://127.0.0.1:8002"
+                api_base = "http://127.0.0.1:$($Script:PortMap.api)"
                 pid = $process.Id
                 log_path = $logPath
                 err_path = $errorPath

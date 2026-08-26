@@ -19,8 +19,8 @@ from food_agent_v2.core.config import load_config
 # live：真实全链路验收（需 H04 环境 + API 服务器）；默认不进入普通回归
 pytestmark = pytest.mark.live
 
-# 验收脚本通过 T23_API_BASE 指向绑定同一 T23 环境的隔离 API；默认 8001 仅作后备
-API = os.environ.get("T23_API_BASE", "http://localhost:8001")
+# 验收脚本通过 T23_API_BASE 指向绑定同一 T23 环境的隔离 API；默认 8000 仅作后备
+API = os.environ.get("T23_API_BASE", "http://localhost:8000")
 
 
 def _post(payload: dict) -> dict:

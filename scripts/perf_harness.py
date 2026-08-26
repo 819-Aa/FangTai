@@ -6,7 +6,7 @@ e2e（POST → 终态）。服务端节点级耗时由 API 进程的 ``[V2][perf
 
 用法：
     .venv/Scripts/python.exe scripts/perf_harness.py \
-        [--api http://localhost:8001] \
+        [--api http://localhost:8000] \
         [--cases data/raw/对话用例.json] \
         [--max-wait 180]
 
@@ -172,7 +172,7 @@ def run_case(api: str, case: dict, max_wait: int) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="P1 性能 harness")
-    parser.add_argument("--api", default=os.environ.get("PERF_API_BASE", "http://localhost:8001"))
+    parser.add_argument("--api", default=os.environ.get("PERF_API_BASE", "http://localhost:8000"))
     parser.add_argument("--cases", default="data/raw/对话用例.json")
     parser.add_argument("--max-wait", type=int, default=180)
     args = parser.parse_args()

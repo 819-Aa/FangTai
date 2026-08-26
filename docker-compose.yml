@@ -8,7 +8,7 @@ services:
       MYSQL_USER: ${MYSQL_USER:-foodagent}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-foodagent_v2}
     ports:
-      - "${MYSQL_PORT:-3307}:3306"
+      - "${MYSQL_PORT:-3306}:3306"
     volumes:
       - mysql_v2_data:/var/lib/mysql
       - ./db/schema_mysql.sql:/docker-entrypoint-initdb.d/01_schema.sql
@@ -24,8 +24,8 @@ services:
     environment:
       QDRANT__SERVICE__GRPC_PORT: 6334
     ports:
-      - "${QDRANT_REST_PORT:-6335}:6333"
-      - "${QDRANT_GRPC_PORT:-6336}:6334"
+      - "${QDRANT_REST_PORT:-6333}:6333"
+      - "${QDRANT_GRPC_PORT:-6334}:6334"
     volumes:
       - qdrant_v2_data:/qdrant/storage
     healthcheck:
@@ -39,7 +39,7 @@ services:
     image: redis:7-alpine
     container_name: ${REDIS_CONTAINER_NAME:-food_agent_v2_redis}
     ports:
-      - "${REDIS_PORT:-6380}:6379"
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_v2_data:/data
     healthcheck:

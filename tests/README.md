@@ -29,7 +29,7 @@ INV-005 拒绝、模型漏必需工具），全部 fail-closed；业务终态 `a
 **真实浏览器跨端**：`frontend/e2e/browser.spec.ts`（Playwright）——成功路径只接受
 completed/result_committed、刷新继续同 session（localStorage 比较 + 请求载荷证明）、
 SSE 首次连接中断后原生 Last-Event-ID 重连无丢失重复、菜单跨库一致。Vite 经
-`VITE_API_BASE_URL=http://localhost:38001` 访问 T23 隔离 API（绝不访问 8001）。
+`VITE_API_BASE_URL=http://localhost:38001` 访问 T23 隔离 API（绝不访问默认 API 8000）。
 
 验收执行分为两个互斥入口：
 

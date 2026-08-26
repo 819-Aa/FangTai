@@ -1,6 +1,6 @@
 """T23 真实全链路验收 —— 成功路径与跨库一致。
 
-前置：H04 空 V2 环境已 data-initialize；API 服务器运行于 localhost:8001；
+前置：H04 空 V2 环境已 data-initialize；API 服务器运行于 localhost:8000；
 真实 LLM（DeepSeek）可用。任何 live skip 使最终状态为 NOT_ACCEPTED。
 
 覆盖：
@@ -24,8 +24,8 @@ from food_agent_v2.core.config import load_config
 # live：真实全链路验收，需 H04 空 V2 环境 + API 服务器 + 真实 LLM；默认不进入普通回归
 pytestmark = pytest.mark.live
 
-# 验收脚本通过 T23_API_BASE 指向绑定同一 T23 环境的隔离 API；默认 8001 仅作后备
-API = os.environ.get("T23_API_BASE", "http://localhost:8001")
+# 验收脚本通过 T23_API_BASE 指向绑定同一 T23 环境的隔离 API；默认 8000 仅作后备
+API = os.environ.get("T23_API_BASE", "http://localhost:8000")
 TERMINAL = {"completed", "failed", "no_safe_menu", "no_feasible_menu",
             "needs_clarification", "cancelled", "interrupted"}
 

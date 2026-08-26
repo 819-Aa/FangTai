@@ -6,8 +6,6 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-import pytest
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT_PATH = REPO_ROOT / "scripts" / "publish_h06.ps1"
 POWERSHELL = ["powershell", "-ExecutionPolicy", "Bypass", "-File", str(SCRIPT_PATH)]
@@ -42,55 +40,50 @@ def write_valid_manifest(tmp_path: Path) -> tuple[Path, Path]:
 
 
 def make_docker_state(*, include_h06: bool = True, api_port_free: bool = True, h06_health: str = "healthy") -> dict:
-    ports: dict[str, dict[str, str]] = {
-        "3307": {"kind": "container", "name": "food_agent_v2_h05_mysql", "health": "healthy"},
-        "6335": {"kind": "container", "name": "food_agent_v2_h05_qdrant", "health": "healthy"},
-        "6336": {"kind": "container", "name": "food_agent_v2_h05_qdrant", "health": "healthy"},
-        "6380": {"kind": "container", "name": "food_agent_v2_h05_redis", "health": "healthy"},
-    }
+    ports: dict[str, dict[str, str]] = {}
     if include_h06:
         ports.update(
             {
-                "3309": {"kind": "container", "name": "food_agent_v2_h06_mysql", "health": h06_health},
-                "6339": {"kind": "container", "name": "food_agent_v2_h06_qdrant", "health": h06_health},
-                "6340": {"kind": "container", "name": "food_agent_v2_h06_qdrant", "health": h06_health},
-                "6382": {"kind": "container", "name": "food_agent_v2_h06_redis", "health": h06_health},
+                "3306": {"kind": "container", "name": "food_agent_v2_h06_mysql", "health": h06_health},
+                "6333": {"kind": "container", "name": "food_agent_v2_h06_qdrant", "health": h06_health},
+                "6334": {"kind": "container", "name": "food_agent_v2_h06_qdrant", "health": h06_health},
+                "6379": {"kind": "container", "name": "food_agent_v2_h06_redis", "health": h06_health},
             }
         )
     if not api_port_free:
-        ports["8002"] = {"kind": "process", "name": "rogue-listener"}
+        ports["8000"] = {"kind": "process", "name": "rogue-listener"}
     return {
         "ports": ports,
         "containers": {
             "food_agent_v2_h05_mysql": {
-                "running": True,
-                "health": "healthy",
-                "ports": {"3306/tcp": 3307},
+                "running": False,
+                "health": "missing",
+                "ports": {},
             },
             "food_agent_v2_h05_qdrant": {
-                "running": True,
-                "health": "healthy",
-                "ports": {"6333/tcp": 6335, "6334/tcp": 6336},
+                "running": False,
+                "health": "missing",
+                "ports": {},
             },
             "food_agent_v2_h05_redis": {
-                "running": True,
-                "health": "healthy",
-                "ports": {"6379/tcp": 6380},
+                "running": False,
+                "health": "missing",
+                "ports": {},
             },
             "food_agent_v2_h06_mysql": {
                 "running": True,
                 "health": h06_health,
-                "ports": {"3306/tcp": 3309},
+                "ports": {"3306/tcp": 3306},
             },
             "food_agent_v2_h06_qdrant": {
                 "running": True,
                 "health": h06_health,
-                "ports": {"6333/tcp": 6339, "6334/tcp": 6340},
+                "ports": {"6333/tcp": 6333, "6334/tcp": 6334},
             },
             "food_agent_v2_h06_redis": {
                 "running": True,
                 "health": h06_health,
-                "ports": {"6379/tcp": 6382},
+                "ports": {"6379/tcp": 6379},
             },
         },
     }
@@ -106,11 +99,11 @@ def write_http_state(path: Path) -> Path:
     path.write_text(
         json.dumps(
             {
-                "http://127.0.0.1:8002/health": {
+                "http://127.0.0.1:8000/health": {
                     "status_code": 200,
                     "json": {"status": "ok", "version": "0.1.0"},
                 },
-                "http://127.0.0.1:8002/ready": {
+                "http://127.0.0.1:8000/ready": {
                     "status_code": 200,
                     "json": {"status": "ready", "build_id": H06_BUILD_ID},
                 },
@@ -218,11 +211,11 @@ def test_h06_preflight_dry_run_is_isolated_and_non_mutating(tmp_path: Path) -> N
     assert result.json is not None
     assert result.json["compose_project"] == "food_agent_v2_h06"
     assert result.json["ports"] == {
-        "mysql": 3309,
-        "qdrant_rest": 6339,
-        "qdrant_grpc": 6340,
-        "redis": 6382,
-        "api": 8002,
+        "mysql": 3306,
+        "qdrant_rest": 6333,
+        "qdrant_grpc": 6334,
+        "redis": 6379,
+        "api": 8000,
     }
     assert result.json["manifest"]["build_id"] == H06_BUILD_ID
     assert after == before
@@ -279,7 +272,7 @@ def test_h06_preflight_fails_closed_for_unexpected_listener(tmp_path: Path) -> N
     )
 
     assert result.returncode != 0
-    assert "Port 8002 is occupied by unexpected listener" in result.stderr
+    assert "Port 8000 is occupied by unexpected listener" in result.stderr
 
 
 def test_h06_start_api_uses_hidden_window_and_h06_environment(tmp_path: Path) -> None:
@@ -288,11 +281,11 @@ def test_h06_start_api_uses_hidden_window_and_h06_environment(tmp_path: Path) ->
     http_sequence = write_http_sequence(
         tmp_path / "http-sequence.json",
         {
-            "http://127.0.0.1:8002/health": (
+            "http://127.0.0.1:8000/health": (
                 [{"error": "connection-refused"}] * 30
                 + [{"status_code": 200, "json": {"status": "ok", "version": "0.1.0"}}]
             ),
-            "http://127.0.0.1:8002/ready": (
+            "http://127.0.0.1:8000/ready": (
                 [{"status_code": 503, "json": {"error": "SERVICE_NOT_READY"}}] * 30
                 + [{"status_code": 200, "json": {"status": "ready", "build_id": H06_BUILD_ID}}]
             ),
@@ -333,12 +326,13 @@ def test_h06_start_api_uses_hidden_window_and_h06_environment(tmp_path: Path) ->
         "--host",
         "127.0.0.1",
         "--port",
-        "8002",
+        "8000",
     ]
-    assert start_payload["Environment"]["API_PORT"] == "8002"
-    assert start_payload["Environment"]["MYSQL_PORT"] == "3309"
-    assert start_payload["Environment"]["QDRANT_REST_PORT"] == "6339"
-    assert start_payload["Environment"]["REDIS_PORT"] == "6382"
+    assert start_payload["Environment"]["API_PORT"] == "8000"
+    assert start_payload["Environment"]["MYSQL_PORT"] == "3306"
+    assert start_payload["Environment"]["QDRANT_REST_PORT"] == "6333"
+    assert start_payload["Environment"]["QDRANT_GRPC_PORT"] == "6334"
+    assert start_payload["Environment"]["REDIS_PORT"] == "6379"
     assert start_payload["Environment"]["RAG_WARMUP_ON_STARTUP"] == "true"
     assert start_payload["Environment"]["LLM_API_KEY"] == "test-llm-key"
     assert start_payload["Environment"]["SILICONFLOW_API_KEY"] == "test-sf-key"
@@ -350,11 +344,11 @@ def test_h06_verify_checks_health_ready_build_id_and_container_health(tmp_path: 
     http_sequence = write_http_sequence(
         tmp_path / "http-sequence.json",
         {
-            "http://127.0.0.1:8002/health": [
+            "http://127.0.0.1:8000/health": [
                 {"error": "connection-refused"},
                 {"status_code": 200, "json": {"status": "ok", "version": "0.1.0"}},
             ],
-            "http://127.0.0.1:8002/ready": [
+            "http://127.0.0.1:8000/ready": [
                 {"status_code": 200, "json": {"status": "ready", "build_id": "wrong-build"}},
                 {"status_code": 200, "json": {"status": "ready", "build_id": H06_BUILD_ID}},
             ],
@@ -435,10 +429,10 @@ def test_h06_verify_times_out_when_ready_build_never_matches(tmp_path: Path) -> 
     http_sequence = write_http_sequence(
         tmp_path / "http-sequence-timeout.json",
         {
-            "http://127.0.0.1:8002/health": [
+            "http://127.0.0.1:8000/health": [
                 {"status_code": 200, "json": {"status": "ok", "version": "0.1.0"}},
             ],
-            "http://127.0.0.1:8002/ready": [
+            "http://127.0.0.1:8000/ready": [
                 {"status_code": 503, "json": {"error": "SERVICE_NOT_READY"}},
                 {"status_code": 200, "json": {"status": "ready", "build_id": "wrong-build"}},
                 {"status_code": 200, "json": {"status": "ready", "build_id": "wrong-build"}},
@@ -465,8 +459,8 @@ def test_h06_start_api_stops_started_pid_when_readiness_times_out(tmp_path: Path
     http_sequence = write_http_sequence(
         tmp_path / "http-sequence-startapi-timeout.json",
         {
-            "http://127.0.0.1:8002/health": [{"error": "connection-refused"}] * 4,
-            "http://127.0.0.1:8002/ready": [
+            "http://127.0.0.1:8000/health": [{"error": "connection-refused"}] * 4,
+            "http://127.0.0.1:8000/ready": [
                 {"status_code": 503, "json": {"error": "SERVICE_NOT_READY"}}
             ] * 4,
         },
@@ -514,7 +508,7 @@ def test_h06_initialize_runs_precise_data_initialize_command_and_h06_ports(tmp_p
         "--confirm-empty-v2",
     ]
     assert command_payload["WorkingDirectory"] == str(repo_root)
-    assert command_payload["Environment"]["MYSQL_PORT"] == "3309"
-    assert command_payload["Environment"]["QDRANT_REST_PORT"] == "6339"
-    assert command_payload["Environment"]["QDRANT_GRPC_PORT"] == "6340"
-    assert command_payload["Environment"]["REDIS_PORT"] == "6382"
+    assert command_payload["Environment"]["MYSQL_PORT"] == "3306"
+    assert command_payload["Environment"]["QDRANT_REST_PORT"] == "6333"
+    assert command_payload["Environment"]["QDRANT_GRPC_PORT"] == "6334"
+    assert command_payload["Environment"]["REDIS_PORT"] == "6379"

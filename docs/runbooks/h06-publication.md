@@ -18,8 +18,8 @@ powershell -ExecutionPolicy Bypass -File scripts/publish_h06.ps1 -Action Preflig
 Expected result:
 
 - Manifest resolves inside `.staging/h06-nutrition-complete` or `.staging/h06-nutrition-complete-v3`
-- Ports `3309/6339/6340/6382` are either free or already owned by the exact healthy H06 containers
-- Port `8002` is free
+- Ports `3306/6333/6334/6379` are either free or already owned by the exact healthy H06 containers
+- Port `8000` is free
 - H05 container health is reported only for visibility
 
 ### 2. Start Stores
@@ -50,7 +50,7 @@ uv run food-agent-v2 data-initialize --manifest <absolute-manifest> --confirm-em
 powershell -ExecutionPolicy Bypass -File scripts/publish_h06.ps1 -Action StartApi -Manifest .staging/h06-nutrition-complete-v3/build_manifest.json
 ```
 
-The script starts the H06 API on `127.0.0.1:8002` with `Start-Process -WindowStyle Hidden` and writes logs to:
+The script starts the H06 API on `127.0.0.1:8000` with `Start-Process -WindowStyle Hidden` and writes logs to:
 
 - `.staging/h06-api.log`
 - `.staging/h06-api.err`
@@ -78,4 +78,4 @@ Expected result:
 - The script is fail-closed for unexpected listeners on H06 ports.
 - The script does not contain secrets; it inherits them from `.env`.
 - Automated contract tests for this runbook stay non-destructive and rely on controlled fake runners / fake HTTP / fake Docker state.
-- External live evidence belongs to the main publication flow, not this contract suite: H06 stores were already initialized with 19 runtime artifacts / 1932 Qdrant points, `8002` reached ready, live E2E completed there, and the public entry was later switched to `8001`.
+- External live evidence belongs to the main publication flow, not this contract suite; the flow must verify the H06 manifest identity, all 19 runtime artifacts / 1932 Qdrant points, readiness on `8000`, and live E2E after the switch.

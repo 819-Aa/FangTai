@@ -30,7 +30,7 @@ _load_dotenv()
 @dataclass
 class MySQLConfig:
     host: str = "localhost"
-    port: int = 3307
+    port: int = 3306
     user: str = "foodagent"
     password: str = "foodagent_v2"
     database: str = "food_agent_v2"
@@ -43,15 +43,15 @@ class MySQLConfig:
 @dataclass
 class QdrantConfig:
     host: str = "localhost"
-    rest_port: int = 6335
-    grpc_port: int = 6336
+    rest_port: int = 6333
+    grpc_port: int = 6334
     collection: str = "recipe_retrieval_v2"
 
 
 @dataclass
 class RedisConfig:
     host: str = "localhost"
-    port: int = 6380
+    port: int = 6379
     key_prefix: str = "v2"
 
 
@@ -90,7 +90,7 @@ class ModelConfig:
 @dataclass
 class APIConfig:
     host: str = "0.0.0.0"
-    port: int = 8001
+    port: int = 8000
     cors_origins: list[str] = field(default_factory=lambda: ["http://localhost:5174"])
 
 
@@ -120,20 +120,20 @@ def load_config() -> AppConfig:
     return AppConfig(
         mysql=MySQLConfig(
             host=os.getenv("MYSQL_HOST", "localhost"),
-            port=int(os.getenv("MYSQL_PORT", "3307")),
+            port=int(os.getenv("MYSQL_PORT", "3306")),
             user=os.getenv("MYSQL_USER", "foodagent"),
             password=os.getenv("MYSQL_PASSWORD", "foodagent_v2"),
             database=os.getenv("MYSQL_DATABASE", "food_agent_v2"),
         ),
         qdrant=QdrantConfig(
             host=os.getenv("QDRANT_HOST", "localhost"),
-            rest_port=int(os.getenv("QDRANT_REST_PORT", "6335")),
-            grpc_port=int(os.getenv("QDRANT_GRPC_PORT", "6336")),
+            rest_port=int(os.getenv("QDRANT_REST_PORT", "6333")),
+            grpc_port=int(os.getenv("QDRANT_GRPC_PORT", "6334")),
             collection=os.getenv("QDRANT_COLLECTION", "recipe_retrieval_v2"),
         ),
         redis=RedisConfig(
             host=os.getenv("REDIS_HOST", "localhost"),
-            port=int(os.getenv("REDIS_PORT", "6380")),
+            port=int(os.getenv("REDIS_PORT", "6379")),
             key_prefix=os.getenv("REDIS_KEY_PREFIX", "v2"),
         ),
         llm=LLMConfig(
@@ -155,7 +155,7 @@ def load_config() -> AppConfig:
         ),
         api=APIConfig(
             host=os.getenv("API_HOST", "0.0.0.0"),
-            port=int(os.getenv("API_PORT", "8001")),
+            port=int(os.getenv("API_PORT", "8000")),
             cors_origins=[o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:5174").split(",")],
         ),
     )

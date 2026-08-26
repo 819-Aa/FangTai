@@ -299,7 +299,7 @@ D1 在序列化响应 JSON 和 SSE event payload 之前，必须确认不包含�
 
 ## 8. CORS 与开发代理
 
-开发环境：前端 `localhost:5174` 通过 Vite proxy 将 `/api` 和 `/v1` 代理至 API `localhost:8001`。CORS 在开发环境宽放，生产环境限制为前端部署域。
+开发环境：前端 `localhost:5174` 通过 Vite proxy 将 `/api` 和 `/v1` 代理至 API `localhost:8000`。CORS 在开发环境宽放，生产环境限制为前端部署域。
 
 ## 9. 启动与预热
 

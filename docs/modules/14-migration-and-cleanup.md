@@ -213,7 +213,7 @@ D3 测试与验收 → D4 迁移与清理
 | MySQL 数据库 | `food_agent` | `food_agent_v2` |
 | Qdrant Collection | `recipe_retrieval` | `recipe_retrieval_v2` |
 | Redis key 前缀 | `session:` / `request:` | `v2:session:` / `v2:request:` |
-| API 端口 | 8000 | 8001 |
+| API 端口 | 8000 | 8000 |
 | 前端端口 | 5173 | 5174 |
 | Docker Compose 项目名 | `food-agent` | `food-agent-v2` |
 
