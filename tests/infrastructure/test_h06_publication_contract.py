@@ -375,12 +375,21 @@ def test_h06_start_api_uses_hidden_window_and_h06_environment(tmp_path: Path) ->
     assert start_payload["FilePath"] == str(repo_root / ".venv" / "Scripts" / "python.exe")
     assert start_payload["ArgumentList"] == [
         "-m",
-        "uvicorn",
-        "food_agent_v2.api_app:app",
+        "food_agent_v2.h06_server",
+        "--repo-root",
+        str(repo_root),
         "--host",
         "127.0.0.1",
-        "--port",
+        "--api-port",
         "8000",
+        "--mysql-port",
+        "3306",
+        "--qdrant-rest-port",
+        "6333",
+        "--qdrant-grpc-port",
+        "6334",
+        "--redis-port",
+        "6379",
     ]
     assert start_payload["Environment"]["API_PORT"] == "8000"
     assert start_payload["Environment"]["MYSQL_PORT"] == "3306"

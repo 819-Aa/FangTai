@@ -291,7 +291,7 @@ function Get-DockerSequenceState {
 function Get-PortOccupant {
     param([int]$Port)
 
-    if ($Port -eq $Script:PortMap.api -and $env:H06_TEST_API_PORT_FREE -eq "true") {
+    if ($env:H06_TEST_ROOT -and $Port -eq $Script:PortMap.api -and $env:H06_TEST_API_PORT_FREE -eq "true") {
         return $null
     }
 
@@ -532,12 +532,21 @@ function Start-H06ApiProcess {
     $pythonPath = Join-Path $RepoRoot ".venv\Scripts\python.exe"
     $argumentList = @(
         "-m",
-        "uvicorn",
-        "food_agent_v2.api_app:app",
+        "food_agent_v2.h06_server",
+        "--repo-root",
+        $RepoRoot,
         "--host",
         "127.0.0.1",
-        "--port",
-        [string]$Script:PortMap.api
+        "--api-port",
+        [string]$Script:PortMap.api,
+        "--mysql-port",
+        [string]$Script:PortMap.mysql,
+        "--qdrant-rest-port",
+        [string]$Script:PortMap.qdrant_rest,
+        "--qdrant-grpc-port",
+        [string]$Script:PortMap.qdrant_grpc,
+        "--redis-port",
+        [string]$Script:PortMap.redis
     )
 
     if ($env:H06_TEST_START_PROCESS_LOG) {
