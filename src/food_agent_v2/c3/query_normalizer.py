@@ -33,6 +33,21 @@ _NUTRITION_GOALS = {
     "补铁": "high_iron",
     "高铁": "high_iron",
 }
+_GROUNDED_HEALTH_MARKERS = (
+    "过敏",
+    "不耐受",
+    "糖尿病",
+    "高血压",
+    "痛风",
+    "肾病",
+    "心脏病",
+    "脂肪肝",
+    "血压",
+    "血糖",
+    "血脂",
+    "尿酸",
+    "胆固醇",
+)
 
 
 class SemanticRewrite(BaseModel):
@@ -102,7 +117,7 @@ class QueryNormalizer:
                     timeout_seconds=timeout_seconds,
                 )
                 parsed = SemanticRewrite.model_validate_json(response.get("content", ""))
-                if _preserves_explicit_semantics(parsed, fallback):
+                if _has_valid_semantic_filters(parsed) and _preserves_explicit_semantics(parsed, fallback):
                     return parsed
             except Exception:
                 continue
@@ -213,3 +228,15 @@ def _preserves_explicit_semantics(
     if fallback.dish_count is not None:
         return parsed.dish_count == fallback.dish_count
     return True
+
+
+def _has_valid_semantic_filters(parsed: SemanticRewrite) -> bool:
+    if any(tag not in _POPULATIONS for tag in parsed.population_tags):
+        return False
+    if any(not _is_grounded_health_constraint(value) for value in parsed.health_constraints):
+        return False
+    return True
+
+
+def _is_grounded_health_constraint(value: str) -> bool:
+    return any(marker in value for marker in _GROUNDED_HEALTH_MARKERS)

@@ -67,6 +67,55 @@ def test_invalid_output_retries_twice_then_uses_deterministic_fallback() -> None
     assert rewrite.max_time_minutes == 30
 
 
+def test_invalid_semantic_hard_filters_retry_then_fall_back_to_safe_plan() -> None:
+    invalid_rewrite = json.dumps(
+        {
+            "retrieval_query": "两人 晚餐 清淡 健康",
+            "meal_types": ["晚餐"],
+            "population_tags": ["两人"],
+            "taste_tags": ["清淡"],
+            "exclude_ingredients": ["海鲜"],
+            "health_constraints": ["健康"],
+        },
+        ensure_ascii=False,
+    )
+    llm = _FakeLLM(responses=[invalid_rewrite, invalid_rewrite, invalid_rewrite])
+
+    rewrite = QueryNormalizer(llm).normalize(
+        "两人晚餐，都不要海鲜，清淡健康",
+        ("p1", "p2"),
+    )
+
+    assert len(llm.calls) == 3
+    assert rewrite.meal_types == ("晚餐",)
+    assert rewrite.taste_tags == ("清淡",)
+    assert rewrite.exclude_ingredients == ("海鲜",)
+    assert rewrite.population_tags == ()
+    assert rewrite.health_constraints == ()
+
+
+def test_non_health_taboo_does_not_count_as_health_constraint() -> None:
+    invalid_rewrite = json.dumps(
+        {
+            "retrieval_query": "晚餐",
+            "meal_types": ["晚餐"],
+            "health_constraints": ["不能吃海鲜"],
+        },
+        ensure_ascii=False,
+    )
+    llm = _FakeLLM(responses=[invalid_rewrite, invalid_rewrite, invalid_rewrite])
+
+    rewrite = QueryNormalizer(llm).normalize(
+        "晚餐不要海鲜",
+        ("p1",),
+    )
+
+    assert len(llm.calls) == 3
+    assert rewrite.meal_types == ("晚餐",)
+    assert rewrite.exclude_ingredients == ("海鲜",)
+    assert rewrite.health_constraints == ()
+
+
 def test_model_failure_fallback_preserves_include_and_exclude() -> None:
     llm = _FakeLLM(error=TimeoutError())
 
@@ -86,6 +135,29 @@ def test_previous_query_plan_not_free_text_history_is_sent_to_model() -> None:
     payload = json.loads(llm.calls[0][2])
     assert payload["previous_query_plan"] == previous
     assert "history" not in payload
+
+
+def test_valid_health_constraints_remain_allowed_in_semantic_rewrite() -> None:
+    message = "给老人推荐晚餐，高血压也能吃"
+    llm = _FakeLLM(
+        responses=[
+            json.dumps(
+                {
+                    "retrieval_query": "老人 晚餐 高血压",
+                    "meal_types": ["晚餐"],
+                    "population_tags": ["老人"],
+                    "health_constraints": [message],
+                },
+                ensure_ascii=False,
+            )
+        ]
+    )
+
+    rewrite = QueryNormalizer(llm).normalize(message, ("p1",))
+
+    assert len(llm.calls) == 1
+    assert rewrite.population_tags == ("老人",)
+    assert rewrite.health_constraints == (message,)
 
 
 def test_validated_rewrite_is_the_only_query_plan_and_retrieval_source() -> None:
