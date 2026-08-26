@@ -278,7 +278,10 @@ def test_h06_preflight_treats_missing_h05_inspect_as_expected(tmp_path: Path) ->
             manifest,
             repo_root=repo_root,
             dry_run=True,
-            extra_env={"PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}"},
+            extra_env={
+                "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+                "H06_TEST_API_PORT_FREE": "true",
+            },
         )
     finally:
         listener.close()
@@ -369,9 +372,9 @@ def test_h06_start_api_uses_hidden_window_and_h06_environment(tmp_path: Path) ->
     assert result.json["ready"]["build_id"] == H06_BUILD_ID
     start_payload = json.loads(start_process_log.read_text(encoding="utf-8"))
     assert start_payload["WindowStyle"] == "Hidden"
-    assert start_payload["FilePath"] == "uv"
+    assert start_payload["FilePath"] == str(repo_root / ".venv" / "Scripts" / "python.exe")
     assert start_payload["ArgumentList"] == [
-        "run",
+        "-m",
         "uvicorn",
         "food_agent_v2.api_app:app",
         "--host",

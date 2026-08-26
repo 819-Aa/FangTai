@@ -291,6 +291,10 @@ function Get-DockerSequenceState {
 function Get-PortOccupant {
     param([int]$Port)
 
+    if ($Port -eq $Script:PortMap.api -and $env:H06_TEST_API_PORT_FREE -eq "true") {
+        return $null
+    }
+
     if ($Script:TestDockerState) {
         $entry = $Script:TestDockerState.ports.PSObject.Properties[[string]$Port]
         if ($entry) {
@@ -525,8 +529,9 @@ function Start-H06ApiProcess {
         [string]$ErrorPath
     )
 
+    $pythonPath = Join-Path $RepoRoot ".venv\Scripts\python.exe"
     $argumentList = @(
-        "run",
+        "-m",
         "uvicorn",
         "food_agent_v2.api_app:app",
         "--host",
@@ -548,7 +553,7 @@ function Start-H06ApiProcess {
             SILICONFLOW_API_KEY = $env:SILICONFLOW_API_KEY
         }
         @{
-            FilePath = "uv"
+            FilePath = $pythonPath
             ArgumentList = $argumentList
             WindowStyle = "Hidden"
             WorkingDirectory = $RepoRoot
@@ -563,7 +568,11 @@ function Start-H06ApiProcess {
         return [pscustomobject]@{ Id = 42424 }
     }
 
-    return Start-Process -FilePath "uv" `
+    if (-not (Test-Path -LiteralPath $pythonPath)) {
+        Write-FailureAndExit -Message "H06 Python executable not found: $pythonPath"
+    }
+
+    return Start-Process -FilePath $pythonPath `
         -ArgumentList $argumentList `
         -WorkingDirectory $RepoRoot `
         -PassThru `

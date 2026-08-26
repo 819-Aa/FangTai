@@ -27,6 +27,14 @@
 
 现有运行中的旧服务仍可能绑定旧端口；本任务只更新默认和发布契约，实际 H06 容器重建、保留现有数据卷、API 切换和线上连续 E2E 属于后续运行时任务。运行时切换前必须确认标准端口空闲并核对三类 H06 数据卷未改变。
 
+## API process ownership fix
+
+真实切换发现 `Start-Process` 启动 `uv run uvicorn` 时返回的是 `uv` 启动器 PID；readiness 超时清理只能终止启动器，可能遗留实际 Python 服务器。发布脚本现直接启动工作树 `.venv/Scripts/python.exe -m uvicorn`，因此记录和清理的 PID 就是 API 服务器本身，并继续继承已导入的 `.env`。Python 可执行文件不存在时 fail-closed。
+
+- RED：启动契约仍记录 `FilePath=uv`，不满足服务器 PID 所有权。
+- GREEN：`uv run pytest tests/infrastructure/test_h06_publication_contract.py tests/test_config_defaults.py -q` → `13 passed`。
+- Ruff：目标 Python 测试文件全部通过。
+
 ## Follow-up Review Round
 
 - RED: 黑盒 fake `docker.cmd` 让 H05 `docker inspect` 输出 “No such object” 并返回 1；修复前 Preflight 失败。
