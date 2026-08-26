@@ -116,6 +116,27 @@ def test_non_health_taboo_does_not_count_as_health_constraint() -> None:
     assert rewrite.health_constraints == ()
 
 
+def test_indicator_only_health_text_retries_then_falls_back() -> None:
+    invalid_rewrite = json.dumps(
+        {
+            "retrieval_query": "晚餐 胆固醇",
+            "meal_types": ["晚餐"],
+            "health_constraints": ["注意胆固醇"],
+        },
+        ensure_ascii=False,
+    )
+    llm = _FakeLLM(responses=[invalid_rewrite, invalid_rewrite, invalid_rewrite])
+
+    rewrite = QueryNormalizer(llm).normalize(
+        "晚餐注意胆固醇",
+        ("p1",),
+    )
+
+    assert len(llm.calls) == 3
+    assert rewrite.meal_types == ("晚餐",)
+    assert rewrite.health_constraints == ()
+
+
 def test_model_failure_fallback_preserves_include_and_exclude() -> None:
     llm = _FakeLLM(error=TimeoutError())
 
@@ -157,6 +178,52 @@ def test_valid_health_constraints_remain_allowed_in_semantic_rewrite() -> None:
 
     assert len(llm.calls) == 1
     assert rewrite.population_tags == ("老人",)
+    assert rewrite.health_constraints == (message,)
+
+
+def test_explicit_disease_constraints_like_wei_bing_remain_allowed() -> None:
+    message = "胃病的人晚餐吃什么"
+    llm = _FakeLLM(
+        responses=[
+            json.dumps(
+                {
+                    "retrieval_query": "晚餐 胃病",
+                    "meal_types": ["晚餐"],
+                    "health_constraints": [message],
+                },
+                ensure_ascii=False,
+            )
+        ]
+    )
+
+    rewrite = QueryNormalizer(llm).normalize(message, ("p1",))
+
+    assert len(llm.calls) == 1
+    assert rewrite.meal_types == ("晚餐",)
+    assert rewrite.health_constraints == (message,)
+
+
+def test_explicit_allergy_constraints_remain_allowed() -> None:
+    message = "晚餐不要花生，我花生过敏"
+    llm = _FakeLLM(
+        responses=[
+            json.dumps(
+                {
+                    "retrieval_query": "晚餐 花生过敏",
+                    "meal_types": ["晚餐"],
+                    "exclude_ingredients": ["花生"],
+                    "health_constraints": [message],
+                },
+                ensure_ascii=False,
+            )
+        ]
+    )
+
+    rewrite = QueryNormalizer(llm).normalize(message, ("p1",))
+
+    assert len(llm.calls) == 1
+    assert rewrite.meal_types == ("晚餐",)
+    assert rewrite.exclude_ingredients == ("花生",)
     assert rewrite.health_constraints == (message,)
 
 

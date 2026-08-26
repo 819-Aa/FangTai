@@ -33,20 +33,10 @@ _NUTRITION_GOALS = {
     "补铁": "high_iron",
     "高铁": "high_iron",
 }
-_GROUNDED_HEALTH_MARKERS = (
-    "过敏",
-    "不耐受",
-    "糖尿病",
+_EXPLICIT_DISEASE_PHRASES = (
     "高血压",
+    "糖尿病",
     "痛风",
-    "肾病",
-    "心脏病",
-    "脂肪肝",
-    "血压",
-    "血糖",
-    "血脂",
-    "尿酸",
-    "胆固醇",
 )
 
 
@@ -163,11 +153,7 @@ def deterministic_semantic_fallback(message: str) -> SemanticRewrite:
     seconds, policy = _time_constraint(text)
     max_time = seconds // 60 if seconds is not None and policy == "hard" else None
     goals = tuple(code for phrase, code in _NUTRITION_GOALS.items() if phrase in text)
-    health = (
-        (text,)
-        if any(marker in text for marker in ("过敏", "不耐受", "糖尿病", "高血压", "痛风"))
-        else ()
-    )
+    health = (text,) if _is_grounded_health_constraint(text) else ()
     positive_parts = (*meal_types, *populations, *tastes, *include)
     retrieval_query = " ".join(dict.fromkeys(positive_parts)) or text or "家常菜"
     return SemanticRewrite(
@@ -239,4 +225,8 @@ def _has_valid_semantic_filters(parsed: SemanticRewrite) -> bool:
 
 
 def _is_grounded_health_constraint(value: str) -> bool:
-    return any(marker in value for marker in _GROUNDED_HEALTH_MARKERS)
+    if "过敏" in value or "不耐受" in value:
+        return True
+    if re.search(r"[\u4e00-\u9fff]{1,12}病", value):
+        return True
+    return any(phrase in value for phrase in _EXPLICIT_DISEASE_PHRASES)
