@@ -29,7 +29,7 @@
 
 ## API process ownership fix
 
-真实切换发现 `Start-Process` 启动 `uv run uvicorn` 时返回的是 `uv` 启动器 PID；readiness 超时清理只能终止启动器，可能遗留实际 Python 服务器。发布脚本现直接启动工作树 `.venv/Scripts/python.exe -m food_agent_v2.h06_server`，因此记录和清理的 PID 就是 API 服务器本身。`h06_server` 在导入 API/模型模块前自行读取工作树或主仓库 `.env`，并覆盖为批准的 H06 标准端口，规避 Windows `Start-Process` 对运行时新增环境变量继承不一致的问题。Python 可执行文件不存在时 fail-closed。
+真实切换发现 `Start-Process` 启动 `uv run uvicorn` 时返回的是 `uv` 启动器 PID；readiness 超时清理只终止启动器会遗留实际 Python 服务器。发布脚本现直接启动工作树 `.venv/Scripts/python.exe -m food_agent_v2.h06_server`，并把该 PID 作为唯一进程树根；超时清理会先枚举并终止全部后代，再终止树根。`h06_server` 在导入 API/模型模块前自行读取工作树或主仓库 `.env`，并覆盖为批准的 H06 标准端口，规避 Windows `Start-Process` 对运行时新增环境变量继承不一致的问题。Python 可执行文件不存在时 fail-closed。
 
 - RED：启动契约仍记录 `FilePath=uv`，不满足服务器 PID 所有权。
 - GREEN：`uv run pytest tests/test_h06_server.py tests/infrastructure/test_h06_publication_contract.py tests/test_config_defaults.py -q` → `15 passed`。

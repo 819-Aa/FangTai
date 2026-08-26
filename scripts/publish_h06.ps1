@@ -600,6 +600,7 @@ function Stop-H06ApiProcess {
     if ($env:H06_TEST_STOP_PROCESS_LOG) {
         @{
             Id = $Process.Id
+            Tree = $true
         } | ConvertTo-Json -Depth 10 | ForEach-Object {
             [System.IO.File]::WriteAllText(
                 $env:H06_TEST_STOP_PROCESS_LOG,
@@ -611,10 +612,42 @@ function Stop-H06ApiProcess {
     }
 
     try {
-        Stop-Process -Id $Process.Id -ErrorAction Stop
+        $processes = @(Get-CimInstance Win32_Process -ErrorAction Stop)
+        $pending = @([int]$Process.Id)
+        $descendants = @()
+        while ($pending.Count -gt 0) {
+            $currentId = [int]$pending[0]
+            if ($pending.Count -eq 1) {
+                $pending = @()
+            }
+            else {
+                $pending = @($pending[1..($pending.Count - 1)])
+            }
+            $children = @(
+                $processes |
+                    Where-Object { [int]$_.ParentProcessId -eq $currentId } |
+                    ForEach-Object { [int]$_.ProcessId }
+            )
+            foreach ($childId in $children) {
+                if ($descendants -notcontains $childId) {
+                    $descendants += $childId
+                    $pending += $childId
+                }
+            }
+        }
+        [array]::Reverse($descendants)
+        foreach ($childId in $descendants) {
+            Stop-Process -Id $childId -Force -ErrorAction SilentlyContinue
+        }
+        Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
     }
     catch {
-        # Keep original readiness failure as the load-bearing error.
+        try {
+            Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
+        }
+        catch {
+            # Keep original readiness failure as the load-bearing error.
+        }
     }
 }
 

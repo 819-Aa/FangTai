@@ -546,6 +546,7 @@ def test_h06_start_api_stops_started_pid_when_readiness_times_out(tmp_path: Path
     assert "did not report manifest build ID before timeout" in result.stderr
     stop_payload = json.loads(stop_process_log.read_text(encoding="utf-8"))
     assert stop_payload["Id"] == 42424
+    assert stop_payload["Tree"] is True
 
 
 def test_h06_initialize_runs_precise_data_initialize_command_and_h06_ports(tmp_path: Path) -> None:
