@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT_PATH = REPO_ROOT / "scripts" / "publish_h06.ps1"
@@ -235,6 +238,54 @@ def test_h06_preflight_requires_manifest_argument(tmp_path: Path) -> None:
 
     assert result.returncode != 0
     assert "Manifest is required" in result.stderr
+
+
+def test_h06_preflight_treats_missing_h05_inspect_as_expected(tmp_path: Path) -> None:
+    """真实 docker inspect 缺失 H05 容器时，Preflight 仍应成功。"""
+    repo_root, manifest = write_valid_manifest(tmp_path)
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    (fake_bin / "docker.cmd").write_text(
+        "\n".join(
+            [
+                "@echo off",
+                'if /I "%1"=="inspect" if /I "%2"=="food_agent_v2_h05_mysql" goto missing',
+                'if /I "%1"=="inspect" if /I "%2"=="food_agent_v2_h05_qdrant" goto missing',
+                'if /I "%1"=="inspect" if /I "%2"=="food_agent_v2_h05_redis" goto missing',
+                'if /I "%2"=="food_agent_v2_h06_mysql" echo [{"State":{"Running":true,"Health":{"Status":"healthy"}},"NetworkSettings":{"Ports":{"3306/tcp":[{"HostPort":"3306"}]}}}] & exit /b 0',
+                'if /I "%2"=="food_agent_v2_h06_qdrant" echo [{"State":{"Running":true,"Health":{"Status":"healthy"}},"NetworkSettings":{"Ports":{"6333/tcp":[{"HostPort":"6333"}],"6334/tcp":[{"HostPort":"6334"}]}}}] & exit /b 0',
+                'if /I "%2"=="food_agent_v2_h06_redis" echo [{"State":{"Running":true,"Health":{"Status":"healthy"}},"NetworkSettings":{"Ports":{"6379/tcp":[{"HostPort":"6379"}]}}}] & exit /b 0',
+                "exit /b 0",
+                ":missing",
+                "echo Error: No such object: %2 1>&2",
+                "exit /b 1",
+            ]
+        ),
+        encoding="ascii",
+    )
+
+    # Occupy a real target port so Assert-StorePortRestorable must inspect H06.
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            listener.bind(("127.0.0.1", 3306))
+        except OSError as exc:
+            pytest.skip(f"standard MySQL port unavailable for isolated listener: {exc}")
+        listener.listen(1)
+        result = run_h06_script(
+            "Preflight",
+            manifest,
+            repo_root=repo_root,
+            dry_run=True,
+            extra_env={"PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}"},
+        )
+    finally:
+        listener.close()
+
+    assert result.returncode == 0, result.stderr
+    assert result.json is not None
+    assert all(item["health"] == "missing" for item in result.json["h05"].values())
 
 
 def test_h06_preflight_rejects_manifest_outside_allowed_staging_root(tmp_path: Path) -> None:

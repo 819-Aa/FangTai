@@ -22,7 +22,7 @@ export default defineConfig({
     url: WEB,
     reuseExistingServer: false,
     timeout: 120000,
-    // 前端 API 客户端经 VITE_API_BASE_URL 指向 T23 隔离 API（绝不访问 8001）
+    // 前端 API 客户端经 VITE_API_BASE_URL 指向 T23 隔离 API（绝不访问默认 API 8000）
     env: {
       VITE_API_BASE_URL: API,
     },

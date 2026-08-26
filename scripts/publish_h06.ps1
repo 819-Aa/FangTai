@@ -234,8 +234,21 @@ function Get-ContainerStatus {
         }
     }
 
-    $inspectOutput = docker inspect $Name 2>$null
-    if ($LASTEXITCODE -ne 0 -or -not $inspectOutput) {
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        # Native docker inspect returns exit 1 for an absent container. With the
+        # script-wide Stop preference, PowerShell promotes that stderr record to
+        # a terminating error before LASTEXITCODE can be checked. Temporarily
+        # use Continue so the exit code remains the source of truth, while any
+        # genuinely terminating PowerShell error still propagates.
+        $ErrorActionPreference = "Continue"
+        $inspectOutput = @(docker inspect $Name 2>$null)
+        $inspectExitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+    if ($inspectExitCode -ne 0 -or -not $inspectOutput) {
         return $null
     }
     $inspect = $inspectOutput | ConvertFrom-Json

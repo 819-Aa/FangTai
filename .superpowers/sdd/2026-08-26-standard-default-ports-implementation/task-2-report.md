@@ -26,3 +26,12 @@
 ## Risk
 
 现有运行中的旧服务仍可能绑定旧端口；本任务只更新默认和发布契约，实际 H06 容器重建、保留现有数据卷、API 切换和线上连续 E2E 属于后续运行时任务。运行时切换前必须确认标准端口空闲并核对三类 H06 数据卷未改变。
+
+## Follow-up Review Round
+
+- RED: 黑盒 fake `docker.cmd` 让 H05 `docker inspect` 输出 “No such object” 并返回 1；修复前 Preflight 失败。
+- GREEN: 修复后 `uv run pytest tests/infrastructure/test_h06_publication_contract.py -q` → `12 passed`；新增回归覆盖真实目标端口被占用时核对标准 H06 映射。
+- 真实只读 `Preflight -DryRun` → exit `0`；manifest build `fefd8bd7-dafa-4cc5-be0a-40ca22939392`；H05 mysql/qdrant/redis 均为 `missing/false`；未执行 Docker Compose。
+- `uv run ruff check tests/infrastructure/test_h06_publication_contract.py` → `All checks passed`。
+- `frontend/playwright.config.ts` 的活动说明已从旧默认 `8001` 改为 `8000`。
+- `docs/modules/01-data-engineering.md` 的端口仍为标准 `3306/6333/6334/6379`；该文件的原有营养/时间语义改动在修复提交后重新作为未暂存工作树 diff 保留。
