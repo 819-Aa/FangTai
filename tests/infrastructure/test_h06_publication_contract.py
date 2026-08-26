@@ -41,7 +41,7 @@ def write_valid_manifest(tmp_path: Path) -> tuple[Path, Path]:
     return repo_root, manifest_path
 
 
-def write_docker_state(path: Path, *, include_h06: bool = True, api_port_free: bool = True) -> Path:
+def make_docker_state(*, include_h06: bool = True, api_port_free: bool = True, h06_health: str = "healthy") -> dict:
     ports: dict[str, dict[str, str]] = {
         "3307": {"kind": "container", "name": "food_agent_v2_h05_mysql", "health": "healthy"},
         "6335": {"kind": "container", "name": "food_agent_v2_h05_qdrant", "health": "healthy"},
@@ -51,15 +51,15 @@ def write_docker_state(path: Path, *, include_h06: bool = True, api_port_free: b
     if include_h06:
         ports.update(
             {
-                "3309": {"kind": "container", "name": "food_agent_v2_h06_mysql", "health": "healthy"},
-                "6339": {"kind": "container", "name": "food_agent_v2_h06_qdrant", "health": "healthy"},
-                "6340": {"kind": "container", "name": "food_agent_v2_h06_qdrant", "health": "healthy"},
-                "6382": {"kind": "container", "name": "food_agent_v2_h06_redis", "health": "healthy"},
+                "3309": {"kind": "container", "name": "food_agent_v2_h06_mysql", "health": h06_health},
+                "6339": {"kind": "container", "name": "food_agent_v2_h06_qdrant", "health": h06_health},
+                "6340": {"kind": "container", "name": "food_agent_v2_h06_qdrant", "health": h06_health},
+                "6382": {"kind": "container", "name": "food_agent_v2_h06_redis", "health": h06_health},
             }
         )
     if not api_port_free:
         ports["8002"] = {"kind": "process", "name": "rogue-listener"}
-    state = {
+    return {
         "ports": ports,
         "containers": {
             "food_agent_v2_h05_mysql": {
@@ -79,21 +79,25 @@ def write_docker_state(path: Path, *, include_h06: bool = True, api_port_free: b
             },
             "food_agent_v2_h06_mysql": {
                 "running": True,
-                "health": "healthy",
+                "health": h06_health,
                 "ports": {"3306/tcp": 3309},
             },
             "food_agent_v2_h06_qdrant": {
                 "running": True,
-                "health": "healthy",
+                "health": h06_health,
                 "ports": {"6333/tcp": 6339, "6334/tcp": 6340},
             },
             "food_agent_v2_h06_redis": {
                 "running": True,
-                "health": "healthy",
+                "health": h06_health,
                 "ports": {"6379/tcp": 6382},
             },
         },
     }
+
+
+def write_docker_state(path: Path, *, include_h06: bool = True, api_port_free: bool = True, h06_health: str = "healthy") -> Path:
+    state = make_docker_state(include_h06=include_h06, api_port_free=api_port_free, h06_health=h06_health)
     path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
     return path
 
@@ -119,6 +123,16 @@ def write_http_state(path: Path) -> Path:
     return path
 
 
+def write_docker_sequence(path: Path, states: list[dict]) -> Path:
+    path.write_text(json.dumps(states, ensure_ascii=False, indent=2), encoding="utf-8")
+    return path
+
+
+def write_http_sequence(path: Path, responses: dict[str, list[dict]]) -> Path:
+    path.write_text(json.dumps(responses, ensure_ascii=False, indent=2), encoding="utf-8")
+    return path
+
+
 def docker_resource_snapshot(docker_state_path: Path) -> dict:
     return json.loads(docker_state_path.read_text(encoding="utf-8"))
 
@@ -130,8 +144,11 @@ def run_h06_script(
     repo_root: Path | None = None,
     dry_run: bool = False,
     docker_state_path: Path | None = None,
+    docker_sequence_path: Path | None = None,
     http_state_path: Path | None = None,
+    http_sequence_path: Path | None = None,
     start_process_log: Path | None = None,
+    compose_log_path: Path | None = None,
 ) -> ScriptResult:
     command = [*POWERSHELL, "-Action", action]
     if manifest is not None:
@@ -142,10 +159,16 @@ def run_h06_script(
     env["H06_TEST_ROOT"] = str(repo_root or REPO_ROOT)
     if docker_state_path is not None:
         env["H06_TEST_DOCKER_STATE"] = str(docker_state_path)
+    if docker_sequence_path is not None:
+        env["H06_TEST_DOCKER_SEQUENCE"] = str(docker_sequence_path)
     if http_state_path is not None:
         env["H06_TEST_HTTP_STATE"] = str(http_state_path)
+    if http_sequence_path is not None:
+        env["H06_TEST_HTTP_SEQUENCE"] = str(http_sequence_path)
     if start_process_log is not None:
         env["H06_TEST_START_PROCESS_LOG"] = str(start_process_log)
+    if compose_log_path is not None:
+        env["H06_TEST_COMPOSE_LOG"] = str(compose_log_path)
     completed = subprocess.run(
         command,
         cwd=REPO_ROOT,
@@ -253,6 +276,19 @@ def test_h06_preflight_fails_closed_for_unexpected_listener(tmp_path: Path) -> N
 def test_h06_start_api_uses_hidden_window_and_h06_environment(tmp_path: Path) -> None:
     repo_root, manifest = write_valid_manifest(tmp_path)
     docker_state = write_docker_state(tmp_path / "docker-state.json")
+    http_sequence = write_http_sequence(
+        tmp_path / "http-sequence.json",
+        {
+            "http://127.0.0.1:8002/health": [
+                {"error": "connection-refused"},
+                {"status_code": 200, "json": {"status": "ok", "version": "0.1.0"}},
+            ],
+            "http://127.0.0.1:8002/ready": [
+                {"status_code": 503, "json": {"error": "SERVICE_NOT_READY"}},
+                {"status_code": 200, "json": {"status": "ready", "build_id": H06_BUILD_ID}},
+            ],
+        },
+    )
     start_process_log = tmp_path / "start-process.json"
     (repo_root / ".env").write_text(
         "\n".join(
@@ -271,11 +307,13 @@ def test_h06_start_api_uses_hidden_window_and_h06_environment(tmp_path: Path) ->
         manifest,
         repo_root=repo_root,
         docker_state_path=docker_state,
+        http_sequence_path=http_sequence,
         start_process_log=start_process_log,
     )
 
     assert result.returncode == 0, result.stderr
     assert result.json is not None
+    assert result.json["ready"]["build_id"] == H06_BUILD_ID
     start_payload = json.loads(start_process_log.read_text(encoding="utf-8"))
     assert start_payload["WindowStyle"] == "Hidden"
     assert start_payload["FilePath"] == "uv"
@@ -292,7 +330,7 @@ def test_h06_start_api_uses_hidden_window_and_h06_environment(tmp_path: Path) ->
     assert start_payload["Environment"]["MYSQL_PORT"] == "3309"
     assert start_payload["Environment"]["QDRANT_REST_PORT"] == "6339"
     assert start_payload["Environment"]["REDIS_PORT"] == "6382"
-    assert start_payload["Environment"]["RAG_WARMUP_ON_STARTUP"] == "false"
+    assert start_payload["Environment"]["RAG_WARMUP_ON_STARTUP"] == "true"
     assert start_payload["Environment"]["LLM_API_KEY"] == "test-llm-key"
     assert start_payload["Environment"]["SILICONFLOW_API_KEY"] == "test-sf-key"
 
@@ -300,14 +338,26 @@ def test_h06_start_api_uses_hidden_window_and_h06_environment(tmp_path: Path) ->
 def test_h06_verify_checks_health_ready_build_id_and_container_health(tmp_path: Path) -> None:
     repo_root, manifest = write_valid_manifest(tmp_path)
     docker_state = write_docker_state(tmp_path / "docker-state.json")
-    http_state = write_http_state(tmp_path / "http-state.json")
+    http_sequence = write_http_sequence(
+        tmp_path / "http-sequence.json",
+        {
+            "http://127.0.0.1:8002/health": [
+                {"error": "connection-refused"},
+                {"status_code": 200, "json": {"status": "ok", "version": "0.1.0"}},
+            ],
+            "http://127.0.0.1:8002/ready": [
+                {"status_code": 200, "json": {"status": "ready", "build_id": "wrong-build"}},
+                {"status_code": 200, "json": {"status": "ready", "build_id": H06_BUILD_ID}},
+            ],
+        },
+    )
 
     result = run_h06_script(
         "Verify",
         manifest,
         repo_root=repo_root,
         docker_state_path=docker_state,
-        http_state_path=http_state,
+        http_sequence_path=http_sequence,
     )
 
     assert result.returncode == 0, result.stderr
@@ -316,3 +366,85 @@ def test_h06_verify_checks_health_ready_build_id_and_container_health(tmp_path: 
     assert result.json["ready"]["status"] == "ready"
     assert result.json["ready"]["build_id"] == H06_BUILD_ID
     assert result.json["containers"]["food_agent_v2_h06_mysql"]["health"] == "healthy"
+
+
+def test_h06_start_stores_waits_for_exact_h06_containers_and_uses_repo_root_compose_file(
+    tmp_path: Path,
+) -> None:
+    repo_root, manifest = write_valid_manifest(tmp_path)
+    docker_state = write_docker_state(tmp_path / "docker-state.json", include_h06=False)
+    docker_sequence = write_docker_sequence(
+        tmp_path / "docker-sequence.json",
+        [
+            make_docker_state(include_h06=True, h06_health="starting"),
+            make_docker_state(include_h06=True, h06_health="healthy"),
+        ],
+    )
+    compose_log = tmp_path / "compose-log.json"
+
+    result = run_h06_script(
+        "StartStores",
+        manifest,
+        repo_root=repo_root,
+        docker_state_path=docker_state,
+        docker_sequence_path=docker_sequence,
+        compose_log_path=compose_log,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.json is not None
+    assert result.json["containers"]["food_agent_v2_h06_mysql"]["health"] == "healthy"
+    compose_payload = json.loads(compose_log.read_text(encoding="utf-8"))
+    assert compose_payload["WorkingDirectory"] == str(repo_root)
+    assert compose_payload["ComposeFile"] == str(repo_root / "docker-compose.yml")
+
+
+def test_h06_start_stores_times_out_when_h06_never_becomes_healthy(tmp_path: Path) -> None:
+    repo_root, manifest = write_valid_manifest(tmp_path)
+    docker_state = write_docker_state(tmp_path / "docker-state.json", include_h06=False)
+    docker_sequence = write_docker_sequence(
+        tmp_path / "docker-sequence.json",
+        [make_docker_state(include_h06=True, h06_health="starting")] * 4,
+    )
+    compose_log = tmp_path / "compose-log-timeout.json"
+
+    result = run_h06_script(
+        "StartStores",
+        manifest,
+        repo_root=repo_root,
+        docker_state_path=docker_state,
+        docker_sequence_path=docker_sequence,
+        compose_log_path=compose_log,
+    )
+
+    assert result.returncode != 0
+    assert "did not become healthy before timeout" in result.stderr
+
+
+def test_h06_verify_times_out_when_ready_build_never_matches(tmp_path: Path) -> None:
+    repo_root, manifest = write_valid_manifest(tmp_path)
+    docker_state = write_docker_state(tmp_path / "docker-state.json")
+    http_sequence = write_http_sequence(
+        tmp_path / "http-sequence-timeout.json",
+        {
+            "http://127.0.0.1:8002/health": [
+                {"status_code": 200, "json": {"status": "ok", "version": "0.1.0"}},
+            ],
+            "http://127.0.0.1:8002/ready": [
+                {"status_code": 503, "json": {"error": "SERVICE_NOT_READY"}},
+                {"status_code": 200, "json": {"status": "ready", "build_id": "wrong-build"}},
+                {"status_code": 200, "json": {"status": "ready", "build_id": "wrong-build"}},
+            ],
+        },
+    )
+
+    result = run_h06_script(
+        "Verify",
+        manifest,
+        repo_root=repo_root,
+        docker_state_path=docker_state,
+        http_sequence_path=http_sequence,
+    )
+
+    assert result.returncode != 0
+    assert "did not report manifest build ID before timeout" in result.stderr

@@ -30,6 +30,8 @@ powershell -ExecutionPolicy Bypass -File scripts/publish_h06.ps1 -Action StartSt
 
 This launches only `food_agent_v2_h06_mysql`, `food_agent_v2_h06_qdrant`, and `food_agent_v2_h06_redis` with Docker project `food_agent_v2_h06`.
 
+The script executes Docker Compose from the repository root with the explicit file `docker-compose.yml`, then polls the exact H06 three-container set until all are `running=true` and `healthy`. If that condition is not reached before timeout, the command fails closed.
+
 ### 3. Initialize
 
 ```powershell
@@ -53,6 +55,8 @@ The script starts the H06 API on `127.0.0.1:8002` with `Start-Process -WindowSty
 - `.staging/h06-api.log`
 - `.staging/h06-api.err`
 
+The H06 process is started with `RAG_WARMUP_ON_STARTUP=true` so readiness can eventually satisfy the SiliconFlow probe. The script then polls `/health` and `/ready` until both are live and `/ready.build_id` matches the manifest build ID, treating connection refusal and transient readiness failures as retryable cold-start states.
+
 ### 5. Verify
 
 ```powershell
@@ -65,6 +69,8 @@ Expected result:
 - `GET /ready` returns `200` with `status=ready`
 - `/ready.build_id` matches the manifest build ID
 - `food_agent_v2_h06_mysql`, `food_agent_v2_h06_qdrant`, and `food_agent_v2_h06_redis` are all `running=true` and `healthy`
+
+`Verify` also retries transient cold-start states until timeout instead of surfacing the first connection-refused or mismatched-build response.
 
 ## Notes
 

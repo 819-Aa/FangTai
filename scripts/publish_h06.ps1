@@ -31,7 +31,11 @@ $Script:PortMap = @{
     api = 8002
 }
 $Script:TestDockerState = $null
+$Script:TestDockerSequence = $null
+$Script:TestDockerSequenceIndex = 0
 $Script:TestHttpState = $null
+$Script:TestHttpSequence = $null
+$Script:TestHttpSequenceIndex = @{}
 
 function Write-FailureAndExit {
     param(
@@ -98,8 +102,16 @@ function Initialize-TestState {
     if ($env:H06_TEST_DOCKER_STATE) {
         $Script:TestDockerState = Get-Content -Raw -LiteralPath $env:H06_TEST_DOCKER_STATE | ConvertFrom-Json
     }
+    if ($env:H06_TEST_DOCKER_SEQUENCE) {
+        $Script:TestDockerSequence = Get-Content -Raw -LiteralPath $env:H06_TEST_DOCKER_SEQUENCE | ConvertFrom-Json
+        $Script:TestDockerSequenceIndex = 0
+    }
     if ($env:H06_TEST_HTTP_STATE) {
         $Script:TestHttpState = Get-Content -Raw -LiteralPath $env:H06_TEST_HTTP_STATE | ConvertFrom-Json
+    }
+    if ($env:H06_TEST_HTTP_SEQUENCE) {
+        $Script:TestHttpSequence = Get-Content -Raw -LiteralPath $env:H06_TEST_HTTP_SEQUENCE | ConvertFrom-Json
+        $Script:TestHttpSequenceIndex = @{}
     }
 }
 
@@ -116,7 +128,7 @@ function Set-H06Environment {
     [Environment]::SetEnvironmentVariable("REDIS_PORT", [string]$Script:PortMap.redis)
     [Environment]::SetEnvironmentVariable("API_HOST", "127.0.0.1")
     [Environment]::SetEnvironmentVariable("API_PORT", [string]$Script:PortMap.api)
-    [Environment]::SetEnvironmentVariable("RAG_WARMUP_ON_STARTUP", "false")
+    [Environment]::SetEnvironmentVariable("RAG_WARMUP_ON_STARTUP", "true")
 }
 
 function Get-NormalizedPath {
@@ -199,10 +211,18 @@ function Resolve-ManifestInfo {
 }
 
 function Get-ContainerStatus {
-    param([string]$Name)
+    param(
+        [string]$Name,
+        $DockerState = $null
+    )
 
-    if ($Script:TestDockerState) {
-        $container = $Script:TestDockerState.containers.PSObject.Properties[$Name]
+    $state = $DockerState
+    if (-not $state) {
+        $state = $Script:TestDockerState
+    }
+
+    if ($state) {
+        $container = $state.containers.PSObject.Properties[$Name]
         if (-not $container) {
             return $null
         }
@@ -242,6 +262,18 @@ function Get-ContainerStatus {
         health = $health
         ports = $portMap
     }
+}
+
+function Get-DockerSequenceState {
+    if (-not $Script:TestDockerSequence) {
+        return $null
+    }
+    $index = [Math]::Min($Script:TestDockerSequenceIndex, $Script:TestDockerSequence.Count - 1)
+    $state = $Script:TestDockerSequence[$index]
+    if ($Script:TestDockerSequenceIndex -lt ($Script:TestDockerSequence.Count - 1)) {
+        $Script:TestDockerSequenceIndex += 1
+    }
+    return $state
 }
 
 function Get-PortOccupant {
@@ -316,6 +348,54 @@ function Get-H05Status {
     return $status
 }
 
+function Get-WaitAttempts {
+    if ($env:H06_TEST_ROOT) {
+        return 4
+    }
+    return 30
+}
+
+function Wait-NextAttempt {
+    if (-not $env:H06_TEST_ROOT) {
+        Start-Sleep -Seconds 2
+    }
+}
+
+function Wait-ForHealthyContainers {
+    $attempts = Get-WaitAttempts
+    for ($attempt = 0; $attempt -lt $attempts; $attempt += 1) {
+        $dockerState = Get-DockerSequenceState
+        if (-not $dockerState) {
+            $dockerState = $Script:TestDockerState
+        }
+
+        $healthy = $true
+        $containers = @{}
+        foreach ($service in $Script:H06Containers.Keys) {
+            $containerName = $Script:H06Containers[$service]
+            $container = Get-ContainerStatus -Name $containerName -DockerState $dockerState
+            if (-not $container -or -not $container.running -or $container.health -ne "healthy") {
+                $healthy = $false
+            }
+            if ($container) {
+                $containers[$containerName] = @{
+                    running = $container.running
+                    health = $container.health
+                }
+            }
+        }
+
+        if ($healthy) {
+            return $containers
+        }
+        if ($attempt -lt ($attempts - 1)) {
+            Wait-NextAttempt
+        }
+    }
+
+    Write-FailureAndExit -Message "H06 stores did not become healthy before timeout."
+}
+
 function Invoke-Preflight {
     param(
         [pscustomobject]$ManifestInfo,
@@ -344,11 +424,38 @@ function Invoke-Preflight {
 }
 
 function Invoke-DockerCompose {
-    param([string[]]$Arguments)
+    param(
+        [string]$RepoRoot,
+        [string[]]$Arguments
+    )
 
-    docker compose @Arguments
-    if ($LASTEXITCODE -ne 0) {
-        exit $LASTEXITCODE
+    $composeFile = Join-Path $RepoRoot "docker-compose.yml"
+    $dockerArgs = @("compose", "-f", $composeFile) + $Arguments
+
+    if ($env:H06_TEST_COMPOSE_LOG) {
+        @{
+            WorkingDirectory = $RepoRoot
+            ComposeFile = $composeFile
+            Arguments = $dockerArgs
+        } | ConvertTo-Json -Depth 10 | ForEach-Object {
+            [System.IO.File]::WriteAllText(
+                $env:H06_TEST_COMPOSE_LOG,
+                $_,
+                (New-Object System.Text.UTF8Encoding($false))
+            )
+        }
+        return
+    }
+
+    Push-Location $RepoRoot
+    try {
+        & docker @dockerArgs
+        if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+        }
+    }
+    finally {
+        Pop-Location
     }
 }
 
@@ -408,6 +515,35 @@ function Start-H06ApiProcess {
 function Invoke-H06HttpJson {
     param([string]$Uri)
 
+    if ($Script:TestHttpSequence) {
+        $sequenceProperty = $Script:TestHttpSequence.PSObject.Properties[$Uri]
+        if (-not $sequenceProperty) {
+            Write-FailureAndExit -Message "Missing mocked HTTP sequence for $Uri."
+        }
+        if (-not $Script:TestHttpSequenceIndex.ContainsKey($Uri)) {
+            $Script:TestHttpSequenceIndex[$Uri] = 0
+        }
+        $responses = $sequenceProperty.Value
+        $index = [Math]::Min($Script:TestHttpSequenceIndex[$Uri], $responses.Count - 1)
+        $payload = $responses[$index]
+        if ($Script:TestHttpSequenceIndex[$Uri] -lt ($responses.Count - 1)) {
+            $Script:TestHttpSequenceIndex[$Uri] += 1
+        }
+        $errorProperty = $payload.PSObject.Properties["error"]
+        if ($errorProperty -and $errorProperty.Value) {
+            return [pscustomobject]@{
+                status_code = 0
+                json = $null
+                error = [string]$errorProperty.Value
+            }
+        }
+        return [pscustomobject]@{
+            status_code = [int]$payload.status_code
+            json = $payload.json
+            error = $null
+        }
+    }
+
     if ($Script:TestHttpState) {
         $entry = $Script:TestHttpState.PSObject.Properties[$Uri]
         if (-not $entry) {
@@ -417,6 +553,7 @@ function Invoke-H06HttpJson {
         return [pscustomobject]@{
             status_code = [int]$payload.status_code
             json = $payload.json
+            error = $null
         }
     }
 
@@ -426,6 +563,7 @@ function Invoke-H06HttpJson {
         return [pscustomobject]@{
             status_code = [int]$response.StatusCode
             json = $json
+            error = $null
         }
     }
     catch {
@@ -445,27 +583,55 @@ function Invoke-H06HttpJson {
             return [pscustomobject]@{
                 status_code = $statusCode
                 json = $json
+                error = $null
             }
         }
-        throw
+        return [pscustomobject]@{
+            status_code = 0
+            json = $null
+            error = "connection-refused"
+        }
     }
+}
+
+function Wait-ForH06Readiness {
+    param([pscustomobject]$ManifestInfo)
+
+    $attempts = Get-WaitAttempts
+    $lastHealth = $null
+    $lastReady = $null
+
+    for ($attempt = 0; $attempt -lt $attempts; $attempt += 1) {
+        $health = Invoke-H06HttpJson -Uri "http://127.0.0.1:8002/health"
+        $ready = Invoke-H06HttpJson -Uri "http://127.0.0.1:8002/ready"
+        $lastHealth = $health
+        $lastReady = $ready
+
+        $healthOk = $health.status_code -eq 200 -and $health.json -and $health.json.status -eq "ok"
+        $readyOk = $ready.status_code -eq 200 -and $ready.json -and $ready.json.status -eq "ready"
+        $buildOk = $readyOk -and ([string]$ready.json.build_id -eq $ManifestInfo.build_id)
+
+        if ($healthOk -and $buildOk) {
+            return [pscustomobject]@{
+                health = $health.json
+                ready = $ready.json
+            }
+        }
+
+        if ($attempt -lt ($attempts - 1)) {
+            Wait-NextAttempt
+        }
+    }
+
+    $healthStatus = if ($lastHealth -and $lastHealth.json) { [string]$lastHealth.json.status } elseif ($lastHealth) { [string]$lastHealth.error } else { "unknown" }
+    $readyBuild = if ($lastReady -and $lastReady.json) { [string]$lastReady.json.build_id } elseif ($lastReady) { [string]$lastReady.error } else { "unknown" }
+    Write-FailureAndExit -Message "H06 did not report manifest build ID before timeout. health=$healthStatus ready_build=$readyBuild"
 }
 
 function Invoke-Verify {
     param([pscustomobject]$ManifestInfo)
 
-    $health = Invoke-H06HttpJson -Uri "http://127.0.0.1:8002/health"
-    if ($health.status_code -ne 200 -or $health.json.status -ne "ok") {
-        Write-FailureAndExit -Message "H06 /health failed."
-    }
-
-    $ready = Invoke-H06HttpJson -Uri "http://127.0.0.1:8002/ready"
-    if ($ready.status_code -ne 200 -or $ready.json.status -ne "ready") {
-        Write-FailureAndExit -Message "H06 /ready failed."
-    }
-    if ([string]$ready.json.build_id -ne $ManifestInfo.build_id) {
-        Write-FailureAndExit -Message "H06 ready build ID does not match manifest."
-    }
+    $readiness = Wait-ForH06Readiness -ManifestInfo $ManifestInfo
 
     $containers = @{}
     foreach ($service in $Script:H06Containers.Keys) {
@@ -483,8 +649,8 @@ function Invoke-Verify {
     [ordered]@{
         action = "Verify"
         build_id = $ManifestInfo.build_id
-        health = $health.json
-        ready = $ready.json
+        health = $readiness.health
+        ready = $readiness.ready
         containers = $containers
     } | ConvertTo-Json -Depth 20
 }
@@ -500,11 +666,12 @@ switch ($Action) {
     }
     "StartStores" {
         [void](Invoke-Preflight -ManifestInfo $manifestInfo)
-        Invoke-DockerCompose -Arguments @("-p", $Script:H06Project, "up", "-d", "mysql", "qdrant", "redis")
+        Invoke-DockerCompose -RepoRoot $manifestInfo.repo_root -Arguments @("-p", $Script:H06Project, "up", "-d", "mysql", "qdrant", "redis")
+        $containers = Wait-ForHealthyContainers
         [ordered]@{
             action = "StartStores"
             compose_project = $Script:H06Project
-            containers = $Script:H06Containers
+            containers = $containers
         } | ConvertTo-Json -Depth 10
     }
     "Initialize" {
@@ -520,6 +687,7 @@ switch ($Action) {
         $logPath = Join-Path $stagingDir "h06-api.log"
         $errorPath = Join-Path $stagingDir "h06-api.err"
         $process = Start-H06ApiProcess -RepoRoot $manifestInfo.repo_root -LogPath $logPath -ErrorPath $errorPath
+        $readiness = Wait-ForH06Readiness -ManifestInfo $manifestInfo
         [ordered]@{
             action = "StartApi"
             build_id = $manifestInfo.build_id
@@ -527,6 +695,8 @@ switch ($Action) {
             pid = $process.Id
             log_path = $logPath
             err_path = $errorPath
+            health = $readiness.health
+            ready = $readiness.ready
         } | ConvertTo-Json -Depth 10
     }
     "Verify" {
