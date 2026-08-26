@@ -43,8 +43,7 @@ function Write-FailureAndExit {
         [int]$Code = 1
     )
 
-    [Console]::Error.WriteLine($Message)
-    exit $Code
+    throw [System.InvalidOperationException]::new($Message)
 }
 
 function Get-RepoRoot {
@@ -348,21 +347,68 @@ function Get-H05Status {
     return $status
 }
 
-function Get-WaitAttempts {
-    if ($env:H06_TEST_ROOT) {
-        return 4
+function Get-JsonPropertyValue {
+    param(
+        $Object,
+        [string]$Name,
+        $Default = $null
+    )
+
+    if (-not $Object) {
+        return $Default
     }
-    return 30
+    $property = $Object.PSObject.Properties[$Name]
+    if (-not $property) {
+        return $Default
+    }
+    return $property.Value
+}
+
+function Get-PollIntervalSeconds {
+    $override = [Environment]::GetEnvironmentVariable("H06_TEST_POLL_INTERVAL_SECONDS")
+    if (-not [string]::IsNullOrWhiteSpace($override)) {
+        return [double]$override
+    }
+    return 2.0
+}
+
+function Get-TimeoutSeconds {
+    param([ValidateSet("stores", "api")] [string]$Kind)
+
+    if ($Kind -eq "stores") {
+        $override = [Environment]::GetEnvironmentVariable("H06_TEST_STORE_TIMEOUT_SECONDS")
+        if (-not [string]::IsNullOrWhiteSpace($override)) {
+            return [double]$override
+        }
+        return 120.0
+    }
+
+    $apiOverride = [Environment]::GetEnvironmentVariable("H06_TEST_API_TIMEOUT_SECONDS")
+    if (-not [string]::IsNullOrWhiteSpace($apiOverride)) {
+        return [double]$apiOverride
+    }
+    return 90.0
+}
+
+function Get-WaitAttempts {
+    param([ValidateSet("stores", "api")] [string]$Kind)
+
+    $timeoutSeconds = Get-TimeoutSeconds -Kind $Kind
+    $pollSeconds = Get-PollIntervalSeconds
+    if ($pollSeconds -le 0) {
+        return 1
+    }
+    return [int][Math]::Floor($timeoutSeconds / $pollSeconds) + 1
 }
 
 function Wait-NextAttempt {
     if (-not $env:H06_TEST_ROOT) {
-        Start-Sleep -Seconds 2
+        Start-Sleep -Seconds (Get-PollIntervalSeconds)
     }
 }
 
 function Wait-ForHealthyContainers {
-    $attempts = Get-WaitAttempts
+    $attempts = Get-WaitAttempts -Kind "stores"
     for ($attempt = 0; $attempt -lt $attempts; $attempt += 1) {
         $dockerState = Get-DockerSequenceState
         if (-not $dockerState) {
@@ -512,6 +558,76 @@ function Start-H06ApiProcess {
         -RedirectStandardError $ErrorPath
 }
 
+function Stop-H06ApiProcess {
+    param($Process)
+
+    if (-not $Process) {
+        return
+    }
+
+    if ($env:H06_TEST_STOP_PROCESS_LOG) {
+        @{
+            Id = $Process.Id
+        } | ConvertTo-Json -Depth 10 | ForEach-Object {
+            [System.IO.File]::WriteAllText(
+                $env:H06_TEST_STOP_PROCESS_LOG,
+                $_,
+                (New-Object System.Text.UTF8Encoding($false))
+            )
+        }
+        return
+    }
+
+    try {
+        Stop-Process -Id $Process.Id -ErrorAction Stop
+    }
+    catch {
+        # Keep original readiness failure as the load-bearing error.
+    }
+}
+
+function Invoke-UvCommand {
+    param(
+        [string]$RepoRoot,
+        [string[]]$ArgumentList
+    )
+
+    $environmentSnapshot = @{
+        MYSQL_PORT = $env:MYSQL_PORT
+        QDRANT_REST_PORT = $env:QDRANT_REST_PORT
+        QDRANT_GRPC_PORT = $env:QDRANT_GRPC_PORT
+        REDIS_PORT = $env:REDIS_PORT
+        API_PORT = $env:API_PORT
+    }
+
+    if ($env:H06_TEST_COMMAND_LOG) {
+        @{
+            FilePath = "uv"
+            ArgumentList = $ArgumentList
+            WorkingDirectory = $RepoRoot
+            Environment = $environmentSnapshot
+        } | ConvertTo-Json -Depth 10 | ForEach-Object {
+            [System.IO.File]::WriteAllText(
+                $env:H06_TEST_COMMAND_LOG,
+                $_,
+                (New-Object System.Text.UTF8Encoding($false))
+            )
+        }
+        return
+    }
+
+    Push-Location $RepoRoot
+    try {
+        & uv @ArgumentList
+        if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+        }
+    }
+    finally {
+        Pop-Location
+    }
+}
+
 function Invoke-H06HttpJson {
     param([string]$Uri)
 
@@ -597,7 +713,7 @@ function Invoke-H06HttpJson {
 function Wait-ForH06Readiness {
     param([pscustomobject]$ManifestInfo)
 
-    $attempts = Get-WaitAttempts
+    $attempts = Get-WaitAttempts -Kind "api"
     $lastHealth = $null
     $lastReady = $null
 
@@ -607,9 +723,13 @@ function Wait-ForH06Readiness {
         $lastHealth = $health
         $lastReady = $ready
 
-        $healthOk = $health.status_code -eq 200 -and $health.json -and $health.json.status -eq "ok"
-        $readyOk = $ready.status_code -eq 200 -and $ready.json -and $ready.json.status -eq "ready"
-        $buildOk = $readyOk -and ([string]$ready.json.build_id -eq $ManifestInfo.build_id)
+        $healthStatus = Get-JsonPropertyValue -Object $health.json -Name "status"
+        $readyStatus = Get-JsonPropertyValue -Object $ready.json -Name "status"
+        $readyBuildId = [string](Get-JsonPropertyValue -Object $ready.json -Name "build_id" -Default "")
+
+        $healthOk = $health.status_code -eq 200 -and $health.json -and $healthStatus -eq "ok"
+        $readyOk = $ready.status_code -eq 200 -and $ready.json -and $readyStatus -eq "ready"
+        $buildOk = $readyOk -and ($readyBuildId -eq $ManifestInfo.build_id)
 
         if ($healthOk -and $buildOk) {
             return [pscustomobject]@{
@@ -623,8 +743,8 @@ function Wait-ForH06Readiness {
         }
     }
 
-    $healthStatus = if ($lastHealth -and $lastHealth.json) { [string]$lastHealth.json.status } elseif ($lastHealth) { [string]$lastHealth.error } else { "unknown" }
-    $readyBuild = if ($lastReady -and $lastReady.json) { [string]$lastReady.json.build_id } elseif ($lastReady) { [string]$lastReady.error } else { "unknown" }
+    $healthStatus = if ($lastHealth -and $lastHealth.json) { [string](Get-JsonPropertyValue -Object $lastHealth.json -Name "status" -Default "unknown") } elseif ($lastHealth) { [string]$lastHealth.error } else { "unknown" }
+    $readyBuild = if ($lastReady -and $lastReady.json) { [string](Get-JsonPropertyValue -Object $lastReady.json -Name "build_id" -Default "") } elseif ($lastReady) { [string]$lastReady.error } else { "unknown" }
     Write-FailureAndExit -Message "H06 did not report manifest build ID before timeout. health=$healthStatus ready_build=$readyBuild"
 }
 
@@ -656,50 +776,66 @@ function Invoke-Verify {
 }
 
 Initialize-TestState
-$manifestInfo = Resolve-ManifestInfo -ManifestPath $Manifest
-Import-Environment -RepoRoot $manifestInfo.repo_root
-Set-H06Environment
+try {
+    $manifestInfo = Resolve-ManifestInfo -ManifestPath $Manifest
+    Import-Environment -RepoRoot $manifestInfo.repo_root
+    Set-H06Environment
 
-switch ($Action) {
-    "Preflight" {
-        Invoke-Preflight -ManifestInfo $manifestInfo -DryRunOnly:$DryRun
-    }
-    "StartStores" {
-        [void](Invoke-Preflight -ManifestInfo $manifestInfo)
-        Invoke-DockerCompose -RepoRoot $manifestInfo.repo_root -Arguments @("-p", $Script:H06Project, "up", "-d", "mysql", "qdrant", "redis")
-        $containers = Wait-ForHealthyContainers
-        [ordered]@{
-            action = "StartStores"
-            compose_project = $Script:H06Project
-            containers = $containers
-        } | ConvertTo-Json -Depth 10
-    }
-    "Initialize" {
-        & uv run food-agent-v2 data-initialize --manifest $manifestInfo.path --confirm-empty-v2
-        if ($LASTEXITCODE -ne 0) {
-            exit $LASTEXITCODE
+    switch ($Action) {
+        "Preflight" {
+            Invoke-Preflight -ManifestInfo $manifestInfo -DryRunOnly:$DryRun
+        }
+        "StartStores" {
+            [void](Invoke-Preflight -ManifestInfo $manifestInfo)
+            Invoke-DockerCompose -RepoRoot $manifestInfo.repo_root -Arguments @("-p", $Script:H06Project, "up", "-d", "mysql", "qdrant", "redis")
+            $containers = Wait-ForHealthyContainers
+            [ordered]@{
+                action = "StartStores"
+                compose_project = $Script:H06Project
+                containers = $containers
+            } | ConvertTo-Json -Depth 10
+        }
+        "Initialize" {
+            Invoke-UvCommand -RepoRoot $manifestInfo.repo_root -ArgumentList @(
+                "run",
+                "food-agent-v2",
+                "data-initialize",
+                "--manifest",
+                $manifestInfo.path,
+                "--confirm-empty-v2"
+            )
+        }
+        "StartApi" {
+            [void](Invoke-Preflight -ManifestInfo $manifestInfo)
+            $stagingDir = Join-Path $manifestInfo.repo_root ".staging"
+            New-Item -ItemType Directory -Path $stagingDir -Force | Out-Null
+            $logPath = Join-Path $stagingDir "h06-api.log"
+            $errorPath = Join-Path $stagingDir "h06-api.err"
+            $process = Start-H06ApiProcess -RepoRoot $manifestInfo.repo_root -LogPath $logPath -ErrorPath $errorPath
+            try {
+                $readiness = Wait-ForH06Readiness -ManifestInfo $manifestInfo
+            }
+            catch {
+                Stop-H06ApiProcess -Process $process
+                throw
+            }
+            [ordered]@{
+                action = "StartApi"
+                build_id = $manifestInfo.build_id
+                api_base = "http://127.0.0.1:8002"
+                pid = $process.Id
+                log_path = $logPath
+                err_path = $errorPath
+                health = $readiness.health
+                ready = $readiness.ready
+            } | ConvertTo-Json -Depth 10
+        }
+        "Verify" {
+            Invoke-Verify -ManifestInfo $manifestInfo
         }
     }
-    "StartApi" {
-        [void](Invoke-Preflight -ManifestInfo $manifestInfo)
-        $stagingDir = Join-Path $manifestInfo.repo_root ".staging"
-        New-Item -ItemType Directory -Path $stagingDir -Force | Out-Null
-        $logPath = Join-Path $stagingDir "h06-api.log"
-        $errorPath = Join-Path $stagingDir "h06-api.err"
-        $process = Start-H06ApiProcess -RepoRoot $manifestInfo.repo_root -LogPath $logPath -ErrorPath $errorPath
-        $readiness = Wait-ForH06Readiness -ManifestInfo $manifestInfo
-        [ordered]@{
-            action = "StartApi"
-            build_id = $manifestInfo.build_id
-            api_base = "http://127.0.0.1:8002"
-            pid = $process.Id
-            log_path = $logPath
-            err_path = $errorPath
-            health = $readiness.health
-            ready = $readiness.ready
-        } | ConvertTo-Json -Depth 10
-    }
-    "Verify" {
-        Invoke-Verify -ManifestInfo $manifestInfo
-    }
+}
+catch {
+    [Console]::Error.WriteLine($_.Exception.Message)
+    exit 1
 }

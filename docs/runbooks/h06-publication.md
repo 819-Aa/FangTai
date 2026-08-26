@@ -30,7 +30,7 @@ powershell -ExecutionPolicy Bypass -File scripts/publish_h06.ps1 -Action StartSt
 
 This launches only `food_agent_v2_h06_mysql`, `food_agent_v2_h06_qdrant`, and `food_agent_v2_h06_redis` with Docker project `food_agent_v2_h06`.
 
-The script executes Docker Compose from the repository root with the explicit file `docker-compose.yml`, then polls the exact H06 three-container set until all are `running=true` and `healthy`. If that condition is not reached before timeout, the command fails closed.
+The script executes Docker Compose from the repository root with the explicit file `docker-compose.yml`, then polls the exact H06 three-container set until all are `running=true` and `healthy`. The production cold-start budget is 120 seconds. If that condition is not reached before timeout, the command fails closed.
 
 ### 3. Initialize
 
@@ -55,7 +55,7 @@ The script starts the H06 API on `127.0.0.1:8002` with `Start-Process -WindowSty
 - `.staging/h06-api.log`
 - `.staging/h06-api.err`
 
-The H06 process is started with `RAG_WARMUP_ON_STARTUP=true` so readiness can eventually satisfy the SiliconFlow probe. The script then polls `/health` and `/ready` until both are live and `/ready.build_id` matches the manifest build ID, treating connection refusal and transient readiness failures as retryable cold-start states.
+The H06 process is started with `RAG_WARMUP_ON_STARTUP=true` so readiness can eventually satisfy the SiliconFlow probe. The script then polls `/health` and `/ready` until both are live and `/ready.build_id` matches the manifest build ID, treating connection refusal and transient readiness failures as retryable cold-start states. The production readiness budget is 90 seconds.
 
 ### 5. Verify
 
@@ -77,3 +77,5 @@ Expected result:
 - `Preflight -DryRun` is the safe verification path for already-running environments.
 - The script is fail-closed for unexpected listeners on H06 ports.
 - The script does not contain secrets; it inherits them from `.env`.
+- Automated contract tests for this runbook stay non-destructive and rely on controlled fake runners / fake HTTP / fake Docker state.
+- External live evidence belongs to the main publication flow, not this contract suite: H06 stores were already initialized with 19 runtime artifacts / 1932 Qdrant points, `8002` reached ready, live E2E completed there, and the public entry was later switched to `8001`.

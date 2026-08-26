@@ -149,6 +149,9 @@ def run_h06_script(
     http_sequence_path: Path | None = None,
     start_process_log: Path | None = None,
     compose_log_path: Path | None = None,
+    stop_process_log: Path | None = None,
+    command_log_path: Path | None = None,
+    extra_env: dict[str, str] | None = None,
 ) -> ScriptResult:
     command = [*POWERSHELL, "-Action", action]
     if manifest is not None:
@@ -169,6 +172,12 @@ def run_h06_script(
         env["H06_TEST_START_PROCESS_LOG"] = str(start_process_log)
     if compose_log_path is not None:
         env["H06_TEST_COMPOSE_LOG"] = str(compose_log_path)
+    if stop_process_log is not None:
+        env["H06_TEST_STOP_PROCESS_LOG"] = str(stop_process_log)
+    if command_log_path is not None:
+        env["H06_TEST_COMMAND_LOG"] = str(command_log_path)
+    if extra_env:
+        env.update(extra_env)
     completed = subprocess.run(
         command,
         cwd=REPO_ROOT,
@@ -279,14 +288,14 @@ def test_h06_start_api_uses_hidden_window_and_h06_environment(tmp_path: Path) ->
     http_sequence = write_http_sequence(
         tmp_path / "http-sequence.json",
         {
-            "http://127.0.0.1:8002/health": [
-                {"error": "connection-refused"},
-                {"status_code": 200, "json": {"status": "ok", "version": "0.1.0"}},
-            ],
-            "http://127.0.0.1:8002/ready": [
-                {"status_code": 503, "json": {"error": "SERVICE_NOT_READY"}},
-                {"status_code": 200, "json": {"status": "ready", "build_id": H06_BUILD_ID}},
-            ],
+            "http://127.0.0.1:8002/health": (
+                [{"error": "connection-refused"}] * 30
+                + [{"status_code": 200, "json": {"status": "ok", "version": "0.1.0"}}]
+            ),
+            "http://127.0.0.1:8002/ready": (
+                [{"status_code": 503, "json": {"error": "SERVICE_NOT_READY"}}] * 30
+                + [{"status_code": 200, "json": {"status": "ready", "build_id": H06_BUILD_ID}}]
+            ),
         },
     )
     start_process_log = tmp_path / "start-process.json"
@@ -375,10 +384,8 @@ def test_h06_start_stores_waits_for_exact_h06_containers_and_uses_repo_root_comp
     docker_state = write_docker_state(tmp_path / "docker-state.json", include_h06=False)
     docker_sequence = write_docker_sequence(
         tmp_path / "docker-sequence.json",
-        [
-            make_docker_state(include_h06=True, h06_health="starting"),
-            make_docker_state(include_h06=True, h06_health="healthy"),
-        ],
+        [make_docker_state(include_h06=True, h06_health="starting")] * 30
+        + [make_docker_state(include_h06=True, h06_health="healthy")],
     )
     compose_log = tmp_path / "compose-log.json"
 
@@ -415,6 +422,7 @@ def test_h06_start_stores_times_out_when_h06_never_becomes_healthy(tmp_path: Pat
         docker_state_path=docker_state,
         docker_sequence_path=docker_sequence,
         compose_log_path=compose_log,
+        extra_env={"H06_TEST_STORE_TIMEOUT_SECONDS": "6"},
     )
 
     assert result.returncode != 0
@@ -444,7 +452,69 @@ def test_h06_verify_times_out_when_ready_build_never_matches(tmp_path: Path) -> 
         repo_root=repo_root,
         docker_state_path=docker_state,
         http_sequence_path=http_sequence,
+        extra_env={"H06_TEST_API_TIMEOUT_SECONDS": "6"},
     )
 
     assert result.returncode != 0
     assert "did not report manifest build ID before timeout" in result.stderr
+
+
+def test_h06_start_api_stops_started_pid_when_readiness_times_out(tmp_path: Path) -> None:
+    repo_root, manifest = write_valid_manifest(tmp_path)
+    docker_state = write_docker_state(tmp_path / "docker-state.json")
+    http_sequence = write_http_sequence(
+        tmp_path / "http-sequence-startapi-timeout.json",
+        {
+            "http://127.0.0.1:8002/health": [{"error": "connection-refused"}] * 4,
+            "http://127.0.0.1:8002/ready": [
+                {"status_code": 503, "json": {"error": "SERVICE_NOT_READY"}}
+            ] * 4,
+        },
+    )
+    start_process_log = tmp_path / "start-process-timeout.json"
+    stop_process_log = tmp_path / "stop-process-timeout.json"
+
+    result = run_h06_script(
+        "StartApi",
+        manifest,
+        repo_root=repo_root,
+        docker_state_path=docker_state,
+        http_sequence_path=http_sequence,
+        start_process_log=start_process_log,
+        stop_process_log=stop_process_log,
+        extra_env={"H06_TEST_API_TIMEOUT_SECONDS": "6"},
+    )
+
+    assert result.returncode != 0
+    assert "did not report manifest build ID before timeout" in result.stderr
+    stop_payload = json.loads(stop_process_log.read_text(encoding="utf-8"))
+    assert stop_payload["Id"] == 42424
+
+
+def test_h06_initialize_runs_precise_data_initialize_command_and_h06_ports(tmp_path: Path) -> None:
+    repo_root, manifest = write_valid_manifest(tmp_path)
+    command_log = tmp_path / "command-log.json"
+
+    result = run_h06_script(
+        "Initialize",
+        manifest,
+        repo_root=repo_root,
+        command_log_path=command_log,
+    )
+
+    assert result.returncode == 0, result.stderr
+    command_payload = json.loads(command_log.read_text(encoding="utf-8"))
+    assert command_payload["FilePath"] == "uv"
+    assert command_payload["ArgumentList"] == [
+        "run",
+        "food-agent-v2",
+        "data-initialize",
+        "--manifest",
+        str(manifest.resolve()),
+        "--confirm-empty-v2",
+    ]
+    assert command_payload["WorkingDirectory"] == str(repo_root)
+    assert command_payload["Environment"]["MYSQL_PORT"] == "3309"
+    assert command_payload["Environment"]["QDRANT_REST_PORT"] == "6339"
+    assert command_payload["Environment"]["QDRANT_GRPC_PORT"] == "6340"
+    assert command_payload["Environment"]["REDIS_PORT"] == "6382"
