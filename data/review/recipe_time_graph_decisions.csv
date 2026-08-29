@@ -8,7 +8,7 @@ time-348-first-proof,348,3,"进行发酵，发酵2.5倍大小，用手指戳一�
 time-348-second-proof,348,9,进行二次发酵,1,set_duration,1800,approved
 time-348-steam,348,9,"放入方太智能烹饪设备第2层，开启电源，取出水箱加满水，选择“开始烹饪”按键，按屏幕提示操作",1,set_duration,1200,approved
 time-408-oven,408,5,"放到烤箱中层，选择“开始烹饪”按键，按屏幕提示操作",1,set_duration,600,approved
-time-408-duplicate,408,6,"放到烤箱中层，选择“开始烹饪”按键，按屏幕提示操作",1,ignore,,approved
+time-408-duplicate,408,6,"放到烤箱中层，选择“开始烹饪”按键，按屏幕提示操作",1,set_duration,600,approved
 time-621-oven-before-flip,621,2,设置加湿烤210℃,1,set_duration,210,approved,unattended_equipment,oven,
 time-621-oven-after-flip,621,2,7分钟,1,set_duration,210,approved,unattended_equipment,oven,time-621-flip
 time-621-flip,621,3,"期间到达设定温度时，开门翻拌一次",1,set_duration,30,approved,manual,cook,time-621-oven-before-flip
@@ -43,3 +43,8 @@ time-1814-first-proof,1814,2,发酵至两倍大,1,set_duration,3600,approved
 time-1822-oven,1822,10,"放入烤箱中下层，选择“开始烹饪”按键，按屏幕提示操作",1,set_duration,7200,approved
 time-1944-first-proof,1944,6,盖盖子发酵成3倍大,1,set_duration,5400,approved
 time-1944-steam,1944,9,"放入方太智能烹饪设备第2层，开启电源，取出水箱加满水，选择“开始烹饪”按键，按屏幕提示操作",1,set_duration,1200,approved
+time-984-no-clean,984,1,无需清洗,1,ignore,,approved,,,
+time-1138-transition,1138,3,腌制后,1,ignore,,approved,,,
+time-1138-p44,1138,4,开始烹饪,1,set_duration,7200,approved,unattended_equipment,oven,
+time-1763-transition,1763,3,腌制后,1,ignore,,approved,,,
+time-1763-p44,1763,5,"选择“开始烹饪”按键，按屏幕提示操作",1,set_duration,7200,approved,unattended_equipment,oven,

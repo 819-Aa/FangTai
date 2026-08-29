@@ -336,7 +336,7 @@ def test_repository_crosswalk_covers_retained_inputs_with_complete_references() 
         for row in decisions
         if row["review_status"] in {"approved", "modified"}
     }
-    assert len(decisions) == len(decision_keys) == crosswalk.approved_count == 1_787
+    assert len(decisions) == len(decision_keys) == crosswalk.approved_count == 1_786
     assert decision_keys == required_keys
     assert all(
         set(row)

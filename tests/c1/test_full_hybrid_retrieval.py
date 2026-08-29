@@ -50,6 +50,9 @@ def _rag(recipe_id: int, name: str, text: str, **payload) -> dict:
         "cuisine_tags": [],
         "scenario_tags": [],
         "ingredient_names": payload.get("ingredient_names", []),
+        "dependency_recipe_ids": payload.get("dependency_recipe_ids", []),
+        "dependency_names": payload.get("dependency_names", []),
+        "dependency_relation_types": payload.get("dependency_relation_types", []),
     }
 
 
@@ -60,7 +63,15 @@ class FakeSource:
     def records(self, artifact_name: str, build_id: str) -> list[dict]:
         if artifact_name == "rag_documents":
             return [
-                _rag(1, "红烧肉", "猪肉 酱油 糖", ingredient_names=["猪肉"]),
+                _rag(
+                    1,
+                    "红烧肉",
+                    "猪肉 酱油 糖",
+                    ingredient_names=["猪肉"],
+                    dependency_recipe_ids=[20],
+                    dependency_names=["红烧汁"],
+                    dependency_relation_types=["requires_component"],
+                ),
                 _rag(2, "清蒸鱼", "鱼 姜 葱", ingredient_names=["鱼", "辣椒"]),
             ]
         return []
@@ -83,6 +94,17 @@ class TestFullHybridRetrieval:
         assert result.retrieval_path == "hybrid_rerank"
         assert len(result.candidates) > 0
         assert all(c.recipe_id in {1, 2} for c in result.candidates)
+
+    def test_dependency_metadata_survives_retrieval(self) -> None:
+        service = _service(vector=FakeVector(results=[(1, 0.9)]))
+
+        result = service.retrieve("红烧肉", filters=RetrievalFilters(), top_k=1)
+
+        assert result.candidates[0].searchable_fields["dependency_recipe_ids"] == [20]
+        assert result.candidates[0].searchable_fields["dependency_names"] == ["红烧汁"]
+        assert result.candidates[0].searchable_fields["dependency_relation_types"] == [
+            "requires_component"
+        ]
 
     def test_vector_unavailable_fails_closed(self) -> None:
         service = _service(vector=FakeVector(available=False))

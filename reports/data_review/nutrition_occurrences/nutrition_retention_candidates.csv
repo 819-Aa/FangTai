@@ -1,0 +1,1 @@
+occurrence_id,recipe_id,recipe_name,ingredient_id,ingredient_name,source_fragment,normalized_form,category,quantity_raw,bound_step_indexes,bound_step_text,candidate_retained_in_dish,evidence_codes,review_status

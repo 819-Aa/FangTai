@@ -16,17 +16,17 @@ OVERNIGHT_SECONDS = 8 * 60 * 60
 # for every other recipe remain stable.
 _REVIEWED_TIME_RECIPE_IDS = frozenset({
     65, 269, 305, 348, 408, 621, 659, 675, 718, 840, 855,
-    860, 885, 1039, 1092, 1139, 1246, 1449, 1814, 1822, 1944,
+    860, 885, 1039, 1092, 1138, 1139, 1246, 1449, 1763, 1814, 1822, 1944,
 })
 
 _NUMBER = r"\d+(?:\.\d+)?"
 _RANGE_RE = re.compile(
     rf"(?P<low>{_NUMBER})\s*(?:-|–|—|~|～|至|到)\s*"
-    rf"(?P<high>{_NUMBER})\s*(?P<unit>小时|钟头|分钟|分|秒钟|秒|min(?:ute)?s?)(?!满)",
+    rf"(?P<high>{_NUMBER})\s*(?P<unit>小时|钟头|分钟|分|秒钟|秒|min(?:ute)?s?|h(?:ours?)?)(?!满)",
     re.IGNORECASE,
 )
 _EXACT_RE = re.compile(
-    rf"(?P<value>{_NUMBER})\s*(?P<unit>小时|钟头|分钟|分|秒钟|秒|min(?:ute)?s?)(?!满)",
+    rf"(?P<value>{_NUMBER})\s*(?P<unit>小时|钟头|分钟|分|秒钟|秒|min(?:ute)?s?|h(?:ours?)?)(?!满)",
     re.IGNORECASE,
 )
 _LEGACY_RANGE_RE = re.compile(
@@ -56,6 +56,9 @@ _UNIT_SECONDS = {
     "mins": 60,
     "minute": 60,
     "minutes": 60,
+    "h": 3600,
+    "hour": 3600,
+    "hours": 3600,
 }
 
 _NON_TASK_RE = re.compile(
@@ -147,11 +150,11 @@ _ACTIVE_PREFIX_RE = re.compile(
     r"揉|搓|点|压|摆|装入|放(?:入|进|在|到)?|包|整形|倒入|煎|炒|收汁|切|擀|取出"
 )
 _DURATION_ONLY_RE = re.compile(
-    rf"^(?:用了|用时|约|大约)?\s*{_NUMBER}\s*(?:小时|钟头|分钟|分|秒钟|秒|min(?:ute)?s?)(?:左右|以上|以下)?$",
+    rf"^(?:用了|用时|约|大约)?\s*{_NUMBER}\s*(?:小时|钟头|分钟|分|秒钟|秒|min(?:ute)?s?|h(?:ours?)?)(?:左右|以上|以下)?$",
     re.IGNORECASE,
 )
 _PROGRAM_DURATION_BEFORE_PREHEAT_RE = re.compile(
-    rf"{_NUMBER}\s*(?:小时|钟头|分钟|分|min(?:ute)?s?)\s*开始预热",
+    rf"{_NUMBER}\s*(?:小时|钟头|分钟|分|min(?:ute)?s?|h(?:ours?)?)\s*开始预热",
     re.IGNORECASE,
 )
 _WAIT_COMPLETION_RE = re.compile(

@@ -9,7 +9,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 
-from food_agent_v2.b1.quality_gates import REQUIRED_ARTIFACTS, verify_build_manifest
+from food_agent_v2.b1.quality_gates import verify_build_manifest
+from food_agent_v2.contracts.build import FIXED_ARTIFACT_NAMES
 from food_agent_v2.core.config import load_config
 from food_agent_v2.core.paths import PROJECT_ROOT
 
@@ -143,7 +144,7 @@ def initialize_verified_fixed_data(
         )
 
     artifact_root = manifest_path.parent
-    expected_counts = {name: manifest.artifacts[name].row_count for name in REQUIRED_ARTIFACTS}
+    expected_counts = {name: manifest.artifacts[name].row_count for name in FIXED_ARTIFACT_NAMES}
     manifest_sha256 = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
     build_metadata = {
         "build_id": str(manifest.build_id),
@@ -163,12 +164,12 @@ def initialize_verified_fixed_data(
     try:
         mysql.begin(build_metadata)
         rag_documents: list[dict] | None = None
-        for artifact_name in REQUIRED_ARTIFACTS:
+        for artifact_name in FIXED_ARTIFACT_NAMES:
             records = _read_manifest_artifact(artifact_root, manifest, artifact_name)
             mysql.load_artifact(artifact_name, records)
             if artifact_name == "rag_documents":
                 # 仅该产物在 MySQL 导入后还需供 Qdrant 使用；其余逐类释放，
-                # 避免 19 类/十余万行固定事实同时驻留内存。
+                # 避免其余固定产物与 RAG 文档同时驻留内存。
                 rag_documents = records
         actual_counts = mysql.artifact_counts()
         if actual_counts != expected_counts:

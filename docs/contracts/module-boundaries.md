@@ -36,7 +36,7 @@
 | 健康规则 | 审核食材健康关系、约束覆盖状态、健康评估证据、健康评估领域结果 | B2有效约束、B3完整健康食材视图、审核关系和覆盖状态 | `HealthEvaluationService`、候选健康审查工具、最终菜单健康校验工具 | 使用RAG分数、名称推断或营养估算制造硬命中 |
 | RAG检索 | 检索文档、索引映射、检索配置、召回结果和检索证据 | 菜品目录验证通过的只读视图、QueryPlan中的非健康需求 | `RecipeRetrievalService`、召回和扩展召回工具 | 读取原始健康档案、写健康PASS、执行菜单优化 |
 | 营养评分 | 营养匹配结果、内部软评分分解 | 原始食材理论营养、标准食材、健康安全候选 | `NutritionScoringService` | 触发健康硬筛选、向正常回答输出营养数值 |
-| 时间与步骤 | 步骤任务、依赖、设备占用、时间Profile和菜单调度结果 | 菜品目录步骤和设备事实 | `TimePlanningService` | 计算采购量、修改菜品食材、用低置信度时间执行严格排除 |
+| 时间与步骤 | source-authoritative 步骤任务、依赖、设备占用和预计菜单调度结果 | 已发布 `step_tasks` 与 B4 safe 集合 | `TimePlanningService` | 计算采购量、修改菜品食材、读取 raw/cache、输出来源/置信度/三值时间 |
 | 菜单规划 | 可行菜单、软评分分解、差异约束和`plan_id` | 安全候选、偏好、营养软分、时间结果、菜单硬约束 | `MenuPlanningService`、生成可行菜单工具 | 重新判定健康关系、把不安全菜品加入菜单 |
 | 上下文与记忆 | 已提交会话事实、ConversationEvent、ContextManifest和角色上下文投影 | 永久健康事实引用、当前菜单引用、WorkflowState | `ContextService`、`SessionMemoryService` | 覆盖永久健康事实、静默丢弃核心约束、保存隐藏思维过程 |
 | Agent角色 | 各角色的结构化Artifact和用户可见分析摘要 | 角色ModelContext、允许工具回执 | 角色Node接口、Artifact Schema | 直接写数据库、修改State、跨角色取得工具权限 |

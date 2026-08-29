@@ -22,7 +22,6 @@ stateDiagram-v2
     running --> needs_clarification: 必要信息无法安全推断
     running --> no_safe_menu: 无健康安全菜品
     running --> no_feasible_menu: 安全菜品无法组成可行菜单
-    running --> strict_time_indeterminate: 硬时限缺少高权威可行性证据
     running --> failed: 工具、权限、证据或完整性失败
     revising --> failed: 修订上限耗尽或再次失败
     revising --> no_safe_menu: 回流后重新审查无安全候选
@@ -144,18 +143,16 @@ safe_recipe_ids非空
 
 健康安全与菜单可行性必须分别记录，不能把两种终态合并为“没有推荐结果”。
 
-### 4.4 严格时间无法判定
+### 4.4 预计时间不可行或时间服务失败
 
-当请求明确要求硬截止时间，所有候选都没有高权威 `strict_time_feasible=true`，且至少存在一个 `unknown` 时：
+当请求给定 `max_estimated_time_seconds` 时，C2 只接受 B5 返回 `estimated_time_feasible=true` 的组合：
 
 ```text
-strict_time_feasibility_required = true
-且 true 候选为空
-且 unknown 候选非空
-→ 终态 strict_time_indeterminate
+所有 safe 组合的 estimated_time_feasible = false
+→ 终态 no_feasible_menu
 ```
 
-系统必须说明缺少哪些步骤时长、依赖或设备证据；不得用 LLM 估算、软排序或减少菜数冒充满足截止时间。如果全部高权威候选均为 `false`，则进入 `no_feasible_menu`。
+固定 build 缺任务图、任务图非法或 B5 仓储不可用属于系统失败并进入 `failed`，不能伪装成用户时间语义的 `unknown`。回答只能表述预计时间，不得保证完成。
 
 ### 4.5 needs_clarification 终态
 

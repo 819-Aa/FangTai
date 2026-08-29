@@ -39,6 +39,32 @@ SourceHeaders = tuple[
 _GIT_SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 
 
+FIXED_ARTIFACT_NAMES: tuple[str, ...] = (
+    "recipe_source_rows",
+    "recipe_classifications",
+    "user_profiles",
+    "ingredient_occurrences",
+    "ingredient_registry",
+    "ingredient_aliases",
+    "ingredient_forms",
+    "ingredient_crosswalk",
+    "recipe_ingredient_relations",
+    "recipe_health_views",
+    "recipe_step_binding_views",
+    "recipe_nutrition_input_views",
+    "recipe_retrieval_build_views",
+    "step_tasks",
+    "nutrition_features",
+    "rag_documents",
+    "health_relation_decisions",
+    "health_relations",
+    "health_relation_coverage",
+    "recipe_dependencies",
+)
+FIXED_RECIPE_DEPENDENCY_COUNT = 167
+FIXED_RECIPE_BUNDLE_CONTAINS_COUNT = 12
+
+
 class SourceManifest(BaseModel):
     """固定 2,000 条菜品源的机器可读事实，全部字段 Literal 闭包。"""
 

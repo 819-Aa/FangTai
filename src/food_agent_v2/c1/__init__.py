@@ -2,7 +2,7 @@
 
 词法(BM25) + 向量(BGE-M3→Qdrant) + RRF + 重排(BGE-Reranker) 全部真实执行；
 任一不可用即整体失败（无降级、无融合回退）。候选必须属于当前 ready 构建且
-catalog_eligibility=eligible。数据来源为固定 rag_documents/step_tasks 等
+catalog_eligibility=eligible。数据来源为固定 rag_documents
 Repository（无 JSONL）。内存/伪 reranker 只允许通过显式注入的 fixture。
 """
 
@@ -282,6 +282,9 @@ class RecipeRetrievalService:
                     "cuisine_tags",
                     "scenario_tags",
                     "ingredient_names",
+                    "dependency_recipe_ids",
+                    "dependency_names",
+                    "dependency_relation_types",
                 )
                 if doc.get(key)
             }

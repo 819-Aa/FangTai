@@ -2,12 +2,20 @@ from pathlib import Path
 
 import pytest
 
+from food_agent_v2.b1.schemas import StepTask
 from food_agent_v2.b1.source_manifest import (
     canonical_source_manifest,
     load_verified_recipe_source,
 )
 from food_agent_v2.b1.step_atomizer import atomize_recipe_steps, atomize_step
 from food_agent_v2.b1.step_time_builder import split_steps
+from food_agent_v2.b1.time_graph_profiler import (
+    RecipeTimeProfile,
+    TimeGraphCache,
+    load_cached_recipe_time_graph,
+    time_graph_cache_key,
+    time_graph_pipeline_model_id,
+)
 from food_agent_v2.b1.time_review_decisions import (
     apply_time_review_decisions,
     load_time_review_decisions,
@@ -154,13 +162,14 @@ def test_owner_approved_recipe_time_decisions_match_current_source_atoms() -> No
     decisions = load_time_review_decisions(
         PROJECT_ROOT / "data/review/recipe_time_graph_decisions.csv"
     )
-    assert len(decisions) == 44
+    assert len(decisions) == 49
 
     rows = load_verified_recipe_source(RECIPES_RAW, canonical_source_manifest())
     target_recipe_ids = {decision.recipe_id for decision in decisions}
     assert target_recipe_ids == {
         65, 269, 305, 348, 408, 621, 659, 675, 718, 840, 855,
-        860, 885, 1039, 1092, 1139, 1246, 1449, 1814, 1822, 1944,
+        860, 885, 984, 1039, 1092, 1138, 1139, 1246, 1449, 1763,
+        1814, 1822, 1944,
     }
 
     for row in rows:
@@ -176,3 +185,97 @@ def test_owner_approved_recipe_time_decisions_match_current_source_atoms() -> No
             atoms=atoms,
             decisions=decisions,
         )
+
+
+def test_408_reviewed_time_graph_keeps_a_task_atom_for_each_source_step() -> None:
+    decisions = load_time_review_decisions(
+        PROJECT_ROOT / "data/review/recipe_time_graph_decisions.csv"
+    )
+    rows = load_verified_recipe_source(RECIPES_RAW, canonical_source_manifest())
+    recipe = next(row for row in rows if row.recipe_id == 408)
+    source_steps = split_steps(recipe.steps_raw)
+    atoms = atomize_recipe_steps(
+        recipe_id=recipe.recipe_id,
+        steps=enumerate(source_steps, start=1),
+    )
+
+    reviewed = apply_time_review_decisions(
+        recipe_id=recipe.recipe_id,
+        atoms=atoms,
+        decisions=decisions,
+    )
+
+    assert {atom.source_step_index for atom in reviewed} == {1, 2, 3, 4, 5, 6}
+
+
+def test_408_reviewed_time_graph_cache_covers_each_source_step_and_orders_final_runs(
+    tmp_path,
+) -> None:
+    decisions = load_time_review_decisions(
+        PROJECT_ROOT / "data/review/recipe_time_graph_decisions.csv"
+    )
+    rows = load_verified_recipe_source(RECIPES_RAW, canonical_source_manifest())
+    recipe = next(row for row in rows if row.recipe_id == 408)
+    atoms = atomize_recipe_steps(
+        recipe_id=recipe.recipe_id,
+        steps=enumerate(split_steps(recipe.steps_raw), start=1),
+    )
+    reviewed = apply_time_review_decisions(
+        recipe_id=recipe.recipe_id,
+        atoms=atoms,
+        decisions=decisions,
+    )
+
+    tasks = tuple(
+        StepTask(
+            atom_id=atom.atom_id,
+            text=atom.text,
+            duration_seconds=(120, 180, 300, 120, 600, 600)[index],
+            task_type=(
+                "manual" if index < 4 else "attended_equipment"
+            ),
+            resources=(
+                ("cook", "counter") if index < 4 else ("cook", "oven")
+            ),
+            depends_on=(
+                (),
+                (),
+                (reviewed[0].atom_id, reviewed[1].atom_id),
+                (reviewed[2].atom_id,),
+                (reviewed[3].atom_id,),
+                (reviewed[4].atom_id,),
+            )[index],
+        )
+        for index, atom in enumerate(reviewed)
+    )
+    cache_path = tmp_path / "recipe_time_graphs.jsonl"
+    cache = TimeGraphCache(cache_path)
+    pipeline_model_id = time_graph_pipeline_model_id("deepseek-chat", "deepseek-chat")
+    cache.put(
+        time_graph_cache_key(recipe.recipe_id, reviewed, pipeline_model_id),
+        RecipeTimeProfile(
+            recipe_id=recipe.recipe_id,
+            recipe_name=recipe.name,
+            step_tasks=tasks,
+        ),
+    )
+
+    profile = load_cached_recipe_time_graph(
+        recipe_id=recipe.recipe_id,
+        recipe_name=recipe.name,
+        atoms=reviewed,
+        generator_model_id="deepseek-chat",
+        verifier_model_id="deepseek-chat",
+        cache=TimeGraphCache(cache_path),
+    )
+
+    assert {task.atom_id for task in profile.step_tasks} == {
+        atom.atom_id for atom in reviewed
+    }
+    atom_id_by_source_step = {
+        atom.source_step_index: atom.atom_id for atom in reviewed
+    }
+    task_by_atom_id = {task.atom_id: task for task in profile.step_tasks}
+    assert task_by_atom_id[atom_id_by_source_step[6]].depends_on == (
+        atom_id_by_source_step[5],
+    )

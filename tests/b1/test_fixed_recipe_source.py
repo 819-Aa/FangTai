@@ -143,6 +143,7 @@ class TestFixedSource:
         paths = {entry["relative_path"] for entry in manifest["inputs"]}
 
         assert "data/review/recipe_profile_enrichment.jsonl" in paths
+        assert "data/review/recipe_dependencies.jsonl" in paths
         assert "data/review/ingredient_nutrition_retention_decisions.csv" in paths
         assert "data/review/ingredient_quantity_decisions.csv" in paths
         assert "data/review/ingredient_nutrition_crosswalk.jsonl" in paths

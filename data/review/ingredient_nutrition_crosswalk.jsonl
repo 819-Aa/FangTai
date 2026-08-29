@@ -536,7 +536,6 @@
 {"ingredient_id":609,"ingredient_name":"花生仁","form":"cooked","reference_id":"usda-fdc-174262","match_method":"approved_alias","review_status":"approved","brand_name":null,"specification":null}
 {"ingredient_id":609,"ingredient_name":"花生仁","form":"unspecified","reference_id":"usda-fdc-172469","match_method":"approved_alias","review_status":"approved","brand_name":null,"specification":null}
 {"ingredient_id":611,"ingredient_name":"水发干贝","form":"unspecified","reference_id":"usda-fdc-170449","match_method":"approved_alias","review_status":"approved","brand_name":null,"specification":null}
-{"ingredient_id":612,"ingredient_name":"芝麻鱼","form":"unspecified","reference_id":"usda-fdc-173702","match_method":"approved_alias","review_status":"approved","brand_name":null,"specification":null}
 {"ingredient_id":613,"ingredient_name":"中筋粉","form":"unspecified","reference_id":"usda-fdc-169761","match_method":"approved_alias","review_status":"modified","brand_name":null,"specification":null}
 {"ingredient_id":614,"ingredient_name":"净冬瓜","form":"unspecified","reference_id":"project-identity-unspecified-614","match_method":"approved_alias","review_status":"modified","brand_name":null,"specification":null}
 {"ingredient_id":615,"ingredient_name":"麦芽糖","form":"unspecified","reference_id":"usda-fdc-169660","match_method":"approved_alias","review_status":"modified","brand_name":null,"specification":null}

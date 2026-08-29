@@ -64,6 +64,22 @@ def test_approved_non_sensitive_enrichment_fills_missing_facets() -> None:
     assert facts[0].cooking_method_tags == ("蒸",)
 
 
+def test_raw_meal_labels_are_not_extended_by_approved_enrichment() -> None:
+    enrichment = RecipeProfileEnrichment(
+        recipe_id=1,
+        meal_tags=("早餐",),
+        review_status="approved",
+    )
+
+    facts = recipe_facts_from_source(
+        (_row(1, "晚餐"),),
+        (_classification(1),),
+        profile_enrichments={1: enrichment},
+    )
+
+    assert facts[0].meal_tags == ("晚餐",)
+
+
 def test_sensitive_population_tag_cannot_be_generated_without_raw_label() -> None:
     enrichment = RecipeProfileEnrichment(
         recipe_id=1,
@@ -166,8 +182,11 @@ def test_rebuild_entry_applies_reviewed_profiles_and_condition_defaults(
         "条件菜,牛肩肉/牛腩,牛肩肉,牛肩肉|牛腩,approved\n",
         encoding="utf-8",
     )
+    dependency_path = tmp_path / "recipe_dependencies.jsonl"
+    dependency_path.write_text("", encoding="utf-8")
     monkeypatch.setattr(rebuild, "RECIPE_PROFILE_ENRICHMENTS", profile_path)
     monkeypatch.setattr(rebuild, "INGREDIENT_CONDITION_DEFAULTS", condition_path)
+    monkeypatch.setattr(rebuild, "RECIPE_DEPENDENCIES", dependency_path)
     row = SourceRecipeRow(
         recipe_id=1,
         source_row_number=1,
@@ -188,7 +207,7 @@ def test_rebuild_entry_applies_reviewed_profiles_and_condition_defaults(
         ),
     )
 
-    facts, reviewed_occurrences = rebuild.prepare_reviewed_consumer_inputs(
+    facts, reviewed_occurrences, _ = rebuild.prepare_reviewed_consumer_inputs(
         (row,), (_classification(1),), occurrences
     )
 

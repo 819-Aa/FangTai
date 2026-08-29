@@ -1760,7 +1760,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,decision_form,edible_fract
 215-8,215,17,盐,默认可食,1.0,approved
 215-9,215,96,鸡粉,默认可食,1.0,approved
 215-10,215,100,水淀粉,按可食部估重,1.0,approved
-215-11,215,612,芝麻鱼,按可食部估重,1.0,approved
+215-11,215,66,芝麻油,按可食部估重,1.0,approved
 215-12,215,37,胡椒粉,默认可食,1.0,approved
 216-1,216,47,低筋粉,默认可食,1.0,approved
 216-2,216,208,猪油,默认可食,1.0,approved

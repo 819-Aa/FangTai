@@ -72,10 +72,15 @@ Expected result:
 
 `Verify` also retries transient cold-start states until timeout instead of surfacing the first connection-refused or mismatched-build response.
 
+`/ready` does not own H05/H06 row-count constants. It selects the unique ready
+build, decodes that build's manifest-bound `artifact_counts`, compares the
+counts exactly with the MySQL `fixed_artifact_records` rows, and then uses the
+manifest's `recipe_retrieval_build_views` count for Qdrant point-count parity.
+
 ## Notes
 
 - `Preflight -DryRun` is the safe verification path for already-running environments.
 - The script is fail-closed for unexpected listeners on H06 ports.
 - The script does not contain secrets; it inherits them from `.env`.
 - Automated contract tests for this runbook stay non-destructive and rely on controlled fake runners / fake HTTP / fake Docker state.
-- External live evidence belongs to the main publication flow, not this contract suite; the flow must verify the H06 manifest identity, all 19 runtime artifacts / 1932 Qdrant points, readiness on `8000`, and live E2E after the switch.
+- External live evidence belongs to the main publication flow, not this contract suite; the flow must verify the H06 manifest identity, all 20 fixed artifacts, manifest-bound Qdrant point parity, readiness on `8000`, and live E2E after the switch.

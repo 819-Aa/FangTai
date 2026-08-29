@@ -1,0 +1,213 @@
+{
+  "surface": "report",
+  "manifest": {
+    "version": 1,
+    "surface": "report",
+    "title": "program_v2 数据工程终审",
+    "description": "T04–T08 全链路干净构建、画像完整性与发布前就绪性审计。",
+    "generatedAt": "2026-08-28T06:45:00Z",
+    "cards": [
+      {
+        "id": "eligible_card",
+        "description": "通过分类并进入下游视图的 dish 数。",
+        "dataset": "summary_metrics",
+        "sourceId": "audit_evidence",
+        "metrics": [
+          {"label": "合格菜品", "field": "eligible_dishes", "format": "integer"}
+        ]
+      },
+      {
+        "id": "nutrition_card",
+        "description": "原始可食食材营养向量完整的菜品数。",
+        "dataset": "summary_metrics",
+        "sourceId": "audit_evidence",
+        "metrics": [
+          {"label": "营养可用", "field": "nutrition_available", "format": "integer"}
+        ]
+      },
+      {
+        "id": "time_card",
+        "description": "通过图验证与调度器验证的菜品数。",
+        "dataset": "summary_metrics",
+        "sourceId": "audit_evidence",
+        "metrics": [
+          {"label": "可调度时间图", "field": "time_graphs", "format": "integer"}
+        ]
+      },
+      {
+        "id": "blocking_card",
+        "description": "终审发现的 Critical 与 High 问题合计。",
+        "dataset": "summary_metrics",
+        "sourceId": "audit_evidence",
+        "metrics": [
+          {"label": "Critical + High", "field": "blocking_findings", "format": "integer"}
+        ]
+      }
+    ],
+    "charts": [
+      {
+        "id": "domain_coverage_chart",
+        "title": "各域完整覆盖率",
+        "subtitle": "分母为各域应有的菜品、图、关系或产物；六个域均为 100%",
+        "type": "bar",
+        "dataset": "domain_coverage",
+        "sourceId": "audit_evidence",
+        "valueFormat": "percent",
+        "encodings": {
+          "x": {"field": "domain", "type": "nominal", "label": "审计域"},
+          "y": {"field": "coverage_rate", "type": "quantitative", "label": "完整覆盖率"},
+          "tooltip": [
+            {"field": "actual", "type": "quantitative", "label": "实际", "format": "integer"},
+            {"field": "expected", "type": "quantitative", "label": "期望", "format": "integer"}
+          ]
+        }
+      }
+    ],
+    "tables": [
+      {
+        "id": "domain_table",
+        "title": "核心域就绪性",
+        "subtitle": "独立审计结果，不只依赖内建门禁。",
+        "dataset": "domain_readiness",
+        "sourceId": "audit_evidence",
+        "columns": [
+          {"field": "domain", "label": "域", "type": "text"},
+          {"field": "expected", "label": "期望", "type": "text"},
+          {"field": "actual", "label": "实际", "type": "text"},
+          {"field": "result", "label": "结果", "type": "text"}
+        ]
+      },
+      {
+        "id": "artifact_table",
+        "title": "关键产物计数",
+        "subtitle": "新建系统临时目录中的 fresh build 产物。",
+        "dataset": "artifact_counts",
+        "sourceId": "audit_evidence",
+        "columns": [
+          {"field": "artifact", "label": "产物", "type": "text"},
+          {"field": "rows", "label": "行数", "format": "integer"},
+          {"field": "check", "label": "完整性检查", "type": "text"}
+        ]
+      },
+      {
+        "id": "verification_table",
+        "title": "验证命令",
+        "subtitle": "终审期间的可重现验证。",
+        "dataset": "verification_commands",
+        "sourceId": "audit_evidence",
+        "columns": [
+          {"field": "command", "label": "命令", "type": "text"},
+          {"field": "exit_code", "label": "Exit", "format": "integer"},
+          {"field": "summary", "label": "结果", "type": "text"}
+        ]
+      },
+      {
+        "id": "notes_table",
+        "title": "非阻断说明",
+        "subtitle": "不改变 PASS 结论，但保留边界语义。",
+        "dataset": "audit_notes",
+        "sourceId": "audit_evidence",
+        "columns": [
+          {"field": "topic", "label": "主题", "type": "text"},
+          {"field": "observation", "label": "审计结果", "type": "text"},
+          {"field": "disposition", "label": "定性", "type": "text"}
+        ]
+      }
+    ],
+    "sources": [
+      {
+        "id": "audit_evidence",
+        "label": "终审机器可读证据",
+        "path": ".superpowers/sdd/2026-08-28-final-data-quality-audit/audit-evidence.json",
+        "query": {
+          "engine": "duckdb",
+          "language": "sql",
+          "id": "audit-v1",
+          "executed_at": "2026-08-28T06:45:00Z",
+          "description": "Loads reviewed audit evidence.",
+          "sql": "SELECT * FROM read_json_auto('audit-evidence.json')"
+        }
+      },
+      {
+        "id": "audit_markdown",
+        "label": "终审 Markdown 记录",
+        "path": "reports/2026-08-28-final-data-quality-audit.md"
+      }
+    ],
+    "blocks": [
+      {
+        "id": "title",
+        "type": "markdown",
+        "sourceId": "audit_evidence",
+        "body": "# program_v2 数据工程终审\n\n## 技术摘要\n\n**结论：PASS。** Fresh build 产生 19/19 个必需产物，1,932 道 dish 的 RAG、营养和时间视图同集，营养 1,932/1,932 可用，时间图 1,932/1,932 可调度，健康矩阵 65,588/65,588 已批准。营养口径为原始可食食材向量，不算得率、保留率、份数或人均值。本次未更新 staging/Docker/MySQL/Qdrant，也未运行在线 RAG 语义评测；正式重建与发布需另行批准。"
+      },
+      {"id": "coverage_chart", "type": "chart", "chartId": "domain_coverage_chart"}
+    ]
+  },
+  "snapshot": {
+    "version": 1,
+    "generatedAt": "2026-08-28T06:45:00Z",
+    "status": "ready",
+    "datasets": {
+      "summary_metrics": [
+        {"eligible_dishes": 1932, "nutrition_available": 1932, "time_graphs": 1932, "blocking_findings": 0}
+      ],
+      "domain_coverage": [
+        {"domain": "产物", "actual": 19, "expected": 19, "coverage_rate": 1.0},
+        {"domain": "营养", "actual": 1932, "expected": 1932, "coverage_rate": 1.0},
+        {"domain": "时间", "actual": 1932, "expected": 1932, "coverage_rate": 1.0},
+        {"domain": "健康", "actual": 65588, "expected": 65588, "coverage_rate": 1.0}
+      ],
+      "domain_readiness": [
+        {"domain": "Manifest / 产物", "expected": "19 个必需产物", "actual": "19/19，行数和 SHA-256 全匹配", "result": "PASS"},
+        {"domain": "菜品消费视图", "expected": "7 类视图同集", "actual": "均为 1,932 道 dish", "result": "PASS"},
+        {"domain": "营养", "expected": "全部可用且向量完整", "actual": "1,932 可用，0 不可用", "result": "PASS"},
+        {"domain": "时长与步骤", "expected": "单值、无环、可调度", "actual": "1,932 图全部通过", "result": "PASS"},
+        {"domain": "健康关系", "expected": "38 约束 × 1,726 食材", "actual": "65,588 全批准，1,084 hard", "result": "PASS"},
+        {"domain": "RAG 边界", "expected": "餐次/标签完整，无健康结论泄漏", "actual": "1,932 文档，边界违规 0", "result": "PASS"}
+      ],
+      "artifact_counts": [
+        {"artifact": "recipe_source_rows", "rows": 2000, "check": "ID 精确为 1..2000"},
+        {"artifact": "user_profiles", "rows": 50, "check": "ID 精确为 1..50"},
+        {"artifact": "ingredient_registry", "rows": 1770, "check": "pending=0，provenance mismatch=0"},
+        {"artifact": "recipe_ingredient_relations", "rows": 17493, "check": "orphan=0"},
+        {"artifact": "health_relation_decisions", "rows": 65588, "check": "38 × 1,726，全批准"},
+        {"artifact": "nutrition_features", "rows": 1932, "check": "available=1,932"},
+        {"artifact": "step_tasks", "rows": 1932, "check": "validation/scheduler mismatch=0"},
+        {"artifact": "rag_documents", "rows": 1932, "check": "禁止字段行=0"}
+      ],
+      "verification_commands": [
+        {"command": "uv run pytest tests/b1 -q", "exit_code": 0, "summary": "699 passed, 3 skipped"},
+        {"command": "uv run pytest tests/b1/test_recipe_dependencies.py -q", "exit_code": 0, "summary": "8 passed"},
+        {"command": "uv run ruff check <audit_runner>", "exit_code": 0, "summary": "All checks passed"}
+      ],
+      "audit_notes": [
+        {"topic": "Crosswalk 合并链", "observation": "15 行保留中间 direct target，全部最终落到 registry，terminal orphan=0", "disposition": "合法图语义，非 finding"},
+        {"topic": "口味标签", "observation": "502 条 taste 为空；meal 与 searchable text 完整", "disposition": "可选字段，非通过条件"},
+        {"topic": "营养规则", "observation": "计算原始可食食材营养，不算烹饪得率/保留率/份数", "disposition": "符合已确认边界"},
+        {"topic": "在线语义评测", "observation": "未运行实时向量检索或用户输入重写模型", "disposition": "不在本次数据工程终审范围"}
+      ]
+    },
+    "accessIssues": []
+  },
+  "sources": [
+    {
+      "id": "audit_evidence",
+      "label": "终审机器可读证据",
+      "path": ".superpowers/sdd/2026-08-28-final-data-quality-audit/audit-evidence.json",
+      "query": {
+        "engine": "duckdb",
+        "language": "sql",
+        "id": "audit-v1",
+        "executed_at": "2026-08-28T06:45:00Z",
+        "description": "Loads reviewed audit evidence.",
+        "sql": "SELECT * FROM read_json_auto('audit-evidence.json')"
+      }
+    },
+    {
+      "id": "audit_markdown",
+      "label": "终审 Markdown 记录",
+      "path": "reports/2026-08-28-final-data-quality-audit.md"
+    }
+  ]
+}

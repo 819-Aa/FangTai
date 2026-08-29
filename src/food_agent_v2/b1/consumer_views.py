@@ -24,7 +24,7 @@ from food_agent_v2.b1.nutrition_occurrence_rules import (
     derive_nutrition_retention,
     derive_nutrition_usage,
 )
-from food_agent_v2.b1.review_inputs import RecipeProfileEnrichment
+from food_agent_v2.b1.review_inputs import RecipeDependency, RecipeProfileEnrichment
 from food_agent_v2.b1.schemas import RecipeClassification, RecordType, SourceRecipeRow
 
 CatalogEligibility = Literal["eligible", "ineligible"]
@@ -61,6 +61,13 @@ class BuildIdentity:
 
 
 @dataclass(frozen=True)
+class RecipeDependencyRef:
+    recipe_id: int
+    name: str
+    relation_type: str
+
+
+@dataclass(frozen=True)
 class RecipeFact:
     recipe_id: int
     name: str
@@ -77,6 +84,7 @@ class RecipeFact:
     cooking_method_tags: tuple[str, ...] = ()
     texture_tags: tuple[str, ...] = ()
     scenario_tags: tuple[str, ...] = ()
+    dependencies: tuple[RecipeDependencyRef, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -146,6 +154,7 @@ class RecipeStepBindingView:
     recipe_id: int
     ingredient_ids: tuple[int, ...]
     steps: tuple[StructuredStep, ...]
+    dependency_recipe_ids: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -207,6 +216,9 @@ class RecipeRetrievalBuildView:
     cooking_method_tags: tuple[str, ...] = ()
     texture_tags: tuple[str, ...] = ()
     scenario_tags: tuple[str, ...] = ()
+    dependency_recipe_ids: tuple[int, ...] = ()
+    dependency_names: tuple[str, ...] = ()
+    dependency_relation_types: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -226,12 +238,27 @@ def recipe_facts_from_source(
     rows: tuple[SourceRecipeRow, ...],
     classifications: tuple[RecipeClassification, ...],
     profile_enrichments: Mapping[int, RecipeProfileEnrichment] | None = None,
+    recipe_dependencies: tuple[RecipeDependency, ...] = (),
 ) -> tuple[RecipeFact, ...]:
     """B1 原始步骤的唯一适配边界：分类后分段一次，再发布结构化事实。"""
     from food_agent_v2.b1.step_time_builder import split_steps
 
     classification_by_id = _unique_by(classifications, "recipe_id")
     enrichments = dict(profile_enrichments or {})
+    row_by_id = _unique_by(rows, "recipe_id")
+    dependencies_by_parent: dict[int, list[RecipeDependency]] = {}
+    for dependency in recipe_dependencies:
+        if dependency.parent_recipe_id not in row_by_id:
+            raise ValueError(
+                f"菜品依赖引用未知 parent_recipe_id={dependency.parent_recipe_id}"
+            )
+        if dependency.dependency_recipe_id not in row_by_id:
+            raise ValueError(
+                f"菜品依赖引用未知 dependency_recipe_id={dependency.dependency_recipe_id}"
+            )
+        dependencies_by_parent.setdefault(dependency.parent_recipe_id, []).append(
+            dependency
+        )
     if {row.recipe_id for row in rows} != set(classification_by_id):
         raise ValueError("菜品源与分类 recipe_id 集合不一致")
     if set(enrichments) - {row.recipe_id for row in rows}:
@@ -249,9 +276,11 @@ def recipe_facts_from_source(
                     f"recipe_id={row.recipe_id} 画像补全含未经原始 label 支持的敏感标签: "
                     f"{sorted(invented_sensitive)}"
                 )
-        meal_tags = _merge_tags(
-            (tag for tag in label_tags if tag in _MEAL_TAGS),
-            enrichment.meal_tags if enrichment else (),
+        raw_meal_tags = meal_tags_from_raw_labels(row.labels_raw)
+        meal_tags = (
+            raw_meal_tags
+            if raw_meal_tags
+            else tuple(enrichment.meal_tags) if enrichment else ()
         )
         population_tags = _merge_tags(raw_population_tags, ())
         taste_tags = _merge_tags(
@@ -278,22 +307,30 @@ def recipe_facts_from_source(
         }
         facts.append(
             RecipeFact(
-            recipe_id=row.recipe_id,
-            name=row.name,
-            record_type=classification_by_id[row.recipe_id].record_type,
-            step_segments=tuple(split_steps(row.steps_raw)),
-            searchable_fields=searchable_fields,
-            source_row_sha256=row.row_sha256,
-            label_tags=label_tags,
-            meal_tags=meal_tags,
-            population_tags=population_tags,
-            dish_type_tags=dish_type_tags,
-            taste_tags=taste_tags,
-            cuisine_tags=cuisine_tags,
-            cooking_method_tags=cooking_method_tags,
-            texture_tags=texture_tags,
-            scenario_tags=scenario_tags,
-        )
+                recipe_id=row.recipe_id,
+                name=row.name,
+                record_type=classification_by_id[row.recipe_id].record_type,
+                step_segments=tuple(split_steps(row.steps_raw)),
+                searchable_fields=searchable_fields,
+                source_row_sha256=row.row_sha256,
+                label_tags=label_tags,
+                meal_tags=meal_tags,
+                population_tags=population_tags,
+                dish_type_tags=dish_type_tags,
+                taste_tags=taste_tags,
+                cuisine_tags=cuisine_tags,
+                cooking_method_tags=cooking_method_tags,
+                texture_tags=texture_tags,
+                scenario_tags=scenario_tags,
+                dependencies=tuple(
+                    RecipeDependencyRef(
+                        recipe_id=dependency.dependency_recipe_id,
+                        name=row_by_id[dependency.dependency_recipe_id].name,
+                        relation_type=dependency.relation_type,
+                    )
+                    for dependency in dependencies_by_parent.get(row.recipe_id, ())
+                ),
+            )
         )
     return tuple(facts)
 
@@ -587,6 +624,21 @@ def publish_downstream_build_views(
         raise ValueError("下游构建产物数量或构建身份不一致")
     return report
 
+
+def _write_models(path: Path, records: list) -> None:
+    with path.open("w", encoding="utf-8", newline="\n") as handle:
+        for record in records:
+            handle.write(
+                json.dumps(
+                    record.model_dump(mode="json"),
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+                + "\n"
+            )
+
+
 def _build_nutrition_features_with_decisions(
     views,
     *,
@@ -600,7 +652,6 @@ def _build_nutrition_features_with_decisions(
     from food_agent_v2.b1.nutrition_calculator import calculate_raw_recipe_nutrition
 
     decisions = edible_fraction_decisions or EdibleFractionDecisionIndex(())
-
     features = [
         calculate_raw_recipe_nutrition(
             view,
@@ -624,21 +675,6 @@ def _build_nutrition_features_with_decisions(
         "unavailable_count": len(features) - available_count,
         "reason_counts": dict(sorted(reason_counts.items())),
     }
-
-
-
-def _write_models(path: Path, records: list) -> None:
-    with path.open("w", encoding="utf-8", newline="\n") as handle:
-        for record in records:
-            handle.write(
-                json.dumps(
-                    record.model_dump(mode="json"),
-                    ensure_ascii=False,
-                    sort_keys=True,
-                    separators=(",", ":"),
-                )
-                + "\n"
-            )
 
 
 def build_consumer_views(
@@ -754,6 +790,9 @@ def build_consumer_views(
                 recipe_id=recipe_id,
                 ingredient_ids=retrieval_ids,
                 steps=steps,
+                dependency_recipe_ids=tuple(
+                    item.recipe_id for item in recipe.dependencies
+                ),
             )
         )
 
@@ -803,6 +842,13 @@ def build_consumer_views(
                 cooking_method_tags=recipe.cooking_method_tags,
                 texture_tags=recipe.texture_tags,
                 scenario_tags=recipe.scenario_tags,
+                dependency_recipe_ids=tuple(
+                    item.recipe_id for item in recipe.dependencies
+                ),
+                dependency_names=tuple(item.name for item in recipe.dependencies),
+                dependency_relation_types=tuple(
+                    item.relation_type for item in recipe.dependencies
+                ),
             )
         )
 
@@ -949,6 +995,16 @@ def _split_label_tags(labels_raw: str) -> tuple[str, ...]:
         for tag in _LABEL_SPLIT_RE.split(labels_raw or "")
         if tag.strip()
     )
+
+
+def label_tags_from_raw_labels(labels_raw: str) -> tuple[str, ...]:
+    """Parse the source-authoritative label set without applying enrichment."""
+    return _split_label_tags(labels_raw)
+
+
+def meal_tags_from_raw_labels(labels_raw: str) -> tuple[str, ...]:
+    """Parse the source-authoritative meal set without applying enrichment."""
+    return tuple(tag for tag in _split_label_tags(labels_raw) if tag in _MEAL_TAGS)
 
 
 def _merge_tags(primary, secondary) -> tuple[str, ...]:

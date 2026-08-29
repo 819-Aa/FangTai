@@ -138,12 +138,53 @@ class FakeVectorTarget:
 def test_fixed_build_schema_contract_has_exactly_three_v2_runtime_artifacts() -> None:
     versions = artifact_schema_versions({name: object() for name in REQUIRED_ARTIFACTS})
 
-    assert len(versions) == 19
+    assert len(versions) == 20
     assert {name for name, version in versions.items() if version == "2.0.0"} == {
         "rag_documents",
         "nutrition_features",
         "step_tasks",
     }
+
+
+def test_manifest_missing_recipe_dependencies_is_rejected(
+    verified_initialization_build: Path,
+) -> None:
+    assert len(REQUIRED_ARTIFACTS) == 20
+    manifest = json.loads(verified_initialization_build.read_text(encoding="utf-8"))
+    manifest["artifacts"].pop("recipe_dependencies", None)
+    manifest["schema_versions"].pop("recipe_dependencies", None)
+    incomplete_manifest = verified_initialization_build.parent / "missing-dependencies.json"
+    incomplete_manifest.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(DataQualityError) as caught:
+        verify_build_manifest(
+            incomplete_manifest,
+            required_artifacts=REQUIRED_ARTIFACTS,
+            run_semantic_gates=False,
+        )
+    assert caught.value.code == "REQUIRED_ARTIFACT_MISSING"
+
+
+def test_initializer_loads_every_shared_fixed_artifact(
+    verified_initialization_build: Path,
+) -> None:
+    mysql = FakeMySQLTarget()
+    vector = FakeVectorTarget()
+
+    initialize_verified_fixed_data(
+        verified_initialization_build,
+        confirm_empty_v2=True,
+        mysql_target=mysql,
+        vector_target=vector,
+        final_collection="recipe_retrieval_v2",
+    )
+
+    assert set(mysql.committed) == set(REQUIRED_ARTIFACTS)
+    assert len(mysql.committed) == 20
+    assert "recipe_dependencies" in mysql.committed
 
 
 def test_mysql_schema_uses_v2_nutrition_and_time_columns() -> None:
@@ -194,6 +235,39 @@ def test_mysql_adapter_populates_v2_runtime_projections_and_lossless_records() -
     assert sql.count("fixed_artifact_records") == 2
     assert "raw_edible_input_weight_g" in sql
     assert "estimated_elapsed_seconds" in sql
+
+
+def test_mysql_adapter_stores_recipe_dependencies_without_runtime_projection() -> None:
+    class RecordingCursor:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, list[tuple]]] = []
+
+        def executemany(self, sql: str, rows: list[tuple]) -> None:
+            self.calls.append((sql, rows))
+
+    cursor = RecordingCursor()
+    target = PyMySQLFixedDataTarget()
+    target._connection = object()
+    target._cursor = cursor
+    target._build_id = "build-1"
+
+    target.load_artifact("recipe_dependencies", [{
+        "build_id": "build-1",
+        "source_manifest_hash": "a" * 64,
+        "parent_recipe_id": 1462,
+        "dependency_recipe_id": 298,
+        "relation_type": "bundle_contains",
+        "review_status": "approved",
+    }])
+
+    assert len(cursor.calls) == 1
+    sql, rows = cursor.calls[0]
+    assert "INSERT INTO fixed_artifact_records" in sql
+    assert rows[0][1] == "recipe_dependencies"
+    assert all(
+        table not in sql
+        for table in ("INSERT INTO recipes", "INSERT INTO nutrition_profiles", "INSERT INTO time_profiles")
+    )
 
 
 def test_build_refuses_nonempty_staging_directory(tmp_path: Path) -> None:

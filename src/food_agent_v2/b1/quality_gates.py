@@ -17,41 +17,24 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from food_agent_v2.b1.health_relation_builder import ALLOWED_CONSTRAINT_CODES
-from food_agent_v2.b1.source_manifest import artifact_schema_version
 from food_agent_v2.b1.source_manifest import (
+    artifact_schema_version,
     canonical_build_input_manifest,
     canonical_source_manifest,
 )
 from food_agent_v2.contracts.build import (
+    FIXED_ARTIFACT_NAMES,
+    FIXED_RECIPE_BUNDLE_CONTAINS_COUNT,
+    FIXED_RECIPE_DEPENDENCY_COUNT,
     ArtifactEntry,
     BuildManifest,
     SourceManifestMismatch,
     source_manifest_hash,
     verify_source_file,
 )
-from food_agent_v2.core.paths import RECIPES_RAW
+from food_agent_v2.core.paths import PROJECT_ROOT, RECIPES_RAW
 
-REQUIRED_ARTIFACTS = (
-    "recipe_source_rows",
-    "recipe_classifications",
-    "user_profiles",
-    "ingredient_occurrences",
-    "ingredient_registry",
-    "ingredient_aliases",
-    "ingredient_forms",
-    "ingredient_crosswalk",
-    "recipe_ingredient_relations",
-    "recipe_health_views",
-    "recipe_step_binding_views",
-    "recipe_nutrition_input_views",
-    "recipe_retrieval_build_views",
-    "step_tasks",
-    "nutrition_features",
-    "rag_documents",
-    "health_relation_decisions",
-    "health_relations",
-    "health_relation_coverage",
-)
+REQUIRED_ARTIFACTS = FIXED_ARTIFACT_NAMES
 
 ALLOWED_RECORD_TYPES = {
     "dish",
@@ -62,6 +45,9 @@ ALLOWED_RECORD_TYPES = {
 }
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 APPROVED_NUTRITION_AVAILABLE_BASELINE = 0
+TIME_REVIEW_DECISIONS = (
+    PROJECT_ROOT / "data" / "review" / "recipe_time_graph_decisions.csv"
+)
 
 
 class DataQualityError(ValueError):
@@ -303,7 +289,7 @@ def evaluate_staging_quality(
     gate(
         "G06_CONSUMER_VIEW_ISOMORPHISM",
         len({frozenset(ids) for ids in view_recipe_sets.values()}) == 1
-        and len(eligible_ids) == 1914,
+        and len(eligible_ids) == 1932,
         f"counts={{{', '.join(f'{name}:{len(ids)}' for name, ids in view_recipe_sets.items())}}}",
     )
 
@@ -391,17 +377,41 @@ def evaluate_staging_quality(
         f"leakage={len(rag_health_leakage)}",
     )
 
+    from food_agent_v2.b1.consumer_views import (
+        label_tags_from_raw_labels,
+        meal_tags_from_raw_labels,
+    )
+    from food_agent_v2.b1.review_inputs import load_recipe_profile_enrichments
+
+    source_by_id = {int(item["recipe_id"]): item for item in source_rows}
+    enrichments = load_recipe_profile_enrichments(
+        PROJECT_ROOT / "data" / "review" / "recipe_profile_enrichment.jsonl",
+        known_recipe_ids=source_ids,
+    )
     retrieval_by_id = {
         int(item["recipe_id"]): item
         for item in artifacts["recipe_retrieval_build_views"]
     }
-    rag_label_errors = [
-        item.get("recipe_id")
-        for item in artifacts["rag_documents"]
-        if not item.get("meal_tags")
-        or tuple(item.get("label_tags", ()))
-        != tuple(retrieval_by_id[int(item["recipe_id"])].get("label_tags", ()))
-    ]
+    rag_label_errors: list[int] = []
+    for item in artifacts["rag_documents"]:
+        recipe_id = int(item["recipe_id"])
+        retrieval = retrieval_by_id[recipe_id]
+        labels_raw = str(source_by_id[recipe_id].get("labels_raw", ""))
+        expected_label_tags = label_tags_from_raw_labels(labels_raw)
+        raw_meal_tags = meal_tags_from_raw_labels(labels_raw)
+        enrichment = enrichments.get(recipe_id)
+        expected_meal_tags = raw_meal_tags or (
+            tuple(enrichment.meal_tags) if enrichment is not None else ()
+        )
+        retrieval_meal_tags = tuple(retrieval.get("meal_tags", ()))
+        if (
+            not expected_meal_tags
+            or retrieval_meal_tags != expected_meal_tags
+            or tuple(item.get("meal_tags", ())) != expected_meal_tags
+            or tuple(retrieval.get("label_tags", ())) != expected_label_tags
+            or tuple(item.get("label_tags", ())) != expected_label_tags
+        ):
+            rag_label_errors.append(recipe_id)
     gate(
         "G12_RAG_LABEL_AND_MEAL_COVERAGE",
         not rag_label_errors,
@@ -480,30 +490,38 @@ def evaluate_staging_quality(
         f"baseline={APPROVED_NUTRITION_AVAILABLE_BASELINE}, actual={nutrition_available_count}",
     )
 
-    from food_agent_v2.b1.schemas import StepAtom, StepTask
+    from food_agent_v2.b1.schemas import StepTask
+    from food_agent_v2.b1.step_atomizer import atomize_recipe_steps
+    from food_agent_v2.b1.step_time_builder import split_steps
     from food_agent_v2.b1.time_graph_profiler import validate_time_graph
+    from food_agent_v2.b1.time_review_decisions import (
+        apply_time_review_decisions,
+        load_time_review_decisions,
+    )
     from food_agent_v2.b5.scheduler import schedule_task_graphs
 
-    step_view_by_id = {
-        int(item["recipe_id"]): item for item in artifacts["recipe_step_binding_views"]
-    }
+    try:
+        time_review_decisions = load_time_review_decisions(TIME_REVIEW_DECISIONS)
+    except ValueError as exc:
+        _fail("G16_TIME_GRAPH_COMPLETE_AND_ACYCLIC", f"time decisions invalid: {exc}")
     time_graph_errors: list[int] = []
     for item in artifacts["step_tasks"]:
         recipe_id = int(item["recipe_id"])
         try:
-            tasks = tuple(StepTask.model_validate(task) for task in item.get("step_tasks", ()))
-            if not tasks or len(tasks) < len(step_view_by_id[recipe_id].get("steps", ())):
-                raise ValueError("步骤覆盖不足")
-            atoms = tuple(
-                StepAtom(
-                    atom_id=task.atom_id,
-                    source_step_index=index,
-                    text=task.text,
-                    explicit_duration_seconds=task.duration_seconds,
-                    duration_locked=True,
-                )
-                for index, task in enumerate(tasks, start=1)
+            source_row = source_by_id[recipe_id]
+            source_steps = split_steps(str(source_row.get("steps_raw", "")))
+            atoms = atomize_recipe_steps(
+                recipe_id=recipe_id,
+                steps=enumerate(source_steps, start=1),
             )
+            atoms = apply_time_review_decisions(
+                recipe_id=recipe_id,
+                atoms=atoms,
+                decisions=time_review_decisions,
+            )
+            tasks = tuple(StepTask.model_validate(task) for task in item.get("step_tasks", ()))
+            if not atoms or not tasks:
+                raise ValueError("步骤覆盖不足")
             validate_time_graph(atoms, tasks)
             schedule_task_graphs({recipe_id: tasks})
         except Exception:
@@ -557,6 +575,59 @@ def evaluate_staging_quality(
         "G17_B4_B5_B6_CONSUMER_BOUNDARY",
         consumer_boundary_errors == 0,
         f"invalid={consumer_boundary_errors}",
+    )
+
+    from food_agent_v2.b1.review_inputs import load_recipe_dependencies
+
+    classification_types = {
+        int(item["recipe_id"]): str(item["record_type"])
+        for item in classifications
+    }
+    try:
+        expected_dependencies = load_recipe_dependencies(
+            PROJECT_ROOT / "data" / "review" / "recipe_dependencies.jsonl",
+            known_recipe_ids=source_ids,
+            record_types=classification_types,
+        )
+        expected_dependency_keys = {
+            (
+                item.parent_recipe_id,
+                item.dependency_recipe_id,
+                item.relation_type,
+                item.review_status,
+            )
+            for item in expected_dependencies
+        }
+        actual_dependency_records = artifacts["recipe_dependencies"]
+        actual_dependency_keys = {
+            (
+                int(item["parent_recipe_id"]),
+                int(item["dependency_recipe_id"]),
+                str(item["relation_type"]),
+                str(item["review_status"]),
+            )
+            for item in actual_dependency_records
+        }
+        dependency_input_valid = True
+    except (KeyError, TypeError, ValueError):
+        expected_dependency_keys = set()
+        actual_dependency_records = artifacts["recipe_dependencies"]
+        actual_dependency_keys = set()
+        dependency_input_valid = False
+    bundle_contains_count = sum(
+        item.get("relation_type") == "bundle_contains"
+        for item in actual_dependency_records
+    )
+    gate(
+        "G18_RECIPE_DEPENDENCY_CLOSURE",
+        dependency_input_valid
+        and actual_dependency_keys == expected_dependency_keys
+        and len(actual_dependency_records)
+        == len(actual_dependency_keys)
+        == FIXED_RECIPE_DEPENDENCY_COUNT
+        and bundle_contains_count == FIXED_RECIPE_BUNDLE_CONTAINS_COUNT,
+        f"expected={len(expected_dependency_keys)}, actual={len(actual_dependency_records)}, "
+        f"unique={len(actual_dependency_keys)}, bundle_contains={bundle_contains_count}",
     )
 
     metrics = {name: len(records) for name, records in artifacts.items()}
@@ -641,7 +712,10 @@ def verify_build_manifest(
     if required_artifacts == REQUIRED_ARTIFACTS and set(manifest.artifacts) != set(
         REQUIRED_ARTIFACTS
     ):
-        _fail("FIXED_ARTIFACT_SET_MISMATCH", "固定构建必须恰好包含 19 个 Artifact")
+        _fail(
+            "FIXED_ARTIFACT_SET_MISMATCH",
+            f"固定构建必须恰好包含 {len(FIXED_ARTIFACT_NAMES)} 个 Artifact",
+        )
     if not _SHA256_RE.match(manifest.source_manifest_hash):
         _fail("BUILD_MANIFEST_INVALID", "source_manifest_hash is not SHA-256")
     canonical_source = canonical_source_manifest()

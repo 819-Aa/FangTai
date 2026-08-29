@@ -1,6 +1,8 @@
 import csv
 import json
 
+import pytest
+
 from food_agent_v2.b1.health_relation_builder import (
     ALLOWED_CONSTRAINT_CODES,
     CONSTRAINT_EVIDENCE_REFS,
@@ -117,6 +119,67 @@ def test_name_guards_prevent_cross_category_and_condiment_false_positives() -> N
     assert candidates[("allergy_alcohol", 5)] == "no_hard_relation"
     assert candidates[("group_pregnancy", 5)] == "no_hard_relation"
     assert candidates[("allergy_seafood", 6)] == "no_hard_relation"
+
+
+@pytest.mark.parametrize(
+    "ingredient_name",
+    (
+        "小青龙",
+        "澳洲带子",
+        "带子肉",
+        "六头鲍",
+        "南日鲍",
+        "牡蛎",
+        "瑶柱",
+        "80头干瑶柱",
+        "河鳗",
+        "泥鳅",
+        "白鳝",
+        "银鲳",
+        "大头虾",
+        "皮皮虾",
+        "银鱼柳",
+        "鳗鱼",
+    ),
+)
+def test_seafood_allergy_candidate_covers_explicit_aquatic_aliases(
+    ingredient_name: str,
+) -> None:
+    """Removing a required aquatic alias or marker must stop this hard-exclude suggestion."""
+    candidate = generate_health_relation_candidates(
+        ("allergy_seafood",),
+        ({"ingredient_id": 1, "name_canonical": ingredient_name},),
+    )[0]
+
+    assert candidate.suggested_decision == "hard_exclude"
+
+
+@pytest.mark.parametrize(
+    "ingredient_name",
+    (
+        "川贝",
+        "川贝粉",
+        "杏鲍菇",
+        "蟹味菇",
+        "鲜蟹味菇",
+        "贝贝南瓜",
+        "海鲜菇",
+        "海鲜酱",
+        "海鲜酱油",
+        "蒸鱼豉油",
+        "素蚝油",
+    ),
+)
+def test_seafood_allergy_candidate_preserves_known_name_only_false_positive_guards(
+    ingredient_name: str,
+) -> None:
+    """Dropping a cross-category or condiment guard must not promote this non-seafood name."""
+    candidate = generate_health_relation_candidates(
+        ("allergy_seafood",),
+        ({"ingredient_id": 1, "name_canonical": ingredient_name},),
+    )[0]
+
+    assert candidate.suggested_decision == "no_hard_relation"
 
 
 def test_freeze_preserves_negative_decisions_and_builds_complete_coverage() -> None:

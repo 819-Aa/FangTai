@@ -2,7 +2,7 @@
 
 - 状态：`APPROVED`
 - 日期：2026-08-09
-- 权威决策：[ADR-0004](../decisions/0004-fixed-source-and-one-time-identity-rebuild.md)
+- 权威决策：[ADR-0004](../decisions/0004-fixed-source-and-one-time-identity-rebuild.md)、[ADR-0007](../decisions/0007-estimated-task-graph-time-semantics.md)
 
 ## 1. 目的
 
@@ -53,24 +53,25 @@ created_at: UTC timestamp
 | `ingredient_registry` | `ingredient_id` | 规范名、批准别名、类别、食材族、审核状态 | B3、B4、B6 |
 | `ingredient_crosswalk` | 源词条/旧 ID | `merge/split/discard`、目标 ID、理由、审核者 | 迁移、审计 |
 | `recipe_ingredient_relations` | `recipe_id + occurrence_id` | 目标食材、角色、可选/替代/组合语义 | B3、B4 |
-| `step_tasks` | `recipe_id + task_id` | 步骤、依赖、主动/设备/等待时长及权威级别 | B5 |
-| `nutrition_features` | `ingredient_id` | 参考数据映射、每 100g 字段、来源、置信度 | B6 |
+| `step_tasks` | `recipe_id + atom_id` | 单值时长、任务类型、合法资源和依赖；运行时无来源/置信度 | B5 |
+| `nutrition_features` | `recipe_id` | 九维原始投料总量与每 100g，或 all-or-nothing `unavailable`；运行时无来源/置信度 | B6 |
 | `health_relation_decisions` | `constraint_code + ingredient_id` | 独立批准决定、`hard_filter`、理由、证据 | B4 |
+| `recipe_dependencies` | `parent_recipe_id + dependency_recipe_id + relation_type + review_status` | 167 条经审核授权的 `approved`/`modified` 关系；包含 12 条 `bundle_contains`；所有记录绑定构建身份 | 审计、B3 |
 | `rag_documents` | `recipe_id` | 仅推荐菜品、结构化检索字段、源散列 | C1 |
 
 Artifact 可以拆成多个物理文件，但逻辑主键、计数和散列不能改变。不得用空列表、默认分数或占位字符串伪装“已生成”。
 
-实际构建共 **19 项已验证 Artifact**，以 `BuildManifest.artifacts` 为权威清单：
+实际构建共 **20 项已验证 Artifact**，以 `BuildManifest.artifacts` 为权威清单：
 
 ```text
-recipe_source_rows(2000)  recipe_classifications(2000)  ingredient_occurrences(17521)
-ingredient_registry(1781)  ingredient_aliases(21)        ingredient_forms(381)
-ingredient_crosswalk(431)  recipe_ingredient_relations(17505)
-step_tasks(1914)           nutrition_features(1914)      recipe_health_views(1914)
-recipe_nutrition_input_views(1914)  recipe_retrieval_build_views(1914)
-recipe_step_binding_views(1914)     rag_documents(1914)
-health_relations(985)      health_relation_coverage(38)  health_relation_decisions(65854)
-user_profiles(50)
+recipe_source_rows(2000)  recipe_classifications(2000)  ingredient_occurrences(17509)
+ingredient_registry(1770)  ingredient_aliases(22)        ingredient_forms(381)
+ingredient_crosswalk(432)  recipe_ingredient_relations(17493)
+step_tasks(1932)           nutrition_features(1932)      recipe_health_views(1932)
+recipe_nutrition_input_views(1932)  recipe_retrieval_build_views(1932)
+recipe_step_binding_views(1932)     rag_documents(1932)
+health_relations(1084)     health_relation_coverage(38)  health_relation_decisions(65588)
+user_profiles(50)          recipe_dependencies(167; bundle_contains=12)
 ```
 
 计数以该构建的 `BuildManifest.artifacts[*].row_count` 为准；任何与 Manifest 计数不一致的初始化不得发布。
@@ -110,7 +111,7 @@ keys(health_relation_decisions) = C × I
 
 - 营养参考映射缺失时输出显式 `unavailable` 和缺失原因；禁止用 `0.5`、零值或伪造均值替代。
 - 某软评分维度不可用时，C2 对剩余可用维度重新归一化权重，并在评分分解中记录禁用维度。
-- 时间数据必须区分确定性任务图证据与 `model_estimate`；严格时间只服从 [ADR-0005](../decisions/0005-strict-time-semantics.md)。
+- 每个 eligible 菜品必须发布 source-authoritative 的完整合法任务图；模型只在离线补充 atom 元数据，不能覆盖显式时长。在线只有预计单值与布尔可行性，服从 [ADR-0007](../decisions/0007-estimated-task-graph-time-semantics.md)。
 
 ## 8. 发布与在线边界
 
@@ -154,14 +155,14 @@ API -> Application/Workflow -> 领域服务 -> Repository -> MySQL/Qdrant/Redis
 - `source_manifest_hash`；
 - `builder_version`（Git commit SHA）；
 - BuildManifest 与质量报告 SHA-256；
-- 19 项 Artifact 计数；
+- 20 项 Artifact 计数；
 - `initializing | ready` 状态与初始化时间。
 
 在线系统只接受**恰好一个 `ready` 构建**；零个或多个 `ready` 构建都必须 fail-closed。
 
 ### 10.2 `fixed_artifact_records`
 
-按 `build_id + artifact_name + record_index` 无损保存 BuildManifest 已验证的 19 项 JSON 记录。
+按 `build_id + artifact_name + record_index` 无损保存 BuildManifest 已验证的 20 项 JSON 记录。
 所有记录必须携带与 `data_builds` 一致的 `build_id` 与 `source_manifest_hash`。
 
 T09 不在旧领域表（`recipes`/`ingredients` 等）双写固定事实；旧领域表保留但不作为 T11–T14
@@ -174,5 +175,5 @@ T09 不在旧领域表（`recipes`/`ingredients` 等）双写固定事实；旧�
   Schema 错误、构建身份不一致时 fail-closed；禁止回退到 JSONL、原始 CSV 或旧领域表。
 - Qdrant 在线配置只暴露 `recipe_retrieval_v2`（发布别名，指向本次构建的物理 staging collection）；
   在线客户端不得自动创建缺失集合。
-- 固定数据只有 2,000 条菜品、1,781 个食材身份和 65,854 条健康决定，Repository 可在启动时按
+- 固定数据只有 2,000 条菜品、1,770 个食材身份和 65,588 条健康决定，Repository 可在启动时按
   Artifact 批量读取并建立内存只读映射，无需增量同步或运行时版本切换。

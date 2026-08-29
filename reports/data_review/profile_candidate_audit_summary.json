@@ -1,0 +1,51 @@
+{
+  "generated_at": "2026-08-23T09:35:25+08:00",
+  "candidate_file": "C:/Users/zhiyo/Desktop/竞赛/program_v2/.worktrees/recipe-rag-nutrition-time-v2/reports/data_review/profile_candidates.jsonl",
+  "status": "review_required",
+  "structural_gates": {
+    "candidate_rows": 2000,
+    "unique_recipe_ids": 2000,
+    "fixed_source_coverage": 2000,
+    "closed_vocabulary_violations": 0,
+    "missing_required_meal_tags": 0,
+    "missing_required_dish_type_tags": 0,
+    "raw_meal_tags_dropped": 0,
+    "raw_taste_tags_dropped": 0,
+    "population_tag_mismatches": 0,
+    "non_pending_candidates": 0
+  },
+  "scope": {
+    "dish_records": 1913,
+    "non_dish_records": 87,
+    "flagged_unique_records": 565,
+    "flagged_dish_records": 478,
+    "unflagged_dish_records": 1435,
+    "p0_dish_records": 146
+  },
+  "meal_provenance": {
+    "dish_records_without_raw_meal_tags": 199,
+    "dish_records_with_model_additions_on_existing_meal_tags": 141,
+    "model_added_meal_assignments_on_dish_records": 544,
+    "dessert_drink_records_with_raw_lunch_or_dinner": 72
+  },
+  "priority_counts": {
+    "P0": 233,
+    "P1": 321,
+    "P2": 11
+  },
+  "issue_counts": {
+    "NON_DISH_PROFILE": 87,
+    "MEAL_TAGS_4_PLUS": 51,
+    "NIGHT_SNACK_MODEL_ADDED": 46,
+    "REGULAR_MEAL_ON_DESSERT_DRINK": 73,
+    "AFTERNOON_TEA_ON_MEAL_COMPONENT": 17,
+    "MEAL_MODEL_ONLY": 199,
+    "MEAL_ADDITION_ON_LABELED": 141,
+    "TASTE_TAGS_5_PLUS": 23,
+    "TASTE_LIGHT_SPICY_CONFLICT": 60,
+    "CUISINE_TAGS_3_PLUS": 11,
+    "DISH_TYPE_TAGS_3_PLUS": 6
+  },
+  "automatic_approvals": 0,
+  "formal_review_files_modified": false
+}

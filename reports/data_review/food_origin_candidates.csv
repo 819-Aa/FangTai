@@ -1,0 +1,905 @@
+reference_id,canonical_name,form,candidate_food_origin,review_status
+china-cdc-630,梨(均值),unspecified,plant,pending
+china-cdc-636,梨(京白梨),unspecified,plant,pending
+china-cdc-637,梨(库尔勒梨),unspecified,plant,pending
+china-cdc-638,梨(莱阳梨),unspecified,plant,pending
+china-cdc-642,梨(苹果梨),unspecified,plant,pending
+china-cdc-648,梨(香梨),unspecified,plant,pending
+china-cdc-649,梨(雪花梨),unspecified,plant,pending
+china-cdc-651,梨(鸭梨),unspecified,plant,pending
+china-cdc-652,梨(鳄梨),unspecified,plant,pending
+china-cdc-653,梨(糖水罐头),unspecified,plant,pending
+china-cdc-528,姜[黄姜](鲜),unspecified,plant,pending
+china-cdc-529,姜(干),dried,plant,pending
+china-cdc-530,姜(子姜，鲜)[嫩姜],unspecified,plant,pending
+china-cdc-431,西葫芦,unspecified,plant,pending
+china-cdc-402,茄子(均值),unspecified,plant,pending
+china-cdc-403,茄子(圆),unspecified,plant,pending
+china-cdc-404,茄子(紫皮，长),unspecified,plant,pending
+china-cdc-405,番茄[西红柿],unspecified,plant,pending
+china-cdc-444,洋葱[葱头](鲜),unspecified,plant,pending
+china-cdc-1539,番茄酱,unspecified,plant,pending
+china-cdc-831,牛蹄筋,unspecified,animal,pending
+china-cdc-1050,鲈鱼[鲈花],unspecified,animal,pending
+china-cdc-407,辣椒(红，尖，干),unspecified,plant,pending
+china-cdc-408,辣椒(红，小),unspecified,plant,pending
+china-cdc-409,辣椒(青，尖),unspecified,plant,pending
+china-cdc-443,"葱(小葱,鲜)",unspecified,plant,pending
+china-cdc-1563,胡椒粉,unspecified,plant,pending
+china-cdc-752,杏仁,unspecified,plant,pending
+china-cdc-970,黄油,unspecified,animal,pending
+china-cdc-482,生菜(牛俐)[油麦菜],unspecified,plant,pending
+china-cdc-483,生菜(叶用莴苣),unspecified,plant,pending
+china-cdc-979,鸡蛋(白皮),unspecified,animal,pending
+china-cdc-980,鸡蛋(红皮),unspecified,animal,pending
+china-cdc-981,鸡蛋(土鸡),unspecified,animal,pending
+china-cdc-445,韭菜,unspecified,plant,pending
+china-cdc-579,木耳(干)[黑木耳，云耳],dried,plant,pending
+china-cdc-580,木耳(水发)[黑木耳，云耳],hydrated,plant,pending
+china-cdc-325,粉条,unspecified,plant,pending
+china-cdc-808,咸肉,unspecified,animal,pending
+china-cdc-1508,芝麻油[香油],unspecified,plant,pending
+china-cdc-1515,芝麻油[香油],unspecified,plant,pending
+china-cdc-1111,牡蛎[海蛎子],unspecified,animal,pending
+china-cdc-485,香菜[芫荽](鲜),unspecified,plant,pending
+china-cdc-1520,醋(均值),unspecified,plant,pending
+china-cdc-313,马铃薯[土豆，洋芋],unspecified,plant,pending
+china-cdc-716,菠萝[凤梨，地菠萝],unspecified,plant,pending
+china-cdc-1580,咖喱粉,unspecified,plant,pending
+china-cdc-287,米饭(蒸)(均值),cooked,plant,pending
+china-cdc-779,猪肉(肥瘦)(均值),unspecified,animal,pending
+china-cdc-780,猪肉(肥),unspecified,animal,pending
+china-cdc-781,猪肉(后臀尖),unspecified,animal,pending
+china-cdc-782,猪肉(后肘),unspecified,animal,pending
+china-cdc-783,猪肉(肋条肉),unspecified,animal,pending
+china-cdc-784,猪肉(里脊),unspecified,animal,pending
+china-cdc-785,猪肉(奶脯)[软五花，猪夹心],unspecified,animal,pending
+china-cdc-786,猪肉(奶面)[硬五花],unspecified,animal,pending
+china-cdc-787,猪肉(前肘),unspecified,animal,pending
+china-cdc-788,猪肉(瘦),unspecified,animal,pending
+china-cdc-789,猪肉(腿),unspecified,animal,pending
+china-cdc-380,胡萝卜(红)[金笋，丁香萝卜],unspecified,plant,pending
+china-cdc-381,胡萝卜(黄),unspecified,plant,pending
+china-cdc-584,香菇[香蕈，冬菇](鲜),unspecified,plant,pending
+china-cdc-585,香菇(干)[香蕈，冬菇],dried,plant,pending
+china-cdc-1611,生抽,unspecified,plant,pending
+china-cdc-422,黄瓜[胡瓜](鲜),unspecified,plant,pending
+china-cdc-1570,料酒,unspecified,plant,pending
+china-cdc-1100,虾米[海米，虾仁],unspecified,animal,pending
+china-cdc-311,薏米[薏仁米，苡米],unspecified,plant,pending
+china-cdc-930,牛奶(草莓味，卡夫牌),unspecified,mixed,pending
+china-cdc-931,牛奶(巧克力味，卡夫牌),unspecified,mixed,pending
+china-cdc-932,牛奶(巧克力味，三元牌),unspecified,mixed,pending
+china-cdc-1567,鸡精,unspecified,mixed,pending
+china-cdc-452,小白菜,unspecified,plant,pending
+china-cdc-1581,老抽,unspecified,plant,pending
+china-cdc-1530,海鲜酱(阿香婆),unspecified,mixed,pending
+china-cdc-1544,番茄沙司,unspecified,plant,pending
+china-cdc-1062,鳕鱼[鳕狭，明太鱼],unspecified,animal,pending
+china-cdc-1087,鳕鱼(烤),cooked,animal,pending
+china-cdc-1088,鳕鱼(炸),cooked,animal,pending
+china-cdc-1505,色拉油,unspecified,plant,pending
+china-cdc-1517,色拉油,unspecified,plant,pending
+china-cdc-742,核桃(鲜),unspecified,plant,pending
+china-cdc-743,核桃(干)[胡桃],dried,plant,pending
+china-cdc-567,枸杞菜[枸杞，地骨](鲜),unspecified,plant,pending
+china-cdc-1421,黄酒,unspecified,plant,pending
+china-cdc-1507,玉米油,unspecified,plant,pending
+china-cdc-1522,陈醋,unspecified,plant,pending
+china-cdc-1487,蜂蜜,unspecified,animal,pending
+china-cdc-465,西兰花[绿菜花],unspecified,plant,pending
+china-cdc-791,猪大排,unspecified,animal,pending
+china-cdc-1523,豆瓣酱,unspecified,mixed,pending
+china-cdc-1568,酵母(鲜),unspecified,plant,pending
+china-cdc-1569,酵母(干),dried,plant,pending
+china-cdc-468,芥蓝[甘蓝菜，盖蓝菜],unspecified,plant,pending
+china-cdc-1114,扇贝(鲜),unspecified,animal,pending
+china-cdc-1115,扇贝(干)[干贝],dried,animal,pending
+china-cdc-1448,糖（白砂糖）,unspecified,plant,pending
+china-cdc-1449,糖（绵白糖）,unspecified,plant,pending
+china-cdc-1450,糖（冰糖）,unspecified,plant,pending
+china-cdc-1451,糖（红糖）,unspecified,plant,pending
+china-cdc-1527,甜面酱,unspecified,mixed,pending
+china-cdc-1494,猪油(炼),unspecified,animal,pending
+china-cdc-502,冬笋(鲜),unspecified,plant,pending
+china-cdc-461,娃娃菜,unspecified,plant,pending
+china-cdc-346,豆腐干(均值),unspecified,plant,pending
+china-cdc-324,粉丝,unspecified,plant,pending
+china-cdc-1021,鲫鱼[喜头鱼，海附鱼],unspecified,animal,pending
+china-cdc-426,南瓜[倭瓜，番瓜](鲜),unspecified,plant,pending
+china-cdc-435,南瓜(栗面),unspecified,plant,pending
+china-cdc-883,鸡爪,unspecified,animal,pending
+china-cdc-429,丝瓜,unspecified,plant,pending
+china-cdc-441,大葱,unspecified,plant,pending
+china-cdc-815,火腿肠,unspecified,mixed,pending
+china-cdc-333,豆腐(均值),unspecified,plant,pending
+china-cdc-334,豆腐(北),unspecified,plant,pending
+china-cdc-335,豆腐(南)[南豆腐],unspecified,plant,pending
+china-cdc-336,豆腐(内酯),unspecified,plant,pending
+china-cdc-972,炼乳(甜，罐头),unspecified,animal,pending
+china-cdc-520,荸荠[马蹄，地栗](鲜),unspecified,plant,pending
+china-cdc-1564,五香粉,unspecified,plant,pending
+china-cdc-1554,剁辣椒,unspecified,plant,pending
+china-cdc-320,玉米淀粉,unspecified,plant,pending
+china-cdc-537,百里香(鲜),unspecified,plant,pending
+china-cdc-281,粳米(标一),unspecified,plant,pending
+china-cdc-761,花生(鲜)[落花生，长生果],unspecified,plant,pending
+china-cdc-762,花生(炒),unspecified,plant,pending
+china-cdc-776,花生(烤，勤俭牌),cooked,plant,pending
+china-cdc-777,花生(烤，密日兴牌),cooked,plant,pending
+china-cdc-466,芥菜[雪里红，雪菜](鲜),unspecified,plant,pending
+china-cdc-467,芥菜(大叶，鲜)[盖菜],unspecified,plant,pending
+china-cdc-821,火腿,unspecified,animal,pending
+china-cdc-893,鸭翅,unspecified,animal,pending
+china-cdc-1583,花椒,unspecified,plant,pending
+china-cdc-712,柠檬,unspecified,plant,pending
+china-cdc-301,小米,unspecified,plant,pending
+china-cdc-1024,鳗鲡[鳗鱼，河鳗],unspecified,animal,pending
+china-cdc-371,白萝卜[莱菔](鲜),unspecified,plant,pending
+china-cdc-499,竹笋(鲜),unspecified,plant,pending
+china-cdc-509,菊苣,unspecified,plant,pending
+china-cdc-613,苹果(均值),unspecified,plant,pending
+china-cdc-614,苹果（国光苹果）,unspecified,plant,pending
+china-cdc-615,苹果（红富士苹果),unspecified,plant,pending
+china-cdc-620,苹果（黄香蕉苹果),unspecified,plant,pending
+china-cdc-621,苹果（黄元帅苹果),unspecified,plant,pending
+china-cdc-629,苹果(罐头),unspecified,plant,pending
+china-cdc-984,蛋黄（鸡蛋黄）,unspecified,animal,pending
+china-cdc-999,蛋黄（鹅蛋黄）,unspecified,animal,pending
+china-cdc-1130,鱿鱼(干)[台湾枪乌贼],dried,animal,pending
+china-cdc-1131,鱿鱼(水浸),unspecified,animal,pending
+china-cdc-908,火鸡腿,unspecified,animal,pending
+china-cdc-677,黑枣(无核)[乌枣],unspecified,plant,pending
+china-cdc-1096,塘水虾[草虾],unspecified,animal,pending
+china-cdc-605,海带[江白菜](鲜),unspecified,plant,pending
+china-cdc-606,海带(干)[江白菜，昆布],dried,plant,pending
+china-cdc-607,海带(浸)[江白菜，昆布],unspecified,plant,pending
+china-cdc-399,黄豆芽,unspecified,plant,pending
+china-cdc-891,鸭(均值),unspecified,animal,pending
+china-cdc-727,杨梅[树梅，山杨梅],unspecified,plant,pending
+china-cdc-350,绿豆(干),dried,plant,pending
+china-cdc-358,芸豆(干，白),dried,plant,pending
+china-cdc-359,芸豆(干，红),dried,plant,pending
+china-cdc-360,芸豆(干，虎皮),dried,plant,pending
+china-cdc-361,芸豆(干，杂，带皮),dried,plant,pending
+china-cdc-396,芸豆(鲜),unspecified,plant,pending
+china-cdc-768,莲子(干),dried,plant,pending
+china-cdc-306,高粱米,unspecified,plant,pending
+china-cdc-1454,巧克力,unspecified,mixed,pending
+china-cdc-1387,可可粉,unspecified,plant,pending
+china-cdc-1495,油（菜籽油)[青油],unspecified,plant,pending
+china-cdc-1496,油（茶油),unspecified,plant,pending
+china-cdc-1498,油（红花油),unspecified,plant,pending
+china-cdc-1499,油（胡麻油),unspecified,plant,pending
+china-cdc-1502,油（辣椒油),unspecified,plant,pending
+china-cdc-1503,油（麦芽油),unspecified,plant,pending
+china-cdc-1504,油（棉籽油),unspecified,plant,pending
+china-cdc-1506,油（椰子油),unspecified,plant,pending
+china-cdc-1509,油（棕榈油),unspecified,plant,pending
+china-cdc-1510,油（橄榄油),unspecified,plant,pending
+china-cdc-1518,酱油(均值),unspecified,plant,pending
+china-cdc-1120,蛤蜊(均值),unspecified,animal,pending
+china-cdc-1550,萝卜干,unspecified,plant,pending
+china-cdc-328,青豆[青大豆](干),dried,plant,pending
+china-cdc-391,毛豆[青豆，菜用大豆](鲜),unspecified,plant,pending
+china-cdc-292,玉米(鲜),unspecified,plant,pending
+china-cdc-293,玉米(白，干),unspecified,plant,pending
+china-cdc-294,玉米(黄，干),unspecified,plant,pending
+china-cdc-261,挂面(均值),unspecified,plant,pending
+china-cdc-262,挂面(标准粉),unspecified,plant,pending
+china-cdc-263,挂面(富强粉),unspecified,plant,pending
+china-cdc-730,枇杷,unspecified,plant,pending
+china-cdc-1030,带鱼[白带鱼，刀鱼],unspecified,animal,pending
+china-cdc-794,猪小排,unspecified,animal,pending
+china-cdc-264,面条(均值),unspecified,plant,pending
+china-cdc-265,面条(标准粉，切面),unspecified,plant,pending
+china-cdc-266,面条(富强粉，切面),unspecified,plant,pending
+china-cdc-267,面条(干切面),unspecified,plant,pending
+china-cdc-473,菠菜[赤根菜](鲜),unspecified,plant,pending
+china-cdc-510,芦笋[石刁柏，龙须菜],unspecified,plant,pending
+china-cdc-844,羊肉(肥瘦)(均值),unspecified,animal,pending
+china-cdc-845,羊肉(后腿),unspecified,animal,pending
+china-cdc-846,羊肉(颈),unspecified,animal,pending
+china-cdc-847,羊肉(里脊),unspecified,animal,pending
+china-cdc-848,羊肉(前腿),unspecified,animal,pending
+china-cdc-849,羊肉(青羊),unspecified,animal,pending
+china-cdc-850,羊肉(瘦),unspecified,animal,pending
+china-cdc-851,羊肉(胸脯),unspecified,animal,pending
+china-cdc-1411,白葡萄酒,unspecified,plant,pending
+china-cdc-526,芋头[芋艿，毛芋],unspecified,plant,pending
+china-cdc-389,荷兰豆,unspecified,plant,pending
+china-cdc-724,木瓜[番木瓜],unspecified,plant,pending
+china-cdc-689,葡萄干,unspecified,plant,pending
+china-cdc-735,榴莲,unspecified,plant,pending
+china-cdc-962,奶酪[干酪],unspecified,animal,pending
+china-cdc-965,奶酪(光明牌),unspecified,animal,pending
+china-cdc-966,奶酪(骑士牌),unspecified,animal,pending
+china-cdc-1521,白醋,unspecified,plant,pending
+china-cdc-1316,面包(均值),unspecified,mixed,pending
+china-cdc-501,春笋(鲜),unspecified,plant,pending
+china-cdc-479,芹菜(白茎)[旱芹，药芹],unspecified,plant,pending
+china-cdc-285,糯米[江米](均值),unspecified,plant,pending
+china-cdc-1013,罗非鱼,unspecified,animal,pending
+china-cdc-1500,花生油,unspecified,plant,pending
+china-cdc-914,乳鸽,unspecified,animal,pending
+china-cdc-525,山药[薯蓣，大薯](鲜),unspecified,plant,pending
+china-cdc-342,豆腐皮,unspecified,plant,pending
+china-cdc-1026,鳜鱼[桂鱼，花鲫鱼],unspecified,animal,pending
+china-cdc-751,松子仁,unspecified,plant,pending
+china-cdc-726,香蕉[甘蕉],unspecified,plant,pending
+china-cdc-1090,虾（东方对虾）[中国对虾],unspecified,animal,pending
+china-cdc-1091,虾（海虾）,unspecified,animal,pending
+china-cdc-1092,虾（河虾）,unspecified,animal,pending
+china-cdc-1093,虾（基围虾）,unspecified,animal,pending
+china-cdc-1095,虾（龙虾）,unspecified,animal,pending
+china-cdc-575,金针菇[智力菇](鲜),unspecified,plant,pending
+china-cdc-1112,生蚝,unspecified,animal,pending
+china-cdc-316,甘薯(红心)[山芋，红薯],unspecified,plant,pending
+china-cdc-354,红豆沙,unspecified,plant,pending
+china-cdc-723,芒果[抹猛果，望果],unspecified,plant,pending
+china-cdc-1098,虾皮,unspecified,animal,pending
+china-cdc-491,莴笋[莴苣](鲜),unspecified,plant,pending
+china-cdc-516,藕[莲藕],unspecified,plant,pending
+china-cdc-295,玉米面(白),unspecified,plant,pending
+china-cdc-296,玉米面(黄),unspecified,plant,pending
+china-cdc-1014,青鱼[青皮鱼，青鳞鱼，青混],unspecified,animal,pending
+china-cdc-746,栗子(鲜)[板栗],unspecified,plant,pending
+china-cdc-748,栗子(熟)[板栗],cooked,plant,pending
+china-cdc-749,松子(生),unspecified,plant,pending
+china-cdc-750,松子(炒),unspecified,plant,pending
+china-cdc-400,绿豆芽,unspecified,plant,pending
+china-cdc-994,蛋（松花蛋，鸭蛋)[皮蛋],unspecified,animal,pending
+china-cdc-1551,榨菜,unspecified,plant,pending
+china-cdc-959,酸奶(脱脂),unspecified,animal,pending
+china-cdc-960,酸奶(调味),unspecified,mixed,pending
+china-cdc-961,酸奶(果粒),unspecified,mixed,pending
+china-cdc-451,酸白菜[酸菜],unspecified,plant,pending
+china-cdc-587,银耳(干)[白木耳],dried,plant,pending
+china-cdc-1123,海参,unspecified,animal,pending
+china-cdc-442,细香葱[香葱，四季葱],unspecified,plant,pending
+china-cdc-882,鸡腿,unspecified,animal,pending
+china-cdc-453,白菜薹[菜薹，菜心],unspecified,plant,pending
+china-cdc-602,杏鲍菇,unspecified,plant,pending
+china-cdc-763,花生仁(生),unspecified,plant,pending
+china-cdc-764,花生仁(炒),unspecified,plant,pending
+china-cdc-778,花生仁(油炸),cooked,plant,pending
+china-cdc-799,猪舌[口条],unspecified,animal,pending
+china-cdc-650,雪梨,unspecified,plant,pending
+china-cdc-1106,鲍鱼[杂色鲍],unspecified,animal,pending
+china-cdc-1107,鲍鱼(干),dried,animal,pending
+china-cdc-450,大白菜(均值),unspecified,plant,pending
+china-cdc-679,蜜枣,unspecified,plant,pending
+china-cdc-425,苦瓜[凉瓜，癞瓜](鲜),unspecified,plant,pending
+china-cdc-1410,葡萄酒(均值),unspecified,plant,pending
+china-cdc-1413,葡萄酒(干白，11％，长城牌),unspecified,plant,pending
+china-cdc-1414,葡萄酒(干白，12％，张裕牌),unspecified,plant,pending
+china-cdc-1415,葡萄酒(半干白，11.5％，王朝牌),unspecified,plant,pending
+china-cdc-1416,葡萄酒(干红，11.5％，长城牌),unspecified,plant,pending
+china-cdc-1417,葡萄酒(干红，11.5％，王朝牌),unspecified,plant,pending
+china-cdc-1418,葡萄酒(干红，12％，张裕牌),unspecified,plant,pending
+china-cdc-576,口蘑(白蘑),unspecified,plant,pending
+china-cdc-793,猪蹄,unspecified,animal,pending
+china-cdc-326,黄豆[大豆],unspecified,plant,pending
+china-cdc-611,紫菜(干),dried,plant,pending
+china-cdc-957,奶粉(全脂羊乳粉),unspecified,animal,pending
+china-cdc-701,草莓[洋莓，凤阳草莓],unspecified,plant,pending
+china-cdc-805,腊肉(培根),unspecified,animal,pending
+china-cdc-806,腊肉(生),unspecified,animal,pending
+china-cdc-351,赤小豆[小豆，红小豆](干),dried,plant,pending
+china-cdc-519,茭白[茭笋，茭粑](鲜),unspecified,plant,pending
+china-cdc-1524,花生酱,unspecified,plant,pending
+china-cdc-1532,花生酱,unspecified,plant,pending
+china-cdc-1003,草鱼[白鲩，草包鱼],unspecified,animal,pending
+china-cdc-345,千张[百页],unspecified,plant,pending
+china-cdc-1406,啤酒(均值),unspecified,plant,pending
+china-cdc-1407,啤酒(4.3％，青岛牌),unspecified,plant,pending
+china-cdc-1408,啤酒(4％，燕京牌),unspecified,plant,pending
+china-cdc-1409,啤酒(5.1％，生力牌),unspecified,plant,pending
+china-cdc-368,豌豆(干),dried,plant,pending
+china-cdc-393,"豌豆(带荚,鲜)[回回豆]",unspecified,plant,pending
+china-cdc-720,桂圆,unspecified,plant,pending
+china-cdc-1528,芝麻酱,unspecified,plant,pending
+china-cdc-1534,芝麻酱,unspecified,plant,pending
+china-cdc-721,桂圆(干),dried,plant,pending
+china-cdc-355,红豆馅,unspecified,plant,pending
+china-cdc-674,枣(鲜),unspecified,plant,pending
+china-cdc-675,枣(干),dried,plant,pending
+china-cdc-676,枣（金丝小枣）,unspecified,plant,pending
+china-cdc-338,豆浆,unspecified,plant,pending
+china-cdc-471,羽衣甘蓝,unspecified,plant,pending
+china-cdc-756,腰果,unspecified,plant,pending
+china-cdc-344,腐竹,unspecified,plant,pending
+china-cdc-1425,花雕酒(16.5％),unspecified,plant,pending
+china-cdc-415,彩椒,unspecified,plant,pending
+china-cdc-1023,鳊鱼[鲂鱼，武昌鱼],unspecified,animal,pending
+china-cdc-876,鸡(均值),unspecified,animal,pending
+china-cdc-877,鸡(土鸡，家养),unspecified,animal,pending
+china-cdc-879,鸡(乌骨鸡),unspecified,animal,pending
+china-cdc-419,冬瓜,unspecified,plant,pending
+china-cdc-823,牛肉(肥瘦)(均值),unspecified,animal,pending
+china-cdc-824,牛肉(腑肋),unspecified,animal,pending
+china-cdc-825,牛肉(后腿),unspecified,animal,pending
+china-cdc-826,牛肉(后腱),unspecified,animal,pending
+china-cdc-827,牛肉(里脊),unspecified,animal,pending
+china-cdc-828,牛肉(前腿),unspecified,animal,pending
+china-cdc-829,牛肉(前腱),unspecified,animal,pending
+china-cdc-830,牛肉(瘦),unspecified,animal,pending
+china-cdc-577,蘑菇(鲜蘑),unspecified,plant,pending
+china-cdc-578,蘑菇(干),dried,plant,pending
+china-cdc-881,鸡翅,unspecified,animal,pending
+china-cdc-699,无花果,unspecified,plant,pending
+china-cdc-392,四季豆[菜豆],unspecified,plant,pending
+china-cdc-1108,蛏子,unspecified,animal,pending
+china-cdc-457,油菜,unspecified,plant,pending
+china-cdc-1052,鲑鱼[大麻哈鱼],unspecified,animal,pending
+china-cdc-818,香肠,unspecified,mixed,pending
+china-cdc-490,荠菜[蓟菜，菱角菜](鲜),unspecified,plant,pending
+china-cdc-272,馒头(均值),unspecified,plant,pending
+china-cdc-273,馒头(标准粉),unspecified,plant,pending
+china-cdc-274,馒头(富强粉),unspecified,plant,pending
+china-cdc-286,紫红糯米[血糯米],unspecified,plant,pending
+china-cdc-1206,凉粉,unspecified,plant,pending
+china-cdc-985,鸡蛋黄(乌骨鸡),unspecified,animal,pending
+china-cdc-1584,咖啡豆,unspecified,plant,pending
+china-cdc-489,茴香[小茴香](鲜),unspecified,plant,pending
+china-cdc-1566,味精,unspecified,unknown,pending
+china-cdc-387,豆角,unspecified,plant,pending
+china-cdc-508,金针菜[黄花菜],unspecified,plant,pending
+china-cdc-1438,金奖白兰地(38％),unspecified,plant,pending
+china-cdc-412,秋葵[黄秋葵，羊角豆],unspecified,plant,pending
+china-cdc-416,秋葵[黄秋葵、羊角豆],unspecified,plant,pending
+china-cdc-506,百合(鲜),unspecified,plant,pending
+china-cdc-507,百合(干),dried,plant,pending
+china-cdc-591,茶树菇(干)[柱状田头菇、油茶菇],dried,plant,pending
+china-cdc-1526,辣椒酱[辣椒糊],unspecified,plant,pending
+china-cdc-386,刀豆(鲜),unspecified,plant,pending
+china-cdc-1578,荔枝(干),dried,plant,pending
+china-cdc-722,荔枝,unspecified,plant,pending
+china-cdc-1274,燕麦片,unspecified,plant,pending
+china-cdc-1286,燕麦片,unspecified,plant,pending
+china-cdc-816,腊肠,unspecified,animal,pending
+china-cdc-747,栗子(干),dried,plant,pending
+china-cdc-807,午餐肉,unspecified,mixed,pending
+china-cdc-710,桔饼,unspecified,plant,pending
+china-cdc-1067,鱼丸,unspecified,mixed,pending
+china-cdc-337,豆腐脑[老豆腐],unspecified,mixed,pending
+china-cdc-1536,沙拉酱,unspecified,mixed,pending
+china-cdc-492,莴笋叶[莴苣叶],unspecified,plant,pending
+china-cdc-561,香椿[香椿芽](鲜),unspecified,plant,pending
+china-cdc-446,韭黄[韭芽],unspecified,plant,pending
+china-cdc-1101,虾酱,unspecified,animal,pending
+china-cdc-1183,米粉(雀巢),unspecified,plant,pending
+china-cdc-1184,米粉(高蛋白，雀巢),unspecified,plant,pending
+china-cdc-1185,米粉(高蛋白，亨氏),unspecified,plant,pending
+china-cdc-1186,米粉(苹果，雀巢),unspecified,plant,pending
+china-cdc-1187,米粉(蔬菜，亨氏),unspecified,plant,pending
+china-cdc-1188,米粉(蔬菜，雀巢),unspecified,plant,pending
+china-cdc-1189,米粉(胡萝卜，亨氏),unspecified,plant,pending
+china-cdc-1190,米粉(胡萝卜，雀巢),unspecified,plant,pending
+china-cdc-1191,米粉(番茄，亨氏),unspecified,plant,pending
+china-cdc-1192,米粉(猪肝蔬菜，亨氏),unspecified,mixed,pending
+china-cdc-1193,米粉(鱼肉蔬菜，亨氏),unspecified,mixed,pending
+china-cdc-899,鸭血(白鸭),unspecified,animal,pending
+china-cdc-895,鸭肠,unspecified,animal,pending
+china-cdc-896,鸭肝,unspecified,animal,pending
+china-cdc-347,素鸡,unspecified,plant,pending
+china-cdc-795,猪肚,unspecified,animal,pending
+china-cdc-1351,海苔,unspecified,plant,pending
+china-cdc-740,白果(干)[银杏],dried,plant,pending
+china-cdc-663,蜜桃,unspecified,plant,pending
+china-cdc-464,菜花[花椰菜],unspecified,plant,pending
+china-cdc-413,樱桃番茄[小西红柿],unspecified,plant,pending
+china-cdc-329,黄豆粉,unspecified,plant,pending
+china-cdc-1068,鱼子酱,unspecified,animal,pending
+china-cdc-1613,菊花[怀菊花],unspecified,plant,pending
+china-cdc-804,叉烧肉,unspecified,animal,pending
+china-cdc-318,甘薯粉[地瓜粉],unspecified,plant,pending
+china-cdc-822,金华火腿,unspecified,animal,pending
+china-cdc-410,甜椒[灯笼椒，柿子椒],unspecified,plant,pending
+china-cdc-414,甜椒[灯笼椒、柿子椒],unspecified,plant,pending
+china-cdc-1525,黄酱[大酱],unspecified,plant,pending
+china-cdc-353,豆沙,unspecified,plant,pending
+china-cdc-885,鸡心,unspecified,animal,pending
+china-cdc-440,蒜苔,unspecified,plant,pending
+china-cdc-488,茼蒿[蓬蒿菜，艾菜](鲜),unspecified,plant,pending
+china-cdc-897,鸭舌[鸭条],unspecified,animal,pending
+china-cdc-1412,红葡萄酒,unspecified,plant,pending
+china-cdc-759,开心果(熟),cooked,plant,pending
+china-cdc-693,桑葚(均值),unspecified,plant,pending
+china-cdc-694,桑葚(白),unspecified,plant,pending
+china-cdc-695,桑葚(红),unspecified,plant,pending
+china-cdc-589,榛蘑(干)[假蜜环菌],dried,plant,pending
+china-cdc-590,榛蘑(水发),hydrated,plant,pending
+china-cdc-493,蕹菜[空心菜，藤藤菜],unspecified,plant,pending
+china-cdc-1037,黄鱼(大黄花鱼),unspecified,animal,pending
+china-cdc-1038,黄鱼(小黄花鱼),unspecified,animal,pending
+china-cdc-875,兔肉,unspecified,animal,pending
+china-cdc-1424,绍兴黄酒(15度),unspecified,plant,pending
+china-cdc-1056,鲳鱼[平鱼，银鲳，刺鲳],unspecified,animal,pending
+china-cdc-397,豇豆,unspecified,plant,pending
+china-cdc-303,小米粥,unspecified,plant,pending
+china-cdc-1012,鲤鱼[鲤拐子],unspecified,animal,pending
+china-cdc-1000,鹅蛋(煮),cooked,animal,pending
+china-cdc-1258,薯条(肯德基),unspecified,plant,pending
+china-cdc-439,蒜苗,unspecified,plant,pending
+china-cdc-259,小麦粉(标准粉),unspecified,plant,pending
+china-cdc-260,小麦粉(富强粉，特一粉),unspecified,plant,pending
+china-cdc-513,慈菇[乌芋，白地果](鲜),unspecified,plant,pending
+china-cdc-437,青蒜,unspecified,plant,pending
+china-cdc-420,佛手瓜[棒瓜，菜肴梨],unspecified,plant,pending
+china-cdc-322,藕粉,unspecified,plant,pending
+china-cdc-581,平菇[糙皮侧耳，青蘑],unspecified,plant,pending
+china-cdc-427,南瓜粉,unspecified,plant,pending
+china-cdc-1127,墨鱼[曼氏无针乌贼],unspecified,animal,pending
+china-cdc-1128,墨鱼(干)[曼氏无针乌贼],dried,animal,pending
+china-cdc-486,苋菜(绿，鲜),unspecified,plant,pending
+china-cdc-487,"苋菜(紫,鲜)[红苋]",unspecified,plant,pending
+china-cdc-298,玉米笋(罐头),unspecified,plant,pending
+china-cdc-673,西梅,unspecified,plant,pending
+china-cdc-1545,腐乳(白)[酱豆腐],unspecified,mixed,pending
+china-cdc-1546,腐乳(臭)[臭豆腐],unspecified,mixed,pending
+china-cdc-1547,腐乳(红)[酱豆腐],unspecified,mixed,pending
+china-cdc-1548,腐乳(香辣味),unspecified,mixed,pending
+china-cdc-1549,腐乳[酱豆腐](白，王致和牌),unspecified,mixed,pending
+china-cdc-1565,精盐,unspecified,unknown,pending
+china-cdc-1538,草莓酱,unspecified,plant,pending
+china-cdc-1543,草莓酱,unspecified,plant,pending
+china-cdc-555,马兰头[马兰，鸡儿肠，路边菊](鲜),unspecified,plant,pending
+china-cdc-1048,鲅鱼[马鲛鱼，燕鲅鱼，巴鱼],unspecified,animal,pending
+china-cdc-1211,年糕,unspecified,plant,pending
+china-cdc-343,油豆腐,unspecified,plant,pending
+china-cdc-612,裙带菜(干)[海芥菜、海木耳],dried,plant,pending
+china-cdc-797,猪肝,unspecified,animal,pending
+china-cdc-734,火龙果[仙蜜果、红龙果],unspecified,plant,pending
+china-cdc-277,油条,unspecified,plant,pending
+china-cdc-790,猪大肠,unspecified,animal,pending
+china-cdc-731,橄榄(白榄),unspecified,plant,pending
+china-cdc-1560,腌萝卜条,unspecified,plant,pending
+china-cdc-995,咸鸭蛋,unspecified,animal,pending
+china-cdc-1323,苏打饼干,unspecified,plant,pending
+china-cdc-1441,苹果酒(干型),unspecified,plant,pending
+china-cdc-1442,苹果酒(甜),unspecified,plant,pending
+china-cdc-992,鸭蛋黄,unspecified,animal,pending
+china-cdc-327,黑豆[黑大豆](干),dried,plant,pending
+china-cdc-1501,葵花籽油,unspecified,plant,pending
+china-cdc-1020,鲢鱼[白鲢，胖子，连子鱼],unspecified,animal,pending
+china-cdc-713,葡萄柚(台湾)[西柚],unspecified,plant,pending
+china-cdc-714,葡萄柚(以色列)[西柚],unspecified,plant,pending
+china-cdc-937,全脂奶粉(雀巢),unspecified,animal,pending
+china-cdc-938,全脂奶粉(三鹿牌),unspecified,animal,pending
+china-cdc-939,全脂奶粉(伊利牌),unspecified,animal,pending
+china-cdc-982,鸡蛋白,unspecified,animal,pending
+china-cdc-1049,鲆[片口鱼，比目鱼],unspecified,animal,pending
+china-cdc-1059,鲽[比目鱼，凸眼鱼],unspecified,animal,pending
+china-cdc-603,竹荪(干)[竹笙、竹参],dried,plant,pending
+china-cdc-1008,鱼（黄鳝）[鳝鱼],unspecified,animal,pending
+china-cdc-1016,鱼（银鱼）[面条鱼],unspecified,animal,pending
+china-cdc-1291,方便面,unspecified,mixed,pending
+china-cdc-401,豌豆苗,unspecified,plant,pending
+china-cdc-1150,婴儿奶粉(高钙，圣元牌),unspecified,animal,pending
+china-cdc-583,松蘑(干)[松口蘑，松茸],dried,plant,pending
+china-cdc-834,牛肚,unspecified,animal,pending
+china-cdc-349,烤麸,cooked,plant,pending
+china-cdc-887,鸡肫[鸡胗],unspecified,animal,pending
+china-cdc-517,蒲菜[香蒲，甘蒲，野茭白](鲜),unspecified,plant,pending
+china-cdc-384,甜菜根[甜菜头，糖萝卜](鲜),unspecified,plant,pending
+china-cdc-775,芡实米(鲜)[鸡头米],unspecified,plant,pending
+china-cdc-1135,墨鱼丸,unspecified,animal,pending
+china-cdc-505,玉兰片,unspecified,plant,pending
+usda-fdc-173473,"Rosemary, fresh",unspecified,plant,pending
+usda-fdc-170845,"Cheese, mozzarella, whole milk",unspecified,animal,pending
+usda-fdc-173468,"Salt, table",unspecified,plant,pending
+usda-fdc-170931,"Spices, pepper, black",unspecified,plant,pending
+usda-fdc-171413,"Oil, olive, salad or cooking",unspecified,plant,pending
+usda-fdc-2258588,"Peppers, bell, green, raw",raw,plant,pending
+usda-fdc-2258590,"Peppers, bell, red, raw",raw,plant,pending
+usda-fdc-171319,"Spices, chili powder",unspecified,plant,pending
+usda-fdc-170923,"Spices, cumin seed",unspecified,plant,pending
+usda-fdc-168152,"Jujube, Chinese, fresh, dried",dried,plant,pending
+usda-fdc-168833,"Sugars, brown",unspecified,plant,pending
+usda-fdc-173647,"Beverages, water, tap, drinking",unspecified,unknown,pending
+usda-fdc-172183,"Egg, white, raw, fresh",raw,animal,pending
+usda-fdc-169655,"Sugars, granulated",unspecified,plant,pending
+usda-fdc-169723,"Wheat flour, white, cake, enriched",unspecified,plant,pending
+usda-fdc-169698,Cornstarch,unspecified,plant,pending
+usda-fdc-1104647,"Garlic, raw",raw,plant,pending
+usda-fdc-174529,"Sauce, oyster, ready-to-serve",unspecified,mixed,pending
+usda-fdc-2646169,"Pork, loin, tenderloin, boneless, raw",raw,animal,pending
+usda-fdc-174277,Soy sauce made from soy and wheat (shoyu),unspecified,plant,pending
+usda-fdc-169761,"Wheat flour, white, all-purpose, unenriched",unspecified,plant,pending
+usda-fdc-170005,"Onions, spring or scallions (includes tops and bulb), raw",raw,plant,pending
+usda-fdc-171265,"Milk, whole, 3.25% milkfat, with added vitamin D",unspecified,animal,pending
+usda-fdc-2727573,"Beef, tenderloin steak, raw",raw,animal,pending
+usda-fdc-2346406,"Cucumber, with peel, raw",raw,plant,pending
+usda-fdc-170392,"Cabbage, kimchi",unspecified,mixed,pending
+usda-fdc-167853,"Pork, fresh, spareribs, separable lean and fat, raw",raw,animal,pending
+usda-fdc-171562,"Soup, chicken broth or bouillon, dry",unspecified,mixed,pending
+usda-fdc-174214,"Mollusks, clam, mixed species, raw",raw,animal,pending
+usda-fdc-171186,"Sauce, hot chile, sriracha",unspecified,plant,pending
+usda-fdc-173727,"Beans, adzuki, mature seeds, raw",raw,plant,pending
+usda-fdc-169656,"Sugars, powdered",unspecified,plant,pending
+usda-fdc-172805,"Leavening agents, baking powder, low-sodium",unspecified,plant,pending
+usda-fdc-174212,"Mollusks, abalone, mixed species, raw",raw,animal,pending
+usda-fdc-172184,"Egg, yolk, raw, fresh",raw,animal,pending
+usda-fdc-168841,"Toppings, butterscotch or caramel",unspecified,mixed,pending
+usda-fdc-169599,"Gelatins, dry powder, unsweetened",unspecified,animal,pending
+usda-fdc-170859,"Cream, fluid, heavy whipping",unspecified,animal,pending
+usda-fdc-169891,"Cabbage, mustard, salted",unspecified,plant,pending
+usda-fdc-167812,"Pork, fresh, belly, raw",raw,animal,pending
+usda-fdc-171320,"Spices, cinnamon, ground",unspecified,plant,pending
+usda-fdc-2346405,"Celery, raw",raw,plant,pending
+usda-fdc-170150,"Seeds, sesame seeds, whole, dried",dried,plant,pending
+usda-fdc-2727568,"Chicken, wing, meat and skin, raw",raw,animal,pending
+usda-fdc-170903,"Yogurt, Greek, plain, lowfat",unspecified,animal,pending
+usda-fdc-167747,"Lemon juice, raw",raw,plant,pending
+usda-fdc-168371,"Pork, Leg sirloin tip roast, boneless, separable lean and fat, raw",raw,animal,pending
+usda-fdc-170497,"Peppers, hot chili, green, raw",raw,plant,pending
+usda-fdc-170106,"Peppers, hot chili, red, raw",raw,plant,pending
+usda-fdc-171325,"Spices, garlic powder",unspecified,plant,pending
+usda-fdc-1104867,"Flour, rice, glutinous",unspecified,plant,pending
+usda-fdc-2261420,"Flour, almond",unspecified,plant,pending
+usda-fdc-169949,"Plums, raw",raw,plant,pending
+usda-fdc-174158,"Water, bottled, generic",unspecified,unknown,pending
+usda-fdc-168436,"Mushrooms, shiitake, dried",dried,plant,pending
+usda-fdc-170933,"Spices, pepper, white",unspecified,plant,pending
+usda-fdc-171079,"Squab, (pigeon), meat only, raw",raw,animal,pending
+usda-fdc-169979,"Cabbage, chinese (pe-tsai), raw",raw,plant,pending
+usda-fdc-168581,"Fungi, Cloud ears, dried",dried,plant,pending
+usda-fdc-2747662,"Peppers, poblano, seeded, raw",raw,plant,pending
+usda-fdc-172802,Wonton wrappers (includes egg roll wrappers),unspecified,mixed,pending
+usda-fdc-174523,"Sauce, barbecue",unspecified,mixed,pending
+usda-fdc-175179,"Crustaceans, shrimp, raw",raw,animal,pending
+usda-fdc-174206,"Crustaceans, crayfish, mixed species, wild, raw",raw,animal,pending
+usda-fdc-789951,"Flour, wheat, all-purpose, enriched, unbleached",unspecified,plant,pending
+usda-fdc-170187,"Nuts, walnuts, english",unspecified,plant,pending
+usda-fdc-174204,"Crustaceans, crab, blue, raw",raw,animal,pending
+usda-fdc-168913,"Wheat flours, bread, unenriched",unspecified,plant,pending
+usda-fdc-169308,"Taro, raw",raw,plant,pending
+usda-fdc-2646170,"Chicken, breast, boneless, skinless, raw",raw,animal,pending
+usda-fdc-172191,"Egg, quail, whole, fresh, raw",raw,animal,pending
+usda-fdc-168277,"Pork, cured, bacon, unprepared",unspecified,animal,pending
+usda-fdc-169379,"Pickles, cucumber, sour",unspecified,plant,pending
+usda-fdc-169714,"Rice flour, white, unenriched",unspecified,plant,pending
+usda-fdc-170151,"Seeds, sesame seeds, whole, roasted and toasted",cooked,plant,pending
+usda-fdc-170917,"Spices, bay leaf",unspecified,plant,pending
+usda-fdc-168570,"Peppers, hot chile, sun-dried",dried,plant,pending
+usda-fdc-171167,"Sauce, teriyaki, ready-to-serve",unspecified,mixed,pending
+usda-fdc-169439,"Beef, rib, shortribs, separable lean and fat, choice, raw",raw,animal,pending
+usda-fdc-174192,"Fish, croaker, Atlantic, raw",raw,animal,pending
+usda-fdc-169103,"Orange peel, raw",raw,plant,pending
+usda-fdc-170273,"Chocolate, dark, 70-85% cacao solids",unspecified,plant,pending
+usda-fdc-169910,"Mangos, raw",raw,plant,pending
+usda-fdc-169097,"Oranges, raw, all commercial varieties",raw,plant,pending
+usda-fdc-169118,"Pears, raw",raw,plant,pending
+usda-fdc-170427,"Peppers, sweet, green, raw",raw,plant,pending
+usda-fdc-174292,"MORI-NU, Tofu, silken, soft",unspecified,plant,pending
+usda-fdc-167723,"Alcoholic beverage, rice (sake)",unspecified,plant,pending
+usda-fdc-168877,"Rice, white, long-grain, regular, raw, enriched",raw,plant,pending
+usda-fdc-2710825,"Rice, black, unenriched, raw",raw,plant,pending
+usda-fdc-172790,"Puff pastry, frozen, ready-to-bake",unspecified,mixed,pending
+usda-fdc-168896,"Wheat flour, white, bread, enriched",unspecified,plant,pending
+usda-fdc-747693,"Ketchup, restaurant",unspecified,plant,pending
+usda-fdc-171328,"Spices, oregano, dried",dried,plant,pending
+usda-fdc-168448,"Pumpkin, raw",raw,plant,pending
+usda-fdc-170926,"Spices, ginger, ground",unspecified,plant,pending
+usda-fdc-169251,"Mushrooms, white, raw",raw,plant,pending
+usda-fdc-168879,"Rice, white, medium-grain, raw, enriched",raw,plant,pending
+usda-fdc-174536,"Soup, chicken broth, ready-to-serve",unspecified,animal,pending
+usda-fdc-168462,"Spinach, raw",raw,plant,pending
+usda-fdc-170416,"Parsley, fresh",unspecified,plant,pending
+usda-fdc-173431,"Cheese, parmesan, shredded",unspecified,animal,pending
+usda-fdc-168484,"Sweet potato, cooked, boiled, without skin",cooked,plant,pending
+usda-fdc-168586,"Nuts, coconut meat, dried (desiccated), sweetened, shredded",dried,plant,pending
+usda-fdc-168153,"Kiwifruit, green, raw",raw,plant,pending
+usda-fdc-168156,"Lime juice, raw",raw,plant,pending
+usda-fdc-174842,"Beverages, carbonated, club soda",unspecified,unknown,pending
+usda-fdc-2003603,"Mushroom, beech",unspecified,plant,pending
+usda-fdc-169884,"Vermicelli, made from soy",unspecified,plant,pending
+usda-fdc-174211,"Crustaceans, spiny lobster, mixed species, raw",raw,animal,pending
+usda-fdc-168772,"Egg custards, dry mix",unspecified,mixed,pending
+usda-fdc-174928,"Bread, crumbs, dry, grated, plain",unspecified,plant,pending
+usda-fdc-172408,"Duck, domesticated, meat and skin, raw",raw,animal,pending
+usda-fdc-1105781,"Apples, gala, with skin, raw",raw,plant,pending
+usda-fdc-321360,"Tomatoes, grape, raw",raw,plant,pending
+usda-fdc-171705,"Avocados, raw, all commercial varieties",raw,plant,pending
+usda-fdc-169082,"Pork, oriental style, dehydrated",dried,animal,pending
+usda-fdc-2758986,"Mayonnaise, Regular",unspecified,mixed,pending
+usda-fdc-173729,"Beans, adzuki, mature seeds, canned, sweetened",unspecified,plant,pending
+usda-fdc-170172,"Nuts, coconut milk, raw (liquid expressed from grated meat and water)",raw,plant,pending
+usda-fdc-174203,"Crustaceans, crab, alaska king, imitation, made from surimi",unspecified,mixed,pending
+usda-fdc-170071,"Yam, raw",raw,plant,pending
+usda-fdc-170174,"Nuts, coconut water (liquid from coconuts)",unspecified,plant,pending
+usda-fdc-2258589,"Peppers, bell, yellow, raw",raw,plant,pending
+usda-fdc-174120,"Beverages, tea, Oolong, brewed",unspecified,plant,pending
+usda-fdc-168155,"Limes, raw",raw,plant,pending
+usda-fdc-174256,"Mung beans, mature seeds, raw",raw,plant,pending
+usda-fdc-172336,"Oil, canola",unspecified,plant,pending
+usda-fdc-169242,"Mushrooms, shiitake, raw",raw,plant,pending
+usda-fdc-167961,"Snacks, pork skins, plain",unspecified,animal,pending
+usda-fdc-2727576,"Pork, belly, with skin, raw",raw,animal,pending
+usda-fdc-2758976,"Cranberries, dried, sweetened",dried,plant,pending
+usda-fdc-174817,"Alcoholic beverage, distilled, rum, 80 proof",unspecified,plant,pending
+usda-fdc-170737,"KFC, Popcorn Chicken",unspecified,mixed,pending
+usda-fdc-171891,"Beverages, coffee, brewed, espresso, restaurant-prepared",unspecified,plant,pending
+usda-fdc-2685572,"Cabbage, bok choy, raw",raw,plant,pending
+usda-fdc-169998,"Corn, sweet, yellow, raw",raw,plant,pending
+usda-fdc-173686,"Fish, salmon, Atlantic, wild, raw",raw,animal,pending
+usda-fdc-2515382,"Flour, coconut",unspecified,plant,pending
+usda-fdc-171321,"Spices, cloves, ground",unspecified,plant,pending
+usda-fdc-171326,"Spices, nutmeg, ground",unspecified,plant,pending
+usda-fdc-168148,"Frog legs, raw",raw,animal,pending
+usda-fdc-169766,"Peppers, hot pickled, canned",unspecified,plant,pending
+usda-fdc-170108,"Peppers, sweet, red, raw",raw,plant,pending
+usda-fdc-173436,"Egg, yolk, raw, frozen, salted, pasteurized",raw,animal,pending
+usda-fdc-790085,"Flour, whole wheat, unenriched",unspecified,plant,pending
+usda-fdc-172232,"Basil, fresh",unspecified,plant,pending
+usda-fdc-170069,"Waxgourd, (chinese preserving melon), raw",raw,plant,pending
+usda-fdc-169660,"Syrups, malt",unspecified,plant,pending
+usda-fdc-167781,Candied fruit,unspecified,plant,pending
+usda-fdc-173421,"Egg, yolk, raw, frozen, pasteurized",raw,animal,pending
+usda-fdc-167902,"Pork, fresh, ground, raw",raw,animal,pending
+usda-fdc-170495,"Seaweed, spirulina, dried",dried,plant,pending
+usda-fdc-172442,Miso,unspecified,mixed,pending
+usda-fdc-174531,"Sauce, fish, ready-to-serve",unspecified,animal,pending
+usda-fdc-169089,"Longans, raw",raw,plant,pending
+usda-fdc-172688,"Bread, whole-wheat, commercially prepared",unspecified,plant,pending
+usda-fdc-172234,"Mustard, prepared, yellow",unspecified,mixed,pending
+usda-fdc-173474,"Peppermint, fresh",unspecified,plant,pending
+usda-fdc-174208,"Crustaceans, lobster, northern, raw",raw,animal,pending
+usda-fdc-173664,"Alcoholic beverage, distilled, all (gin, rum, vodka, whiskey) 100 proof",unspecified,plant,pending
+usda-fdc-2263889,"Blueberries, raw",raw,plant,pending
+usda-fdc-2710838,"Rice, red, unenriched, dry, raw",raw,plant,pending
+usda-fdc-172430,"Peanuts, all types, raw",raw,plant,pending
+usda-fdc-2515379,"Nuts, pistachio nuts, raw",raw,plant,pending
+usda-fdc-167849,"Pork, fresh, shoulder, (Boston butt), blade (steaks), separable lean and fat, raw",raw,animal,pending
+usda-fdc-172194,"Milk, canned, evaporated, with added vitamin A",unspecified,animal,pending
+usda-fdc-167870,"Pork, cured, feet, pickled",unspecified,animal,pending
+usda-fdc-173564,"Fat, chicken",unspecified,animal,pending
+usda-fdc-326905,"Figs, dried, uncooked",dried,plant,pending
+usda-fdc-2727578,"Squash, pie pumpkin, peeled, seeded, raw",raw,plant,pending
+usda-fdc-168883,"Rice, white, glutinous, unenriched, uncooked",cooked,plant,pending
+usda-fdc-172023,Millet flour,unspecified,plant,pending
+usda-fdc-2646175,"Beef, flank, steak, boneless, choice, raw",raw,animal,pending
+usda-fdc-169210,"Bamboo shoots, raw",raw,plant,pending
+usda-fdc-167746,"Lemons, raw, without peel",raw,plant,pending
+usda-fdc-169249,"Lettuce, green leaf, raw",raw,plant,pending
+usda-fdc-173190,"Alcoholic beverage, wine, table, red",unspecified,plant,pending
+usda-fdc-2685573,"Cauliflower, raw",raw,plant,pending
+usda-fdc-173432,"Milk, nonfat, fluid, without added vitamin A and vitamin D (fat free or skim)",unspecified,animal,pending
+usda-fdc-170932,"Spices, pepper, red or cayenne",unspecified,plant,pending
+usda-fdc-171323,"Spices, fennel seed",unspecified,plant,pending
+usda-fdc-171425,"Oil, teaseed",unspecified,plant,pending
+usda-fdc-171106,"Poultry, mechanically deboned, from mature hens, raw",raw,animal,pending
+usda-fdc-168312,"Pork, fresh, loin, tenderloin, separable lean and fat, raw",raw,animal,pending
+usda-fdc-173418,"Cheese, cream",unspecified,animal,pending
+usda-fdc-173471,Vanilla extract,unspecified,plant,pending
+usda-fdc-175040,"Leavening agents, baking soda",unspecified,plant,pending
+usda-fdc-169070,"Alcoholic beverage, wine, cooking",unspecified,plant,pending
+usda-fdc-172880,"Sauce, pizza, canned, ready-to-serve",unspecified,mixed,pending
+usda-fdc-169096,"Olives, pickled, canned or bottled, green",unspecified,plant,pending
+usda-fdc-168914,"Rice noodles, cooked",cooked,plant,pending
+usda-fdc-2685577,"Eggplant, raw",raw,plant,pending
+usda-fdc-173227,"Beverages, tea, black, brewed, prepared with tap water",unspecified,plant,pending
+usda-fdc-168874,"Quinoa, uncooked",cooked,plant,pending
+usda-fdc-2346396,"Oats, whole grain, rolled, old fashioned",unspecified,plant,pending
+usda-fdc-173430,"Butter, without salt",unspecified,animal,pending
+usda-fdc-171287,"Egg, whole, raw, fresh",raw,animal,pending
+usda-fdc-170886,"Yogurt, plain, low fat",unspecified,animal,pending
+usda-fdc-169677,"Snacks, potato chips, plain, salted",unspecified,plant,pending
+usda-fdc-168878,"Rice, white, long-grain, regular, enriched, cooked",cooked,plant,pending
+usda-fdc-173744,"Beans, kidney, red, mature seeds, raw",raw,plant,pending
+usda-fdc-169231,"Ginger root, raw",raw,plant,pending
+usda-fdc-167811,"Pork, fresh, backfat, raw",raw,animal,pending
+usda-fdc-174262,"Peanuts, all types, dry-roasted, with salt",cooked,plant,pending
+usda-fdc-175172,"Mollusks, oyster, eastern, farmed, raw",raw,animal,pending
+usda-fdc-173682,"Fish, pompano, florida, raw",raw,animal,pending
+usda-fdc-172521,"Game meat, rabbit, domesticated, composite of cuts, raw",raw,animal,pending
+usda-fdc-2261422,"Flour, potato",unspecified,plant,pending
+usda-fdc-171563,"Soup, chicken broth cubes, dry",unspecified,mixed,pending
+usda-fdc-169237,"Jew's ear, (pepeao), raw",raw,plant,pending
+usda-fdc-172648,"Veal, shank, separable lean and fat, raw",raw,animal,pending
+usda-fdc-2346399,"Cherries, sweet, dark red, raw",raw,plant,pending
+usda-fdc-173954,"Cherries, sour, red, raw",raw,plant,pending
+usda-fdc-169593,"Cocoa, dry powder, unsweetened",unspecified,plant,pending
+usda-fdc-174223,"Mollusks, squid, mixed species, raw",raw,animal,pending
+usda-fdc-168457,"Seaweed, kelp, raw",raw,plant,pending
+usda-fdc-170026,"Potatoes, flesh and skin, raw",raw,plant,pending
+usda-fdc-168556,Catsup,unspecified,plant,pending
+usda-fdc-169988,"Celery, raw",raw,plant,pending
+usda-fdc-172378,"Chicken, broilers or fryers, leg, meat and skin, raw",raw,animal,pending
+usda-fdc-169941,"Persimmons, japanese, raw",raw,plant,pending
+usda-fdc-173424,"Egg, whole, cooked, hard-boiled",cooked,animal,pending
+usda-fdc-168505,"Beans, snap, green, canned, no salt added, drained solids",unspecified,plant,pending
+usda-fdc-1750337,"Soy milk, unsweetened, plain, shelf stable",unspecified,plant,pending
+usda-fdc-170783,"Beef, chuck, short ribs, boneless, separable lean only, trimmed to 0"" fat, choice, raw",raw,animal,pending
+usda-fdc-171595,"Sauce, tomato chili sauce, bottled, with salt",unspecified,plant,pending
+usda-fdc-2747671,"Squid (calamari), frozen, tubes only",unspecified,animal,pending
+usda-fdc-167567,"Baking chocolate, unsweetened, liquid",unspecified,plant,pending
+usda-fdc-170584,"Nuts, ginkgo nuts, raw",raw,plant,pending
+usda-fdc-172449,"Tofu, soft, prepared with calcium sulfate and magnesium chloride (nigari)",unspecified,plant,pending
+usda-fdc-2758998,"Pasta, dry, enriched, spaghetti",unspecified,plant,pending
+usda-fdc-171247,"Cheese, parmesan, grated",unspecified,animal,pending
+usda-fdc-1104962,"Onions, white, raw",raw,plant,pending
+usda-fdc-169383,"Peppers, sweet, yellow, raw",raw,plant,pending
+usda-fdc-168446,Potato flour,unspecified,plant,pending
+usda-fdc-167953,Fruit syrup,unspecified,plant,pending
+usda-fdc-169889,"Radishes, hawaiian style, pickled",unspecified,plant,pending
+usda-fdc-174852,"Beverages, carbonated, cola, regular",unspecified,plant,pending
+usda-fdc-170290,"Corn flour, whole-grain, yellow",unspecified,plant,pending
+usda-fdc-2346392,"Nuts, pine nuts, raw",raw,plant,pending
+usda-fdc-172390,"Chicken, broilers or fryers, wing, meat and skin, raw",raw,animal,pending
+usda-fdc-167571,"Candies, white chocolate",unspecified,mixed,pending
+usda-fdc-172196,"Milk, dry, nonfat, instant, without added vitamin A and vitamin D",unspecified,animal,pending
+usda-fdc-2727575,"Pork, chop, center cut, raw",raw,animal,pending
+usda-fdc-169934,"Peaches, dried, sulfured, uncooked",dried,plant,pending
+usda-fdc-168158,"Blueberries, dried, sweetened",dried,plant,pending
+usda-fdc-170499,"Shallots, raw",raw,plant,pending
+usda-fdc-2515377,"Flour, chestnut",unspecified,plant,pending
+usda-fdc-172370,"Oil, vegetable, soybean, refined",unspecified,plant,pending
+usda-fdc-169928,"Peaches, yellow, raw",raw,plant,pending
+usda-fdc-170491,"Carrot juice, canned",unspecified,plant,pending
+usda-fdc-172451,"Tofu, fried",cooked,plant,pending
+usda-fdc-172611,"Lamb, New Zealand, imported, breast, separable lean only, raw",raw,animal,pending
+usda-fdc-171401,Lard,unspecified,animal,pending
+usda-fdc-170169,"Nuts, coconut meat, raw",raw,plant,pending
+usda-fdc-174220,"Mollusks, scallop, mixed species, raw",raw,animal,pending
+usda-fdc-174925,"Bread, white, commercially prepared, toasted",unspecified,plant,pending
+usda-fdc-173410,"Butter, salted",unspecified,animal,pending
+usda-fdc-171447,"Chicken, broilers or fryers, meat and skin, raw",raw,animal,pending
+usda-fdc-171952,"Fish, carp, raw",raw,animal,pending
+usda-fdc-171917,"Beverages, tea, green, brewed, regular",unspecified,plant,pending
+usda-fdc-169751,"Pasta, cooked, enriched, with added salt",cooked,plant,pending
+usda-fdc-174036,"Beef, ground, 80% lean meat / 20% fat, raw",raw,animal,pending
+usda-fdc-171317,"Spices, basil, dried",dried,plant,pending
+usda-fdc-170054,"Tomato products, canned, sauce",unspecified,plant,pending
+usda-fdc-168429,"Lettuce, butterhead (includes boston and bibb types), raw",raw,plant,pending
+usda-fdc-171946,"Beverages, tea, hibiscus, brewed",unspecified,plant,pending
+usda-fdc-169086,"Litchis, raw",raw,plant,pending
+usda-fdc-173469,"Vinegar, cider",unspecified,plant,pending
+usda-fdc-175134,"Fish, sablefish, raw",raw,animal,pending
+usda-fdc-790577,"Onions, red, raw",raw,plant,pending
+usda-fdc-169384,"Tomatoes, sun-dried, packed in oil, drained",dried,plant,pending
+usda-fdc-169095,"Olives, ripe, canned (jumbo-super colossal)",unspecified,plant,pending
+usda-fdc-172238,"Capers, canned",unspecified,plant,pending
+usda-fdc-325430,"Peaches, yellow, raw",raw,plant,pending
+usda-fdc-169303,"Sweet potato leaves, raw",raw,plant,pending
+usda-fdc-169105,"Tangerines, (mandarin oranges), raw",raw,plant,pending
+usda-fdc-170377,"Broadbeans, immature seeds, raw",raw,plant,pending
+usda-fdc-172641,"Lamb, New Zealand, imported, rack - fully frenched, separable lean and fat, raw",raw,animal,pending
+usda-fdc-168423,"Mushrooms, morel, raw",raw,plant,pending
+usda-fdc-168000,Chocolate-flavored hazelnut spread,unspecified,mixed,pending
+usda-fdc-168588,"Nuts, almond butter, plain, without salt added",unspecified,plant,pending
+usda-fdc-172435,"Peanut flour, low fat",unspecified,plant,pending
+usda-fdc-175202,"Beans, white, mature seeds, raw",raw,plant,pending
+usda-fdc-174271,"Soybeans, mature cooked, boiled, without salt",cooked,plant,pending
+usda-fdc-167765,"Watermelon, raw",raw,plant,pending
+usda-fdc-169994,"Chives, raw",raw,plant,pending
+usda-fdc-168894,"Wheat flour, white, all-purpose, enriched, bleached",unspecified,plant,pending
+usda-fdc-168372,"Pork, ground, 84% lean / 16% fat, raw",raw,animal,pending
+usda-fdc-169108,"Passion-fruit, (granadilla), purple, raw",raw,plant,pending
+usda-fdc-175065,"Pie crust, standard-type, frozen, ready-to-bake, unenriched",unspecified,mixed,pending
+usda-fdc-171403,"Salad dressing, mayonnaise type, regular, with salt",unspecified,mixed,pending
+usda-fdc-173710,"Fish, turbot, european, raw",raw,animal,pending
+usda-fdc-2346386,"Cream, heavy",unspecified,animal,pending
+usda-fdc-172475,"Tofu, raw, firm, prepared with calcium sulfate",raw,plant,pending
+usda-fdc-175158,"Fish, tuna, white, canned in water, drained solids",unspecified,animal,pending
+usda-fdc-169702,"Millet, raw",raw,plant,pending
+usda-fdc-171329,"Spices, paprika",unspecified,plant,pending
+usda-fdc-2646174,"Beef, chuck, roast, boneless, choice, raw",raw,animal,pending
+usda-fdc-173470,"Thyme, fresh",unspecified,plant,pending
+usda-fdc-169765,"Ginger root, pickled, canned, with artificial sweetener",unspecified,plant,pending
+usda-fdc-169736,"Pasta, dry, enriched",unspecified,plant,pending
+usda-fdc-171275,"Milk, canned, condensed, sweetened",unspecified,animal,pending
+usda-fdc-171112,"Duck, young duckling, domesticated, White Pekin, leg, meat and skin, bone in, cooked, roasted",cooked,animal,pending
+usda-fdc-168482,"Sweet potato, raw, unprepared (Includes foods for USDA's Food Distribution Program)",raw,plant,pending
+usda-fdc-330137,"Yogurt, Greek, plain, nonfat",unspecified,animal,pending
+usda-fdc-174258,"Noodles, chinese, cellophane or long rice (mung beans), dehydrated",dried,plant,pending
+usda-fdc-171119,"Chicken, feet, boiled",cooked,animal,pending
+usda-fdc-174416,"Lamb, Australian, imported, fresh, rib chop/rack roast, frenched, bone-in, separable lean only, trimmed to 1/8"" fat, raw",raw,animal,pending
+usda-fdc-170554,"Seeds, chia seeds, dried",dried,plant,pending
+usda-fdc-2758997,"Tortilla, corn, shelf stable",unspecified,plant,pending
+usda-fdc-167793,"Apples, raw, fuji, with skin (Includes foods for USDA's Food Distribution Program)",raw,plant,pending
+usda-fdc-2346388,"Lettuce, iceberg, raw",raw,plant,pending
+usda-fdc-175162,"Fish, wolffish, Atlantic, raw",raw,animal,pending
+usda-fdc-172237,"Vinegar, distilled",unspecified,plant,pending
+usda-fdc-167749,"Lemon peel, raw",raw,plant,pending
+usda-fdc-167702,"Oil, flaxseed, cold pressed",unspecified,plant,pending
+usda-fdc-170471,"Vegetables, mixed, frozen, unprepared",unspecified,plant,pending
+usda-fdc-2727583,"Cabbage, napa, leaf, destemmed, raw",raw,plant,pending
+usda-fdc-172879,"Sauce, plum, ready-to-serve",unspecified,plant,pending
+usda-fdc-171314,"Butter, Clarified butter (ghee)",unspecified,animal,pending
+usda-fdc-170489,"Squash, winter, all varieties, raw",raw,plant,pending
+usda-fdc-169099,"Orange juice, canned, unsweetened",unspecified,plant,pending
+usda-fdc-174216,"Mollusks, mussel, blue, raw",raw,animal,pending
+usda-fdc-170918,"Spices, caraway seed",unspecified,plant,pending
+usda-fdc-172889,"Soup, beef broth, less/reduced sodium, ready to serve",unspecified,animal,pending
+usda-fdc-170459,"Tomato products, canned, paste, without salt added (Includes foods for USDA's Food Distribution Program)",unspecified,plant,pending
+usda-fdc-172240,"Vinegar, red wine",unspecified,plant,pending
+usda-fdc-168192,"Durian, raw or frozen",raw,plant,pending
+usda-fdc-169975,"Cabbage, raw",raw,plant,pending
+usda-fdc-175132,"Fish, roe, mixed species, raw",raw,animal,pending
+usda-fdc-172450,"Tofu, dried-frozen (koyadofu)",dried,plant,pending
+usda-fdc-169907,"Longans, dried",dried,plant,pending
+usda-fdc-170029,"Potatoes, red, flesh and skin, raw",raw,plant,pending
+usda-fdc-174190,"Fish, cod, Atlantic, dried and salted",dried,animal,pending
+usda-fdc-171661,"Cereals, oats, instant, fortified, plain, dry",unspecified,plant,pending
+usda-fdc-2758980,"Raisins, dark, seedless",unspecified,plant,pending
+usda-fdc-172653,"Lamb, Australian, imported, fresh, leg, bottom, boneless, separable lean only, trimmed to 1/8"" fat, raw",raw,animal,pending
+usda-fdc-169661,"Syrups, maple",unspecified,plant,pending
+usda-fdc-174374,"Lamb, leg, shank half, separable lean and fat, trimmed to 1/8"" fat, choice, raw",raw,animal,pending
+usda-fdc-170082,"Shallots, freeze-dried",dried,plant,pending
+usda-fdc-170419,"Peas, green, raw",raw,plant,pending
+usda-fdc-168599,"Nuts, mixed nuts, dry roasted, with peanuts, with salt added",cooked,plant,pending
+usda-fdc-173599,"Margarine-like shortening, industrial, soy (partially hydrogenated), cottonseed, and soy, principal use flaky pastries",unspecified,plant,pending
+usda-fdc-174193,"Fish, eel, mixed species, raw",raw,animal,pending
+usda-fdc-168299,"Pork, fresh, backribs, separable lean and fat, raw",raw,animal,pending
+usda-fdc-174157,"Beverages, Wine, non-alcoholic",unspecified,plant,pending
+usda-fdc-2727574,"Beef, top sirloin steak, raw",raw,animal,pending
+usda-fdc-168230,"Pork, fresh, loin, whole, separable lean only, raw",raw,animal,pending
+usda-fdc-172796,"Rolls, hamburger or hotdog, plain",unspecified,plant,pending
+usda-fdc-169330,"Broccoli, flower clusters, raw",raw,plant,pending
+usda-fdc-170142,"Vegetables, mixed, frozen, cooked, boiled, drained, with salt",cooked,plant,pending
+usda-fdc-169190,"Pork, ground, 96% lean / 4% fat, raw",raw,animal,pending
+usda-fdc-171740,"Beef, Australian, imported, Wagyu, rib, small end rib steak/roast, boneless, separable lean and fat, Aust. marble score 4/5, raw",raw,animal,pending
+usda-fdc-168219,"Pork, fresh, carcass, separable lean and fat, raw",raw,animal,pending
+usda-fdc-174076,"Bread, paratha, whole wheat, commercially prepared, frozen",unspecified,mixed,pending
+usda-fdc-170919,"Spices, cardamom",unspecified,plant,pending
+usda-fdc-169665,"Toppings, pineapple",unspecified,plant,pending
+usda-fdc-169211,"Bamboo shoots, cooked, boiled, drained, without salt",cooked,plant,pending
+usda-fdc-171411,"Oil, soybean, salad or cooking",unspecified,plant,pending
+usda-fdc-168451,"Radishes, oriental, raw",raw,plant,pending
+usda-fdc-2512380,"Rice, brown, long grain, unenriched, raw",raw,plant,pending
+usda-fdc-170191,"Seeds, sesame butter, paste",unspecified,plant,pending
+usda-fdc-328637,"Cheese, cheddar",unspecified,animal,pending
+usda-fdc-170674,"Sugar, turbinado",unspecified,plant,pending
+usda-fdc-175142,"Fish, sea bass, mixed species, raw",raw,animal,pending
+usda-fdc-2710831,"Kiwifruit (kiwi), green, peeled, raw",raw,plant,pending
+usda-fdc-173944,"Bananas, raw",raw,plant,pending
+usda-fdc-175043,"Leavening agents, yeast, baker's, active dry",unspecified,plant,pending
+usda-fdc-171893,"Beverages, coffee, instant, regular, powder",unspecified,plant,pending
+usda-fdc-2346397,"Oats, whole grain, steel cut",unspecified,plant,pending
+usda-fdc-174175,"Beverages, vegetable and fruit juice blend, 100% juice, with added vitamins A, C, E",unspecified,plant,pending
+usda-fdc-169230,"Garlic, raw",raw,plant,pending
+usda-fdc-168711,"Beef, round, top round, separable lean and fat, trimmed to 1/8"" fat, choice, cooked, pan-fried",cooked,animal,pending
+usda-fdc-169222,"Yardlong bean, raw",raw,plant,pending
+usda-fdc-174030,"Beef, ground, 90% lean meat / 10% fat, raw",raw,animal,pending
+usda-fdc-170575,"Nuts, chestnuts, european, raw, peeled",raw,plant,pending
+usda-fdc-169414,"Seeds, flaxseed",unspecified,plant,pending
+usda-fdc-170848,"Cheese, parmesan, hard",unspecified,animal,pending
+usda-fdc-173230,"Beverages, tea, instant, unsweetened, powder",unspecified,plant,pending
+usda-fdc-168573,"Lemon grass (citronella), raw",raw,plant,pending
+usda-fdc-169717,"Tapioca, pearl, dry",unspecified,plant,pending
+usda-fdc-170066,"Waterchestnuts, chinese, (matai), raw",raw,plant,pending
+usda-fdc-174831,"Beverages, Coconut water, ready-to-drink, unsweetened",unspecified,plant,pending
+usda-fdc-170924,"Spices, curry powder",unspecified,plant,pending
+usda-fdc-169232,"Gourd, white-flowered (calabash), raw",raw,plant,pending
+usda-fdc-169697,"Cornmeal, whole-grain, yellow",unspecified,plant,pending
+usda-fdc-167575,"Ice creams, vanilla",unspecified,mixed,pending
+usda-fdc-168015,"Sweet Potatoes, french fried, crosscut, frozen, unprepared",cooked,plant,pending
+usda-fdc-168574,"Beans, fava, in pod, raw",raw,plant,pending
+usda-fdc-172473,"Soy sauce made from soy and wheat (shoyu), low sodium",unspecified,mixed,pending
+usda-fdc-169250,"Lotus root, raw",raw,plant,pending
+usda-fdc-172410,"Duck, domesticated, meat only, raw",raw,animal,pending
+usda-fdc-168147,Vital wheat gluten,unspecified,plant,pending
+usda-fdc-169640,Honey,unspecified,animal,pending
+usda-fdc-169918,"Oranges, raw, Florida",raw,plant,pending
+usda-fdc-2727585,"Green onion, (scallion), bulb and greens, root removed, raw",raw,plant,pending
+usda-fdc-168154,"Kumquats, raw",raw,plant,pending
+usda-fdc-167748,"Lemon juice from concentrate, canned or bottled",unspecified,plant,pending
+usda-fdc-169435,"Beef, flank, steak, separable lean and fat, trimmed to 0"" fat, choice, cooked, broiled",cooked,animal,pending
+usda-fdc-171618,Blood sausage,unspecified,animal,pending
+usda-fdc-167755,"Raspberries, raw",raw,plant,pending
+usda-fdc-171638,"Meatballs, frozen, Italian style",unspecified,mixed,pending
+usda-fdc-170284,"Barley, pearled, raw",raw,plant,pending
+usda-fdc-168226,"Pork, fresh, leg (ham), shank half, separable lean and fat, raw",raw,animal,pending
+usda-fdc-172400,"Chicken, stewing, meat and skin, raw",raw,animal,pending
+usda-fdc-171983,"Mollusks, whelk, unspecified, raw",raw,animal,pending
+usda-fdc-173696,"Fish, shad, american, raw",raw,animal,pending
+usda-fdc-174281,"Yardlong beans, mature seeds, raw",raw,plant,pending
+usda-fdc-2685568,"Squash, summer, green, zucchini, includes skin, raw",raw,plant,pending
+usda-fdc-169279,"Sauerkraut, canned, solids and liquids",unspecified,plant,pending
+usda-fdc-169336,"Cabbage, common (danish, domestic, and pointed types), stored, raw",raw,plant,pending
+usda-fdc-2727566,"Chicken, drumstick, meat and skin, raw",raw,animal,pending
+usda-fdc-171724,"Currants, zante, dried",dried,plant,pending
+usda-fdc-170567,"Nuts, almonds",unspecified,plant,pending
+usda-fdc-175180,"Crustaceans, shrimp, cooked",cooked,animal,pending

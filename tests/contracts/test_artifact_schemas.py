@@ -10,6 +10,7 @@ from uuid import UUID
 import pytest
 from pydantic import ValidationError
 
+from food_agent_v2.contracts import build as build_contract
 from food_agent_v2.contracts.artifacts import (
     AnswerArtifact,
     AnswerContent,
@@ -30,6 +31,37 @@ AID = UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
 RID = UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
 H1 = "1" * 64
 H2 = "2" * 64
+
+
+def test_fixed_artifact_catalog_is_closed_at_twenty_names() -> None:
+    expected = (
+        "recipe_source_rows",
+        "recipe_classifications",
+        "user_profiles",
+        "ingredient_occurrences",
+        "ingredient_registry",
+        "ingredient_aliases",
+        "ingredient_forms",
+        "ingredient_crosswalk",
+        "recipe_ingredient_relations",
+        "recipe_health_views",
+        "recipe_step_binding_views",
+        "recipe_nutrition_input_views",
+        "recipe_retrieval_build_views",
+        "step_tasks",
+        "nutrition_features",
+        "rag_documents",
+        "health_relation_decisions",
+        "health_relations",
+        "health_relation_coverage",
+        "recipe_dependencies",
+    )
+
+    assert build_contract.FIXED_ARTIFACT_NAMES == expected
+    assert len(build_contract.FIXED_ARTIFACT_NAMES) == 20
+    assert len(set(build_contract.FIXED_ARTIFACT_NAMES)) == 20
+    assert build_contract.FIXED_RECIPE_DEPENDENCY_COUNT == 167
+    assert build_contract.FIXED_RECIPE_BUNDLE_CONTAINS_COUNT == 12
 
 
 def query_plan(**overrides) -> QueryPlanArtifact:

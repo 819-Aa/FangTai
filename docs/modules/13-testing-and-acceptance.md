@@ -75,7 +75,7 @@ D3 不负责：
 | 食材拆分与身份解析 | 单元 | 数量后缀不泄漏到食材身份；审核别名映射稳定；可选/替代食材正确拆分 |
 | 健康关系离线构建 | 单元 | 每条 `constraint_code × ingredient_id` 有唯一审核决定；覆盖记录与健康食材全集精确相等 |
 | 步骤结构化 | 单元 | 原始步骤和结构化步骤逐条对应；未知时长保持 `null` |
-| 营养匹配 | 单元 | 每条匹配有来源/方法/置信度；无 `per_serving` 字段 |
+| 营养匹配 | 单元 | 离线 reference/review 可追溯；运行时无来源/置信度且无 `per_serving` 字段 |
 | RAG 文档生成 | 单元 | `recipe_id` 集合 = 可推荐菜品集合；不含健康字段和营养值 |
 | Qdrant 最小检索验证 | 集成 | 已知菜名查询 Top-1 为自身 |
 | 跨域引用一致性 | 集成 | 用户/菜品/食材/步骤/营养/RAG 无悬空引用 |
@@ -136,8 +136,8 @@ D3 不负责：
 | 任务图依赖 | 单元 | 步骤依赖与实际顺序一致；无环 |
 | 设备互斥 | 单元 | 同 `mutex_key` 步骤不重叠；不同设备可并行 |
 | 烹饪者互斥 | 单元 | 主动操作不重叠 |
-| 置信度分级 | 单元 | 1,935 道菜均有 `overall_confidence` |
-| 严格时间可行性 | 单元 | 全 high 置信度→确定结论；存在 medium/low→`unknown` |
+| 完整任务图 | 单元/门禁 | 1,932 道 eligible 菜均覆盖真实 atom，显式时长不可篡改 |
+| 预计时间可行性 | 单元 | CP-SAT 输出单值 makespan 与布尔可行性；缺图为系统失败 |
 | 菜单调度 | 集成 | makespan ≥ 关键路径；设备互斥正确 |
 | 跨模块 | 契约 | B4 未通过菜品不进入 B5 调度 |
 
@@ -145,11 +145,11 @@ D3 不负责：
 
 | 测试项 | 层级 | 关键断言 |
 |---|---|---|
-| 精确/别名/估算匹配 | 单元 | 三种匹配方法各自产出正确 `confidence` |
+| 营养 all-or-nothing | 单元 | 任一批准前置事实缺失时整菜向量全 null |
 | 未审核估算拒绝 | 单元 | `review_status!=approved` 的映射不进入正式 NutritionProfile |
 | 数量覆盖 | 单元 | 数量缺失→`coverage_discount` 生效 |
 | 标准化评分 | 单元 | 分维度分在 [0,1]；完整可信观测全部同值→0.5；缺失数据→`unavailable` |
-| 置信度折扣 | 单元 | medium→0.7 折扣；low→0.3 折扣；乘法叠加 |
+| 不可用维度重归一化 | 单元 | unavailable 不生成中性分数，其余软目标权重重归一化 |
 | 隔离边界 | 契约 | `per_serving` 不在 B6 输出；营养值不进入 B4；评分不进入回答/SSE/前端 |
 
 ### 6.7 C1 RAG 检索
@@ -256,7 +256,7 @@ D3 不负责：
 | INV-001 最终菜单全员健康校验 | C3 场景测试：FinalValidationArtifact=PASS 后才进入 answer | 场景 |
 | INV-002 RAG 不构成健康结论 | C1 契约测试：RetrievalResult Schema 不含健康字段 | 契约 |
 | INV-003 未审核关系不参与硬排除 | B4 单元测试：`review_status!=approved` 的关系参数被拒绝 | 单元 |
-| INV-004 低置信度营养只软排序 | B6 契约测试：低置信度营养值进入 B4 输入→`NUTRITION_HEALTH_BOUNDARY_VIOLATION` | 契约 |
+| INV-004 营养 all-or-nothing | B1 契约测试：任一前置事实缺失→整菜营养全 null | 契约 |
 | INV-005 回答不改变已验证菜单 | D2 单元测试：回答菜品 ID ⊆ 所选菜单 | 单元 |
 | INV-006 模型不直接修改 State | C3 场景测试：模型提交的 Artifact 中非法 State 字段→`STATE_MUTATION_DENIED` | 场景 |
 | INV-007 必需工具漏调停止 | C3 场景测试：每个角色漏调必需工具→`REQUIRED_TOOL_NOT_CALLED` | 场景 |
@@ -282,7 +282,7 @@ D3 不负责：
 | 所有可推荐菜品食材集合完整，无悬空 Occurrence 引用 | ✅ |
 | 每个 B2 允许的 `constraint_code` 与健康食材全集的审核清单精确相等 | ✅ |
 | 所有生效健康关系的 `review_status=approved` 且 `hard_filter=true` | ✅ |
-| 每条营养匹配有来源/方法/置信度 | ✅ |
+| 离线营养可追溯且运行时无来源/置信度 | ✅ |
 | RAG 文档不含健康字段和营养值 | ✅ |
 | Qdrant 最小检索验证通过 | ✅ |
 | 跨域引用（菜品↔食材↔步骤↔营养↔RAG）无悬空 | ✅ |

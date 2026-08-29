@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
@@ -24,12 +25,130 @@ class RecipeProfileEnrichment:
 
 
 @dataclass(frozen=True)
+class RecipeDependency:
+    parent_recipe_id: int
+    dependency_recipe_id: int
+    relation_type: Literal["requires_component", "uses_program", "bundle_contains"]
+    review_status: Literal["pending", "approved", "modified", "rejected"] = "pending"
+
+
+@dataclass(frozen=True)
 class IngredientConditionDefault:
     recipe_name: str
     choice_group: str
     selected_ingredient: str
     retained_alternatives: tuple[str, ...]
     review_status: Literal["pending", "approved", "modified", "rejected"]
+
+
+def load_recipe_dependencies(
+    path: Path,
+    *,
+    known_recipe_ids: set[int],
+    record_types: Mapping[int, str] | None = None,
+) -> tuple[RecipeDependency, ...]:
+    dependencies: list[RecipeDependency] = []
+    seen: set[tuple[int, int, str]] = set()
+    for line_number, raw_line in enumerate(Path(path).read_text(encoding="utf-8").splitlines(), 1):
+        if not raw_line.strip():
+            continue
+        try:
+            payload = json.loads(raw_line)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"菜品依赖文件第 {line_number} 行不是合法 JSON") from exc
+        parent_recipe_id = int(payload.get("parent_recipe_id", 0))
+        dependency_recipe_id = int(payload.get("dependency_recipe_id", 0))
+        if parent_recipe_id not in known_recipe_ids:
+            raise ValueError(f"菜品依赖引用未知 parent_recipe_id={parent_recipe_id}")
+        if dependency_recipe_id not in known_recipe_ids:
+            raise ValueError(f"菜品依赖引用未知 dependency_recipe_id={dependency_recipe_id}")
+        dependency = RecipeDependency(
+            parent_recipe_id=parent_recipe_id,
+            dependency_recipe_id=dependency_recipe_id,
+            relation_type=payload.get("relation_type", ""),
+            review_status=payload.get("review_status", "pending"),
+        )
+        if dependency.relation_type not in {
+            "requires_component",
+            "uses_program",
+            "bundle_contains",
+        }:
+            raise ValueError(
+                f"菜品依赖 relation_type 非法: {dependency.relation_type}"
+            )
+        if dependency.review_status not in {
+            "pending",
+            "approved",
+            "modified",
+            "rejected",
+        }:
+            raise ValueError(
+                f"菜品依赖 review_status 非法: {dependency.review_status}"
+            )
+        if record_types is not None:
+            parent_type = str(record_types[parent_recipe_id])
+            dependency_type = str(record_types[dependency_recipe_id])
+            if (
+                dependency.relation_type == "uses_program"
+                and dependency_type != "cooking_program"
+            ):
+                raise ValueError(
+                    "uses_program 只能引用 cooking_program: "
+                    f"dependency_recipe_id={dependency_recipe_id}"
+                )
+            if dependency.relation_type == "bundle_contains" and (
+                parent_type != "meal_bundle" or dependency_type != "dish"
+            ):
+                raise ValueError(
+                    "bundle_contains 必须从 meal_bundle 指向 dish: "
+                    f"parent_recipe_id={parent_recipe_id}, "
+                    f"dependency_recipe_id={dependency_recipe_id}"
+                )
+            if (
+                dependency.relation_type == "requires_component"
+                and dependency_type not in {"dish", "preparation"}
+            ):
+                raise ValueError(
+                    "requires_component 只能引用 dish 或 preparation: "
+                    f"dependency_recipe_id={dependency_recipe_id}"
+                )
+        key = (
+            dependency.parent_recipe_id,
+            dependency.dependency_recipe_id,
+            dependency.relation_type,
+        )
+        if key in seen:
+            raise ValueError(
+                "菜品依赖存在重复关系: "
+                f"parent_recipe_id={parent_recipe_id}, "
+                f"dependency_recipe_id={dependency_recipe_id}, "
+                f"relation_type={dependency.relation_type}"
+            )
+        seen.add(key)
+        if dependency.review_status in ("approved", "modified"):
+            dependencies.append(dependency)
+    graph: dict[int, list[int]] = {}
+    for dependency in dependencies:
+        graph.setdefault(dependency.parent_recipe_id, []).append(
+            dependency.dependency_recipe_id
+        )
+    visiting: set[int] = set()
+    visited: set[int] = set()
+
+    def visit(recipe_id: int) -> None:
+        if recipe_id in visiting:
+            raise ValueError(f"菜品依赖存在环: recipe_id={recipe_id}")
+        if recipe_id in visited:
+            return
+        visiting.add(recipe_id)
+        for child_id in graph.get(recipe_id, ()):
+            visit(child_id)
+        visiting.remove(recipe_id)
+        visited.add(recipe_id)
+
+    for parent_recipe_id in graph:
+        visit(parent_recipe_id)
+    return tuple(dependencies)
 
 
 def load_recipe_profile_enrichments(

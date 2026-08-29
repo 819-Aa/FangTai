@@ -7,32 +7,11 @@ Qdrant，并且只返回稳定的公开状态，不向 HTTP 层传播基础设�
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any
 
+from food_agent_v2.contracts.build import FIXED_ARTIFACT_NAMES
 from food_agent_v2.core.config import load_config
-
-EXPECTED_FIXED_ARTIFACT_COUNTS: dict[str, int] = {
-    "health_relation_coverage": 38,
-    "health_relation_decisions": 65854,
-    "health_relations": 985,
-    "ingredient_aliases": 21,
-    "ingredient_crosswalk": 431,
-    "ingredient_forms": 381,
-    "ingredient_occurrences": 17521,
-    "ingredient_registry": 1781,
-    "nutrition_features": 1914,
-    "rag_documents": 1914,
-    "recipe_classifications": 2000,
-    "recipe_health_views": 1914,
-    "recipe_ingredient_relations": 17505,
-    "recipe_nutrition_input_views": 1914,
-    "recipe_retrieval_build_views": 1914,
-    "recipe_source_rows": 2000,
-    "recipe_step_binding_views": 1914,
-    "step_tasks": 1914,
-    "user_profiles": 50,
-}
 
 EXPECTED_RUNTIME_SCHEMA_VERSIONS: dict[str, str] = {
     "rag_documents": "2.0.0",
@@ -51,8 +30,31 @@ class ServiceNotReady(RuntimeError):
         super().__init__(self.code)
 
 
+def _decode_json_object(raw: object, field_name: str) -> dict[str, Any]:
+    if raw is None:
+        raise RuntimeError(f"{field_name} is required")
+    if isinstance(raw, Mapping):
+        decoded = dict(raw)
+    else:
+        if isinstance(raw, (bytes, bytearray)):
+            try:
+                raw = raw.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                raise RuntimeError(f"invalid {field_name}") from exc
+        if not isinstance(raw, str):
+            raise RuntimeError(f"{field_name} must be a JSON object")
+        try:
+            decoded = json.loads(raw)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(f"invalid {field_name}") from exc
+        if not isinstance(decoded, Mapping):
+            raise RuntimeError(f"{field_name} must be a JSON object")
+        decoded = dict(decoded)
+    return decoded
+
+
 def mysql_fixed_data_probe() -> dict[str, Any]:
-    """核对唯一 ready 构建及其完整的 19 类固定产物。"""
+    """核对唯一 ready 构建及其 manifest-bound 固定产物。"""
     import pymysql
 
     cfg = load_config().mysql
@@ -71,40 +73,62 @@ def mysql_fixed_data_probe() -> dict[str, Any]:
             read_timeout=10,
         )
         cursor = connection.cursor()
-        cursor.execute("SELECT build_id, schema_versions FROM data_builds WHERE status='ready'")
+        cursor.execute(
+            "SELECT build_id, schema_versions, artifact_counts FROM data_builds "
+            "WHERE status='ready'"
+        )
         ready_rows = cursor.fetchall()
         if len(ready_rows) != 1:
             raise RuntimeError("unique ready build required")
-        build_id = str(ready_rows[0][0])
-        if not build_id:
+        raw_build_id = ready_rows[0][0]
+        if (
+            type(raw_build_id) is not str
+            or not raw_build_id
+            or raw_build_id != raw_build_id.strip()
+        ):
             raise RuntimeError("ready build identity required")
-        raw_schema_versions = ready_rows[0][1]
-        if isinstance(raw_schema_versions, (bytes, bytearray)):
-            raw_schema_versions = raw_schema_versions.decode("utf-8")
-        schema_versions = (
-            raw_schema_versions
-            if isinstance(raw_schema_versions, dict)
-            else json.loads(raw_schema_versions)
-        )
+        build_id = raw_build_id
+        schema_versions = _decode_json_object(ready_rows[0][1], "schema_versions")
         runtime_schema_versions = {
             name: schema_versions.get(name) for name in EXPECTED_RUNTIME_SCHEMA_VERSIONS
         }
         if runtime_schema_versions != EXPECTED_RUNTIME_SCHEMA_VERSIONS:
             raise RuntimeError("runtime artifact schema versions do not match V2 contract")
 
+        expected_counts = _decode_json_object(ready_rows[0][2], "artifact_counts")
+        if set(expected_counts) != set(FIXED_ARTIFACT_NAMES):
+            raise RuntimeError("artifact_counts keys do not match fixed artifact catalog")
+        if any(type(count) is not int or count < 0 for count in expected_counts.values()):
+            raise RuntimeError("artifact_counts values must be non-negative integers")
+
         cursor.execute(
             "SELECT artifact_name, COUNT(*) FROM fixed_artifact_records "
             "WHERE build_id=%s GROUP BY artifact_name",
             (build_id,),
         )
-        actual = {str(name): int(count) for name, count in cursor.fetchall()}
-        if actual != EXPECTED_FIXED_ARTIFACT_COUNTS:
+        actual: dict[str, int] = {}
+        for raw_name, raw_count in cursor.fetchall():
+            if (
+                type(raw_name) is not str
+                or not raw_name
+                or raw_name != raw_name.strip()
+                or raw_name not in FIXED_ARTIFACT_NAMES
+                or type(raw_count) is not int
+                or raw_count < 0
+                or raw_name in actual
+            ):
+                raise RuntimeError("invalid fixed artifact record")
+            actual[raw_name] = raw_count
+        if actual != expected_counts:
             raise RuntimeError("fixed artifact counts do not match approved manifest")
+        recipe_count = expected_counts["recipe_retrieval_build_views"]
+        if recipe_count <= 0:
+            raise RuntimeError("manifest retrieval count must be positive")
         return {
             "status": "ready",
             "build_id": build_id,
-            "artifact_count": len(actual),
-            "recipe_count": actual["recipe_retrieval_build_views"],
+            "artifact_count": len(FIXED_ARTIFACT_NAMES),
+            "recipe_count": recipe_count,
             "runtime_schema_versions": runtime_schema_versions,
         }
     finally:
@@ -162,16 +186,27 @@ def check_readiness(
 
     try:
         mysql = mysql_probe()
-        build_id = str(mysql["build_id"])
-        recipe_count = int(mysql["recipe_count"])
-        artifact_count = int(mysql["artifact_count"])
-        runtime_schema_versions = dict(mysql["runtime_schema_versions"])
-        if not build_id or recipe_count != EXPECTED_FIXED_ARTIFACT_COUNTS[
-            "recipe_retrieval_build_views"
-        ] or artifact_count != len(EXPECTED_FIXED_ARTIFACT_COUNTS):
+        raw_build_id = mysql["build_id"]
+        raw_recipe_count = mysql["recipe_count"]
+        raw_artifact_count = mysql["artifact_count"]
+        raw_runtime_schema_versions = mysql["runtime_schema_versions"]
+        if (
+            type(raw_build_id) is not str
+            or not raw_build_id
+            or raw_build_id != raw_build_id.strip()
+            or type(raw_recipe_count) is not int
+            or raw_recipe_count <= 0
+            or type(raw_artifact_count) is not int
+            or raw_artifact_count != len(FIXED_ARTIFACT_NAMES)
+            or type(raw_runtime_schema_versions) is not dict
+        ):
             raise RuntimeError("invalid fixed data identity")
+        runtime_schema_versions = raw_runtime_schema_versions
         if runtime_schema_versions != EXPECTED_RUNTIME_SCHEMA_VERSIONS:
             raise RuntimeError("invalid runtime artifact schema versions")
+        build_id = raw_build_id
+        recipe_count = raw_recipe_count
+        artifact_count = raw_artifact_count
         checks["mysql"] = {
             "status": "ready",
             "artifact_count": artifact_count,
@@ -192,7 +227,8 @@ def check_readiness(
     else:
         try:
             qdrant = qdrant_probe(build_id, recipe_count)
-            if int(qdrant["point_count"]) != recipe_count:
+            point_count = qdrant["point_count"]
+            if type(point_count) is not int or point_count != recipe_count:
                 raise RuntimeError("qdrant point count mismatch")
             checks["qdrant"] = {"status": "ready", "point_count": recipe_count}
         except Exception:

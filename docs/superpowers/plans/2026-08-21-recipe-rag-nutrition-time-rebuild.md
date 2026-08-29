@@ -682,7 +682,7 @@
 
   cache key 严格为 `sha256(recipe_id, ordered_atoms_hash, prompt_version, model_id)`。cache 是可再生构建缓存，不是事实输入，不加入 source manifest。
 
-  CLI 增加 `food-agent-v2 data-review --kind time-graphs --output <jsonl>`：批量生成或复用 `data/cache/recipe_time_graphs.jsonl`，只把程序或 verifier 判定的冲突写入 output，不直接发布 Artifact。普通 `data-rebuild` 读取并验证 cache，不在构建事务中临时发起 1914 道菜的网络请求。
+  CLI 增加 `food-agent-v2 data-review --kind time-graphs --output <jsonl>`：批量生成或复用 `data/cache/recipe_time_graphs.jsonl`，只把程序或 verifier 判定的冲突写入 output，不直接发布 Artifact。普通 `data-rebuild` 读取并验证 cache，不在构建事务中临时发起 1932 道菜的网络请求。
 
 - [ ] **Step 4: 约束生成器和 verifier**
 

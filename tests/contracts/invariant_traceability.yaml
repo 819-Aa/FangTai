@@ -17,13 +17,16 @@ INV-001:
     - "tests/test_b2_b4_health.py::TestB4HealthEngine::test_validate_selected_menu"
 
 INV-002:
-  rule: RAG 结果不构成健康安全结论
-  error_codes: [RAG_HEALTH_AUTHORITY_VIOLATION]
+  rule: 原始标签必须完整投影，餐次硬过滤不得放宽，RAG 结果不构成健康安全结论
+  error_codes: [RAG_LABEL_PROJECTION_FAILED, MEAL_FILTER_RELAXED, RAG_HEALTH_AUTHORITY_VIOLATION]
   checkpoints:
-    - food_agent_v2.c1::RetrievalResult
-    - food_agent_v2.c3::query_understanding_post_check
+    - food_agent_v2.b1.consumer_views::recipe_facts_from_source
+    - food_agent_v2.b1.quality_gates::G12_RAG_LABEL_AND_MEAL_COVERAGE
+    - food_agent_v2.c1::RecipeRetrievalService.retrieve
   tests:
-    - "tests/test_invariants.py::TestC1TimeBoost::test_trigger_and_boost"
+    - "tests/b1/test_recipe_profile_enrichment.py::test_raw_labels_are_fully_projected_into_structured_facets"
+    - "tests/b1/test_quality_gate_authority.py::test_g12_rejects_downstream_meal_tags_that_extend_raw_meals"
+    - "tests/c1/test_full_hybrid_retrieval.py::TestFullHybridRetrieval::test_hard_population_meal_and_exclusion_filter_is_never_relaxed"
 
 INV-003:
   rule: 未审核健康关系不得参与硬排除
@@ -35,13 +38,13 @@ INV-003:
     - "tests/test_b2_b4_health.py::TestB4Invariants::test_inv003_no_pending_relations"
 
 INV-004:
-  rule: 低置信度营养只参与软排序
-  error_codes: [NUTRITION_CONFIDENCE_SCOPE_VIOLATION]
+  rule: 任一营养前置事实缺失时整道菜营养必须不可用且不得发布部分数值
+  error_codes: [NUTRITION_ALL_OR_NOTHING]
   checkpoints:
-    - food_agent_v2.b6::NutritionScoreDecomposition
-    - food_agent_v2.c2::soft_objectives
+    - food_agent_v2.b1.nutrition_calculator::calculate_raw_recipe_nutrition
+    - food_agent_v2.b1.quality_gates::G14_NUTRITION_ALL_OR_NOTHING
   tests:
-    - "tests/test_invariants.py::TestC2::test_slot_constraint"
+    - 'tests/b1/test_raw_nutrition_calculator.py::test_any_missing_prerequisite_returns_no_partial_nutrition[\u5c11\u8bb8-True-True-True-quantity_unapproved]'
 
 INV-005:
   rule: 回答不得改变已验证菜单
@@ -70,13 +73,17 @@ INV-007:
     - "tests/contracts/test_receipt_binding.py::TestReceiptBinding::test_receipt_rejected_for_different_request"
 
 INV-008:
-  rule: 固定原始数据必须经过完整离线处理，在线不得读取原始文件
-  error_codes: [DATA_PIPELINE_VALIDATION_FAILED]
+  rule: 固定数据必须完整离线验证，运行时 Artifact 不得含来源/置信度，MySQL 与 Qdrant 必须发布同一 build 和菜品集合
+  error_codes: [DATA_PIPELINE_VALIDATION_FAILED, RUNTIME_FIELD_BOUNDARY_VIOLATION, STORE_BUILD_PARITY_FAILED]
   checkpoints:
     - food_agent_v2.contracts.build::verify_source_file
     - food_agent_v2.b1::quality_gates
+    - food_agent_v2.b1.quality_gates::G13_RAG_RUNTIME_FIELD_BOUNDARY
+    - food_agent_v2.b1.seed_writer::initialize_fixed_data
   tests:
     - "tests/contracts/test_build_manifest.py::TestVerifySourceFile::test_real_source_passes"
+    - "tests/b1/test_step_authority.py::test_build_view_publishes_atoms_without_runtime_authority_metadata"
+    - "tests/integration/test_mysql_qdrant_parity.py::test_successful_initialization_has_mysql_qdrant_recipe_parity"
 
 INV-009:
   rule: 核心约束不能在上下文压缩中丢失
@@ -129,12 +136,16 @@ INV-014:
     - "tests/test_invariants.py::TestD1::test_state_persist_restore"
 
 INV-015:
-  rule: 营养估算不得参与健康硬筛选
-  error_codes: [NUTRITION_HEALTH_BOUNDARY_VIOLATION]
+  rule: B4 不读取营养/时间，B5 与 B6 只能消费 B4 的安全菜品集合
+  error_codes: [NUTRITION_HEALTH_BOUNDARY_VIOLATION, UNSAFE_RECIPE_CONSUMER_BOUNDARY_VIOLATION]
   checkpoints:
     - food_agent_v2.b4::health_hard_filter
+    - food_agent_v2.b1.quality_gates::G17_B4_B5_B6_CONSUMER_BOUNDARY
+    - food_agent_v2.c2::MenuPlanner
   tests:
     - "tests/test_b2_b4_health.py::TestB4Invariants::test_nutrition_not_in_b4_input"
+    - "tests/c2/test_menu_hard_constraints.py::TestMenuHardConstraints::test_locked_recipe_not_in_safe_no_feasible"
+    - "tests/c2/test_deterministic_plans.py::TestDeterministicPlans::test_explicit_nutrition_goals_are_scored_only_with_the_b4_safe_set"
 
 INV-016:
   rule: 永久健康硬约束不能被对话覆盖
@@ -182,14 +193,17 @@ INV-020:
     - "tests/test_b1_pipeline.py::TestIngredientRegistry::test_registry_ids_stable"
 
 INV-021:
-  rule: 严格时间结论必须有高权威确定性证据
-  error_codes: [STRICT_TIME_INDETERMINATE, NO_FEASIBLE_MENU, STRICT_TIME_AUTHORITY_VIOLATION]
+  rule: 每个 eligible 菜品必须有 source-authoritative 的完整合法任务图，在线时间结果只有预计单值和布尔可行性
+  error_codes: [TIME_GRAPH_INCOMPLETE, TIME_GRAPH_INVALID, NO_FEASIBLE_MENU]
   checkpoints:
-    - food_agent_v2.b5::MenuScheduleResult
-    - food_agent_v2.c2::strict_time_filter
-    - food_agent_v2.contracts.status::strict_time_is_feasible
+    - food_agent_v2.b1.quality_gates::G16_TIME_GRAPH_COMPLETE_AND_ACYCLIC
+    - food_agent_v2.b1.time_graph_profiler::validate_time_graph
+    - food_agent_v2.b5.scheduler::schedule_task_graphs
   tests:
-    - "tests/contracts/test_artifact_schemas.py::TestStrictTime::test_unknown_not_truthy"
+    - "tests/b1/test_quality_gate_authority.py::test_g16_rejects_equal_count_atom_substitution"
+    - "tests/b1/test_quality_gate_authority.py::test_g16_rejects_locked_explicit_duration_tampering"
+    - "tests/b5/test_strict_time_semantics.py::test_load_rejects_incomplete_time_graph"
+    - "tests/contracts/test_artifact_schemas.py::TestV2QueryAndTimeContracts::test_estimated_time_is_a_boolean_with_one_makespan"
 
 INV-022:
   rule: 不可用的软证据不能伪装为中性分数

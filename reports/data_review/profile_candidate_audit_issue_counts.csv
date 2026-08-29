@@ -1,0 +1,12 @@
+﻿issue_code,category,priority,scope,count,overlap_allowed
+MEAL_MODEL_ONLY,餐次完全由模型生成,P1,单道菜,199,是
+MEAL_ADDITION_ON_LABELED,模型扩展已有餐次,P1,单道菜,141,是
+NON_DISH_PROFILE,非单道菜仍生成画像,P0,非单道菜,87,是
+REGULAR_MEAL_ON_DESSERT_DRINK,点心/甜品/饮品带正餐,P0,单道菜,73,是
+TASTE_LIGHT_SPICY_CONFLICT,清淡与辣味并存,P1,单道菜,60,是
+MEAL_TAGS_4_PLUS,4个及以上餐次,P0,单道菜,51,是
+NIGHT_SNACK_MODEL_ADDED,模型新增夜宵,P0,单道菜,46,是
+TASTE_TAGS_5_PLUS,5个及以上口味,P1,单道菜,23,是
+AFTERNOON_TEA_ON_MEAL_COMPONENT,正餐组件带下午茶,P0,单道菜,17,是
+CUISINE_TAGS_3_PLUS,3个及以上菜系,P2,单道菜,11,是
+DISH_TYPE_TAGS_3_PLUS,3个及以上菜品类型,P2,单道菜,6,是

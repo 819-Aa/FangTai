@@ -29,7 +29,7 @@ C3 不实现任何业务算法——健康审查由 B4 完成、菜单规划由 
 - 循环上限：召回扩展最多 1 次、最终健康校验失败后重新规划最多 1 次、统一审查定向修订最多 1 次、复审最多 1 次。所有计数值保存在 WorkflowState，模型不能修改。
 - C3 不实现 LangGraph 的具体适配层（该层属于基础设施适配器），但定义工作流必须遵守的状态结构、转换条件和校验规则。
 - 当前节点由 WorkflowState + 角色策略决定；下一条边由结构化 Artifact 及校验结果决定。
-- QueryPlanArtifact 中的排除项须区分 `health_exclusions`（由 B2 处理）和 `preference_exclusions`（由 C1 处理）；具体的 Schema 字段由 QueryPlanArtifact 的正式 Schema 定义，C3 在 query_understanding 节点的后置校验中确保两者不混入对方的处理路径。
+- `QueryPlanArtifact` v2 将 `health_exclusions` 交给 B2，将 `exclude_ingredients` 交给 C1；meal/population/exclusion 硬过滤不得放宽。B4 先产生 safe 集合，C2 才能调用 B5/B6；时间结果为预计单值与布尔可行性，固定构建缺图走系统失败。
 
 ## 3. 职责
 

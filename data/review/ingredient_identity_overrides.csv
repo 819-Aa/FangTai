@@ -335,6 +335,7 @@ source_key,operation,target_ingredient_ids,reason_code,form,review_status,review
 腰果碎,merge,742,processing_variant,碎,approved,project_owner,2026-08-09
 艾草泥,merge,1440,processing_variant,泥,approved,project_owner,2026-08-09
 芝士,merge,1242,synonym,,approved,project_owner,2026-08-09
+芝麻鱼,merge,66,synonym,,approved,project_owner,2026-08-27
 芝士片,merge,429,processing_variant,片,approved,project_owner,2026-08-09
 芝士碎,merge,429,processing_variant,碎,approved,project_owner,2026-08-09
 花椒粒,merge,283,processing_variant,粒,approved,project_owner,2026-08-09

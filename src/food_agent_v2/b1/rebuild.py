@@ -48,6 +48,7 @@ from food_agent_v2.b1.recipe_classifier import (
 from food_agent_v2.b1.review_inputs import (
     apply_condition_defaults,
     load_ingredient_condition_defaults,
+    load_recipe_dependencies,
     load_recipe_profile_enrichments,
 )
 from food_agent_v2.b1.source_manifest import (
@@ -64,6 +65,7 @@ CLASSIFICATION_OVERRIDES = PROJECT_ROOT / "data" / "review" / "recipe_classifica
 INGREDIENT_OVERRIDES = PROJECT_ROOT / "data" / "review" / "ingredient_identity_overrides.csv"
 HEALTH_DECISIONS = PROJECT_ROOT / "data" / "review" / "health_relation_decisions.csv"
 RECIPE_PROFILE_ENRICHMENTS = PROJECT_ROOT / "data" / "review" / "recipe_profile_enrichment.jsonl"
+RECIPE_DEPENDENCIES = PROJECT_ROOT / "data" / "review" / "recipe_dependencies.jsonl"
 NUTRITION_USAGE_DECISIONS = (
     PROJECT_ROOT / "data" / "review" / "ingredient_nutrition_usage_decisions.csv"
 )
@@ -249,7 +251,20 @@ def prepare_reviewed_consumer_inputs(rows, classifications, occurrences):
         RECIPE_PROFILE_ENRICHMENTS,
         known_recipe_ids={row.recipe_id for row in rows},
     )
-    facts = recipe_facts_from_source(rows, classifications, enrichments)
+    dependencies = load_recipe_dependencies(
+        RECIPE_DEPENDENCIES,
+        known_recipe_ids={row.recipe_id for row in rows},
+        record_types={
+            classification.recipe_id: classification.record_type.value
+            for classification in classifications
+        },
+    )
+    facts = recipe_facts_from_source(
+        rows,
+        classifications,
+        enrichments,
+        dependencies,
+    )
     condition_defaults = load_ingredient_condition_defaults(
         INGREDIENT_CONDITION_DEFAULTS,
         known_recipe_names={fact.name for fact in facts},
@@ -259,7 +274,7 @@ def prepare_reviewed_consumer_inputs(rows, classifications, occurrences):
         recipe_names={fact.recipe_id: fact.name for fact in facts},
         decisions=condition_defaults,
     )
-    return facts, reviewed_occurrences
+    return facts, reviewed_occurrences, dependencies
 
 
 def build_fixed_data_staging(
@@ -328,7 +343,7 @@ def build_fixed_data_staging(
         _read_jsonl(t06 / "ingredient_registry.jsonl"),
         _read_jsonl(t06 / "ingredient_aliases.jsonl"),
     )
-    recipe_facts, occurrence_facts = prepare_reviewed_consumer_inputs(
+    recipe_facts, occurrence_facts, recipe_dependencies = prepare_reviewed_consumer_inputs(
         rows,
         tuple(classifications),
         occurrence_facts_from_records(_read_jsonl(t06 / "ingredient_occurrences.jsonl")),
@@ -370,6 +385,15 @@ def build_fixed_data_staging(
         t07,
         edible_fraction_decisions=edible_fraction_decisions,
     )
+    recipe_dependencies_path = _write_jsonl(
+        t07 / "recipe_dependencies.jsonl",
+        tuple(asdict(dependency) for dependency in recipe_dependencies),
+    )
+    _attach_build_identity(
+        recipe_dependencies_path,
+        build_id=build_id_text,
+        manifest_hash=manifest_hash,
+    )
 
     t08_report = build_health_relation_stage(
         ingredient_registry_path=t06 / "ingredient_registry.jsonl",
@@ -408,6 +432,7 @@ def build_fixed_data_staging(
         "step_tasks": t07 / "step_time_profiles.jsonl",
         "nutrition_features": t07 / "nutrition_reference_views.jsonl",
         "rag_documents": t07 / "rag_documents.jsonl",
+        "recipe_dependencies": recipe_dependencies_path,
         "health_relation_decisions": t08 / "health_relation_decisions.jsonl",
         "health_relations": t08 / "health_relations.jsonl",
         "health_relation_coverage": t08 / "health_relation_coverage.jsonl",

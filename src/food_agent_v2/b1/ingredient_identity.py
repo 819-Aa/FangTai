@@ -10,7 +10,7 @@
 身份 id 按源首次出现顺序确定性分配（R-016）。数量/单位/处理语不进入
 标准名（解析层剥离）；合法数字名（T55面粉/80头干瑶柱/100%纯可可）保留。
 质量门禁：qty 泄漏=0、unresolved=0、alias 唯一、类别/食材族覆盖阈值、
-rejected 不合并、无幽灵身份/悬空引用。
+rejected 不合并、注册表来源聚合与最终关系一致、无幽灵身份/悬空引用。
 """
 
 from __future__ import annotations
@@ -613,6 +613,7 @@ _SYNONYMS: dict[str, str] = {
     "食盐": "盐",
     "蒜头": "蒜",
     "麻油": "芝麻油",
+    "芝麻鱼": "芝麻油",
     "芝士": "奶酪",
     "乳酪": "奶酪",
     "马苏里拉芝士": "马苏里拉奶酪",
@@ -712,6 +713,13 @@ def enforce_quality_gates(gates: dict, *, registry_size: int) -> None:
     if gates["dangling_reference_count"]:
         raise IngredientIdentityError(
             "DANGLING_REFERENCE", f"悬空引用 {gates['dangling_reference_count']} 项"
+        )
+    if gates["registry_provenance_mismatch_count"]:
+        count = gates["registry_provenance_mismatch_count"]
+        ids = gates["registry_provenance_mismatch_ids"]
+        raise IngredientIdentityError(
+            "REGISTRY_PROVENANCE_MISMATCH",
+            f"注册表来源聚合与最终关系不一致 {count} 项: {ids}",
         )
 
 
@@ -970,10 +978,8 @@ def rebuild_ingredient_identities(
                 "family_id": None,
                 "family_name": _assign_family(name),
                 "review_status": "pending",
-                "occurrence_count": evidence.get(name, {}).get("occurrence_count", 0),
-                "appears_in_recipes": sorted(
-                    {o["recipe_id"] for o in occurrences if o["name_clean"] == name}
-                ),
+                "occurrence_count": 0,
+                "appears_in_recipes": [],
             }
         )
 
@@ -1061,6 +1067,20 @@ def rebuild_ingredient_identities(
             }
         )
 
+    relation_occurrence_counts: dict[int, int] = {}
+    relation_recipe_ids: dict[int, set[int]] = {}
+    for relation in recipe_ingredient_relations:
+        ingredient_id = int(relation["ingredient_id"])
+        recipe_id = int(relation["recipe_id"])
+        relation_occurrence_counts[ingredient_id] = (
+            relation_occurrence_counts.get(ingredient_id, 0) + 1
+        )
+        relation_recipe_ids.setdefault(ingredient_id, set()).add(recipe_id)
+    for entry in registry:
+        ingredient_id = int(entry["ingredient_id"])
+        entry["occurrence_count"] = relation_occurrence_counts.get(ingredient_id, 0)
+        entry["appears_in_recipes"] = sorted(relation_recipe_ids.get(ingredient_id, set()))
+
     # 别名：仅真实别名（synonym/merge 源 -> 目标），不含自映射。
     ingredient_aliases = []
     for source_key, target_id in resolved.items():
@@ -1123,6 +1143,23 @@ def rebuild_ingredient_identities(
         for rel in recipe_ingredient_relations
         if rel["ingredient_id"] not in registry_ids
     ]
+    expected_relation_occurrence_counts: dict[int, int] = {}
+    expected_relation_recipe_ids: dict[int, set[int]] = {}
+    for relation in recipe_ingredient_relations:
+        ingredient_id = int(relation["ingredient_id"])
+        recipe_id = int(relation["recipe_id"])
+        expected_relation_occurrence_counts[ingredient_id] = (
+            expected_relation_occurrence_counts.get(ingredient_id, 0) + 1
+        )
+        expected_relation_recipe_ids.setdefault(ingredient_id, set()).add(recipe_id)
+    registry_provenance_mismatch_ids = [
+        int(entry["ingredient_id"])
+        for entry in registry
+        if entry["occurrence_count"]
+        != expected_relation_occurrence_counts.get(int(entry["ingredient_id"]), 0)
+        or entry["appears_in_recipes"]
+        != sorted(expected_relation_recipe_ids.get(int(entry["ingredient_id"]), set()))
+    ]
 
     gates = {
         "qty_leakage_count": len(leakage),
@@ -1135,6 +1172,8 @@ def rebuild_ingredient_identities(
         "family_threshold": _FAMILY_COVERAGE_THRESHOLD,
         "rejected_not_merged": not any(k in rejected for k in merged_keys),
         "dangling_reference_count": len(dangling),
+        "registry_provenance_mismatch_count": len(registry_provenance_mismatch_ids),
+        "registry_provenance_mismatch_ids": registry_provenance_mismatch_ids,
     }
 
     # 硬门禁：质量违约即抛错。

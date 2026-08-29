@@ -36,6 +36,7 @@ _BUILD_INPUT_PATHS = (
     "data/review/ingredient_identity_overrides.csv",
     "data/review/health_relation_decisions.csv",
     "data/review/recipe_profile_enrichment.jsonl",
+    "data/review/recipe_dependencies.jsonl",
     "data/review/ingredient_condition_defaults.csv",
     "data/review/ingredient_measure_rules.csv",
     "data/review/ingredient_edible_fraction_rules.csv",

@@ -26,6 +26,9 @@ class RagBuildDocument(BaseModel):
     cooking_method_tags: tuple[str, ...]
     texture_tags: tuple[str, ...]
     scenario_tags: tuple[str, ...]
+    dependency_recipe_ids: tuple[int, ...]
+    dependency_names: tuple[str, ...]
+    dependency_relation_types: tuple[str, ...]
     ingredient_names: tuple[str, ...]
     ingredient_ids: tuple[int, ...]
     catalog_eligibility: str
@@ -52,6 +55,7 @@ def build_rag_documents_from_views(
                 " ".join(view.cooking_method_tags),
                 " ".join(view.texture_tags),
                 " ".join(view.scenario_tags),
+                " ".join(view.dependency_names),
             )
             if item
         )
@@ -71,6 +75,9 @@ def build_rag_documents_from_views(
                 cooking_method_tags=view.cooking_method_tags,
                 texture_tags=view.texture_tags,
                 scenario_tags=view.scenario_tags,
+                dependency_recipe_ids=view.dependency_recipe_ids,
+                dependency_names=view.dependency_names,
+                dependency_relation_types=view.dependency_relation_types,
                 ingredient_names=view.ingredient_display_names,
                 ingredient_ids=view.ingredient_ids,
                 catalog_eligibility=view.catalog_eligibility,

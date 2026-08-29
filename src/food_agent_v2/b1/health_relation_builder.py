@@ -119,6 +119,7 @@ CONSTRAINT_INGREDIENT_PATTERNS: dict[str, list[str]] = {
         "虾",
         "蟹",
         "贝",
+        "小青龙",
         "鱿鱼",
         "章鱼",
         "墨鱼",
@@ -130,14 +131,19 @@ CONSTRAINT_INGREDIENT_PATTERNS: dict[str, list[str]] = {
         "海胆",
         "海蜇",
         "螺",
+        "鲍",
         "鲍鱼",
+        "牡蛎",
         "扇贝",
         "青口",
         "花甲",
+        "带子",
+        "瑶柱",
         "龙虾",
         "基围虾",
         "对虾",
         "明虾",
+        "大头虾",
         "皮皮虾",
         "小龙虾",
         "鳌虾",
@@ -146,9 +152,14 @@ CONSTRAINT_INGREDIENT_PATTERNS: dict[str, list[str]] = {
         "鳕鱼",
         "鲈鱼",
         "鲳鱼",
+        "银鲳",
         "带鱼",
         "黄鱼",
+        "河鳗",
         "鳗鱼",
+        "白鳝",
+        "泥鳅",
+        "银鱼柳",
         "鲶鱼",
         "石斑",
         "多宝鱼",
@@ -493,6 +504,43 @@ CONSTRAINT_INGREDIENT_PATTERNS.update(
     }
 )
 
+# 2026-08-27 独立审核确认的过敏原漏检：仅限下列约束代码的完整规范名。
+# 这不是子串词典；不得据此推广“面”“奶粉”“豆豉”等宽泛名称规则。
+_CONFIRMED_ALLERGY_EXACT_NAMES: dict[str, frozenset[str]] = {
+    "allergy_tree_nut": frozenset({"坚果", "板栗", "板栗仁", "混合坚果", "板栗肉", "综合坚果"}),
+    "allergy_dairy": frozenset({"奶粉", "三花淡奶", "脱脂奶粉", "淡奶", "全脂奶粉"}),
+    "allergy_egg": frozenset({"蛋清", "全蛋", "水煮蛋", "无菌蛋", "鹅蛋", "松花蛋", "鸽蛋"}),
+    "allergy_fish": frozenset({"河鳗", "泥鳅", "银鲳", "白鳝"}),
+    "allergy_shellfish": frozenset({"瑶柱", "六头鲍", "澳洲带子", "南日鲍", "带子肉", "80头干瑶柱"}),
+    "allergy_soy": frozenset({
+        "香干", "豆豉", "豆豉酱", "豆豉辣椒油", "千张结", "千张", "豆豉油辣椒", "素鸡",
+        "老干妈豆豉", "豆豉鲮鱼罐头", "风味豆豉酱", "香辣豆豉酱", "黑豆豉", "虾米豆豉酱",
+        "老干妈风味豆豉",
+    }),
+    "allergy_wheat": frozenset({
+        "蝴蝶面", "低筋粉", "烧麦皮", "金像高筋粉", "挂面", "澄面", "中筋粉", "高筋粉",
+        "面团", "低粉", "全麦粉", "高粉", "低筋小麦粉", "意大利细面", "手抓饼", "澄粉",
+        "长意面", "老油条碎", "意面", "意大利面", "小麦粉", "面饼", "印度飞饼皮", "油条",
+        "方便面", "面筋", "中粉",
+    }),
+}
+
+# 2026-08-28 项目负责人确认的高置信过敏原关系：仅限下列完整规范名。
+# 这是一份独立的封闭名单；不得据此推广“奶粉”“百叶”“豆豉油”等宽泛名称规则。
+_HIGH_CONFIDENCE_ALLERGY_EXACT_NAMES: dict[str, frozenset[str]] = {
+    "allergy_tree_nut": frozenset({"榛果糖浆"}),
+    "allergy_dairy": frozenset({"婴儿奶粉"}),
+    "allergy_shrimp": frozenset({"小青龙"}),
+    "allergy_fish": frozenset({"海参斑"}),
+    "allergy_soy": frozenset({"蒸鱼豆豉油", "厚百叶", "黑豆", "薄百叶"}),
+}
+
+_CONSERVATIVE_ALLERGY_EXACT_NAMES = {
+    "allergy_dairy": frozenset({"液态酥油", "片状酥油"}),
+    "allergy_soy": frozenset({"豆瓣酱", "红油豆瓣酱", "辣豆瓣酱", "六月鲜豆瓣酱", "大豆油"}),
+    "allergy_wheat": frozenset({"甜面酱", "蛋挞皮", "蛋挞胚", "郫县豆瓣", "郫县豆瓣酱"}),
+}
+
 _FDA_ALLERGEN_EVIDENCE = (
     "https://www.fda.gov/food/buy-store-serve-safe-food/food-allergies-what-you-need-know"
 )
@@ -560,11 +608,12 @@ CONSTRAINT_EVIDENCE_REFS = {
 # 经真实数据核对，含这些字的可食用食材几乎全部是真实的对应海鲜，
 # 只需排除少量误判（蟹味菇/贝贝南瓜/川贝/鱼腥草）。
 # 其余单字关键词（咸/辣/生/糖/腌/腊等）继续使用保守词边界匹配，避免误伤生菜、生姜、生抽等。
-BROAD_SINGLE_CHARS = {"虾", "蟹", "贝", "鱼", "蛤", "蚝", "蛏", "蚌", "螺"}
+BROAD_SINGLE_CHARS = {"虾", "蟹", "贝", "鱼", "蛤", "蚝", "蛏", "蚌", "螺", "鲍"}
 _SINGLE_CHAR_GUARDS = {
     "蟹": lambda n: "菇" in n or "菌" in n,  # 蟹味菇/海鲜菇：蘑菇不是蟹
     "贝": lambda n: "贝贝南瓜" in n or "川贝" in n,  # 贝贝南瓜/川贝：非贝类
     "鱼": lambda n: "腥草" in n,  # 鱼腥草：草本非鱼
+    "鲍": lambda n: "菇" in n,  # 杏鲍菇：蘑菇不是鲍鱼
     "蚝": lambda n: "素蚝油" in n,  # 素蚝油：素食调味汁，不含蚝
     "虾": lambda n: False,
     "蛤": lambda n: False,
@@ -759,6 +808,12 @@ def _relation_name_guarded(constraint_code: str, name: str) -> bool:
 def _matching_patterns(code: str, name: str, patterns: list[str]) -> tuple[str, ...]:
     if _relation_name_guarded(code, name):
         return ()
+    if name in _CONSERVATIVE_ALLERGY_EXACT_NAMES.get(code, frozenset()):
+        return (f"exact_name:{name}",)
+    if name in _HIGH_CONFIDENCE_ALLERGY_EXACT_NAMES.get(code, frozenset()):
+        return (f"exact_name:{name}",)
+    if name in _CONFIRMED_ALLERGY_EXACT_NAMES.get(code, frozenset()):
+        return (f"exact_name:{name}",)
     return tuple(pattern for pattern in patterns if _ingredient_matches_pattern(name, [pattern]))
 
 

@@ -36,13 +36,13 @@
 - 失败错误码：`UNAPPROVED_HEALTH_RELATION`。
 - 测试类别：数据质量测试、健康关系契约测试、食材名称误判回归测试。
 
-### INV-004：低置信度营养只参与软排序
+### INV-004：营养必须 all-or-nothing
 
-- 规则：低置信度营养估算只能改变安全候选之间的软评分，不得形成硬约束、健康标签、排除证据或用户可见营养数值。
-- 负责模块：营养评分、菜单规划、回答与前端。
-- 强制校验点：营养评分输出、菜单硬约束构造、AnswerArtifact校验、前端响应Schema。
-- 失败错误码：`NUTRITION_CONFIDENCE_SCOPE_VIOLATION`。
-- 测试类别：营养评分单元测试、菜单硬软约束测试、回答字段契约测试。
+- 规则：任一批准克重、可食比例、唯一 crosswalk 或九维参考值缺失时，该菜全部营养数值必须为 `null` 且 `available=false`；禁止发布部分向量或中性占位值。
+- 负责模块：数据工程、营养评分、菜单规划。
+- 强制校验点：原始投料营养计算、`G14_NUTRITION_ALL_OR_NOTHING`、C2 不可用维度重归一化。
+- 失败错误码：`NUTRITION_ALL_OR_NOTHING`。
+- 测试类别：营养前置事实缺失矩阵、运行时字段边界、软证据不可用测试。
 
 ### INV-005：回答不得改变已验证菜单
 
@@ -124,13 +124,13 @@
 - 失败错误码：`WORKFLOW_RETRY_LIMIT_EXCEEDED`。
 - 测试类别：状态机边测试、循环上限集成测试、重复调用回归测试。
 
-### INV-015：营养估算不得参与健康硬筛选
+### INV-015：B4/B5/B6 消费者边界不可反转
 
-- 规则：无论营养数据置信度高低，营养估算都不能直接生成过敏、疾病、异常指标或明确禁忌的硬命中；健康硬筛选只使用审核通过的食材健康关系和有效用户约束。
+- 规则：B4 不读取营养或时间值；B5/B6 只能消费 B4 输出的 `safe_recipe_ids`。营养值不能生成、触发或抵消健康硬命中。
 - 负责模块：健康规则、营养评分、菜单规划。
 - 强制校验点：健康工具输入Schema、硬约束构造、菜单规划输入校验。
 - 失败错误码：`NUTRITION_HEALTH_BOUNDARY_VIOLATION`。
-- 测试类别：健康营养边界单元测试、菜单规划集成测试、低置信度回归测试。
+- 测试类别：健康输入边界、B4 safe 集合时间/营养消费、菜单规划集成测试。
 
 ### INV-016：永久健康硬约束不能被对话覆盖
 
@@ -172,13 +172,13 @@
 - 失败错误码：`INGREDIENT_IDENTITY_UNRESOLVED` 或 `UNKNOWN_INGREDIENT_IDENTITY`。
 - 测试类别：身份属性测试、merge/split/discard 审核测试、运行时未知身份测试。
 
-### INV-021：严格时间结论必须有高权威确定性证据
+### INV-021：完整任务图产生预计单值时间
 
-- 规则：硬截止时间菜单只能在确定性任务图和资源调度输出 `strict_time_feasible=true` 时被接受；`false` 和 `unknown` 均不得声明满足。LLM 估算、固定比例公式和低置信度时长只能参与软排序。
+- 规则：每个 eligible 菜品必须有从 `recipe_source_rows` 与批准时间决定重建、覆盖全部真实 atom 的合法 DAG；显式时长不可篡改。CP-SAT 输出单个 `estimated_makespan_seconds` 与布尔 `estimated_time_feasible`，固定构建缺图属于系统失败而非三值用户语义。
 - 负责模块：时间与步骤、菜单规划、回答与前端。
 - 强制校验点：B5 调度输出、C2 可行性过滤、AnswerArtifact 审查和 UI 状态映射。
-- 失败错误码：`STRICT_TIME_INDETERMINATE`、`NO_FEASIBLE_MENU` 或 `STRICT_TIME_AUTHORITY_VIOLATION`。
-- 测试类别：三值时间测试、未知证据 fail-closed 测试、回答和前端语义测试。
+- 失败错误码：`TIME_GRAPH_INCOMPLETE`、`TIME_GRAPH_INVALID` 或 `NO_FEASIBLE_MENU`。
+- 测试类别：atom identity/显式时长篡改、DAG/资源、预计布尔时间契约测试。
 
 ### INV-022：不可用的软证据不能伪装为中性分数
 

@@ -1766,7 +1766,7 @@ occurrence_id,recipe_id,ingredient_id,ingredient_name,normalized_form,retained_i
 214-9,214,17,盐,,true,approved
 215-1,215,471,鳜鱼,,true,approved
 215-10,215,100,水淀粉,,true,approved
-215-11,215,612,芝麻鱼,,true,approved
+215-11,215,66,芝麻油,,true,approved
 215-12,215,37,胡椒粉,,true,approved
 215-2,215,611,水发干贝,,true,approved
 215-3,215,135,肉末,末,true,approved

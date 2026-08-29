@@ -26,9 +26,9 @@
 | DEC-C005 | RAG只负责召回用户想要的真实菜品 | RAG不读取健康档案、不执行健康审查、不输出安全结论 |
 | DEC-C006 | RAG使用完整混合检索 | 词法、向量、加权融合和重排序为完整链路，不使用纯词法降级 |
 | DEC-C007 | 营养只参与内部软排序 | 不触碰健康硬筛选，不在正常回答和前端展示营养数值 |
-| DEC-C008 | 不计算烹饪营养损耗 | 内部营养依据原始食材理论估算，并保留内部来源与置信度 |
+| DEC-C008 | 不计算烹饪营养损耗 | 内部营养依据批准的原始食材参考计算；来源只留在离线参考/审阅文件，运行时营养 Artifact 不含来源或置信度 |
 | DEC-C009 | 不处理分量和采购量 | 移除`per_serving`、个人摄入、人数份量、采购量和参与者营养汇总 |
-| DEC-C010 | 时间采用步骤任务图 | 区分主动操作、设备占用和被动等待；严格时间只使用高置信度结果 |
+| DEC-C010 | 时间采用 source-authoritative 步骤任务图 | 区分主动操作、设备占用和被动等待；完整图由 CP-SAT 产生预计单值，详见 [ADR-0007](0007-estimated-task-graph-time-semantics.md) |
 | DEC-C011 | 系统使用五个职责模型 | 查询理解、健康与菜单规划、菜单决策、回答、统一审查分别拥有独立提示词、Schema和工具权限 |
 | DEC-C012 | 不增加管理模型 | WorkflowState和确定性工作流分配角色权限并决定节点流转 |
 | DEC-C013 | 模型在角色白名单内自主调用工具 | 模型主动决定调用时机；必需回执是角色完成条件，工作流不预调用或漏调后补调用，可选工具由模型判断，禁止工具不暴露 |
@@ -51,7 +51,7 @@
 | DEC-C030 | 菜品源固定为经精确清单核验的 2,000 行 | `recipe_id=1..2000` 与源行绑定；每行必须显式分类且零未决；详见 [ADR-0004](0004-fixed-source-and-one-time-identity-rebuild.md) |
 | DEC-C031 | 一次性重建并冻结 V2 食材身份 | 当前污染 ID 不继承；形成 merge/split/discard crosswalk，经审核后运行时不得动态增删身份；详见 [ADR-0004](0004-fixed-source-and-one-time-identity-rebuild.md) |
 | DEC-C032 | B1 是原始菜品和食材文本的唯一解析者 | B3/B4/B5/B6/C1 只消费同一构建的结构化 Artifact，在线禁止读取离线文件 |
-| DEC-C033 | 严格时间与更快偏好使用不同语义 | 硬时限只接受高权威调度的 `true`；`unknown` 不得冒充满足；详见 [ADR-0005](0005-strict-time-semantics.md) |
+| DEC-C033 | 预计时间与更快偏好使用不同语义 | 在线为单个预计 makespan 与布尔可行性；固定构建缺图属于系统失败；详见 [ADR-0007](0007-estimated-task-graph-time-semantics.md) |
 | DEC-C034 | 软评分维度不可用时显式禁用并重归一化 | 不使用默认 0.5、零值或模型猜测伪装中性证据 |
 | DEC-C035 | 成功事件只能引用已提交结果 | 结果、强制审计和 outbox 原子提交，之后发布 `answer_ready/result_committed`；详见 [ADR-0006](0006-post-commit-event-publication.md) |
 | DEC-C036 | DeepSeek 整改采用外部阶段闸门 | 模型可选局部写法，但不能修改任务信封、锁定测试和批准契约；偏离不能进入下一阶段 |
@@ -59,6 +59,8 @@
 ### 已废止的实现偏离
 
 [ADR-0003](0003-implementation-round-2-deviations.md) 已于 2026-08-09 标记为 `SUPERSEDED`。其中 C3 自动节点重试、LLM 时间高权威化、40% 并行公式和严格时间软化均不得继续作为设计依据。
+
+[ADR-0005](0005-strict-time-semantics.md) 保留为历史记录；其在线三值、来源/置信度和高权威严格时间语义已由 [ADR-0007](0007-estimated-task-graph-time-semantics.md) 取代。
 
 ## 3. DEFERRED：明确延期决策
 

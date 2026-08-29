@@ -100,8 +100,25 @@ def test_atom_id_changes_when_recipe_or_source_step_changes() -> None:
 
 def test_english_minute_is_duration_but_fill_fraction_is_not() -> None:
     assert parse_explicit_duration("煎至两面微黄，约2min") == 120
+    assert parse_explicit_duration("静置腌制1h") == 3600
     assert parse_explicit_duration("倒入蛋挞液至9分满") is None
     assert parse_explicit_duration("10分钟开始预热") is None
+
+
+def test_reviewed_ginger_recipe_locks_english_hour_and_minute() -> None:
+    wait_atoms = atomize_step(
+        recipe_id=1138,
+        source_step_index=2,
+        text="将姜片加入红糖混合均匀，静置腌制1h后红糖化为汁水",
+    )
+    cook_atoms = atomize_step(
+        recipe_id=1138,
+        source_step_index=3,
+        text="开中小火加热，炒至糖液比较粘稠，约30min",
+    )
+
+    assert any(atom.explicit_duration_seconds == 3600 for atom in wait_atoms)
+    assert any(atom.explicit_duration_seconds == 1800 for atom in cook_atoms)
 
 
 def test_completion_transition_with_real_work_is_not_non_task() -> None:

@@ -12,8 +12,10 @@ from pathlib import Path
 import pytest
 
 from food_agent_v2.b1.ingredient_identity import (
+    IngredientIdentityError,
     _quality_leakage,
     build_old_to_new_diff,
+    enforce_quality_gates,
     rebuild_ingredient_identities,
 )
 from food_agent_v2.b1.schemas import SourceRecipeRow
@@ -209,6 +211,67 @@ class TestRejectedAndForms:
         assert forms == [{"ingredient_id": 1, "name_canonical": "姜", "form": "丝"}]
         aliases = read_jsonl(tmp_path / "out" / "ingredient_aliases.jsonl")
         assert aliases == []
+
+    def test_registry_provenance_uses_final_relations_after_approved_merge(
+        self, tmp_path: Path
+    ) -> None:
+        """An approved merge must contribute every final relation to its target registry row."""
+        overrides = tmp_path / "overrides.csv"
+        overrides.write_text(
+            "source_key,operation,target_ingredient_ids,reason_code,form,review_status,reviewer,reviewed_at\n"
+            "姜丝,merge,1,processing_variant,丝,approved,project_owner,2026-08-09\n",
+            encoding="utf-8",
+        )
+        rows = make_rows(
+            [
+                (1, "菜1", "姜10克；姜丝5克"),
+                (2, "菜2", "姜丝3克"),
+            ]
+        )
+
+        rebuild_ingredient_identities(rows, overrides, tmp_path / "out")
+
+        registry = read_jsonl(tmp_path / "out" / "ingredient_registry.jsonl")
+        relations = read_jsonl(tmp_path / "out" / "recipe_ingredient_relations.jsonl")
+        jiang = next(row for row in registry if row["name_canonical"] == "姜")
+        assert jiang["occurrence_count"] == 3
+        assert jiang["appears_in_recipes"] == [1, 2]
+
+        relation_counts: dict[int, int] = {}
+        relation_recipe_ids: dict[int, set[int]] = {}
+        for relation in relations:
+            ingredient_id = relation["ingredient_id"]
+            relation_counts[ingredient_id] = relation_counts.get(ingredient_id, 0) + 1
+            relation_recipe_ids.setdefault(ingredient_id, set()).add(relation["recipe_id"])
+        assert {
+            row["ingredient_id"]: (row["occurrence_count"], row["appears_in_recipes"])
+            for row in registry
+        } == {
+            ingredient_id: (count, sorted(relation_recipe_ids[ingredient_id]))
+            for ingredient_id, count in relation_counts.items()
+        }
+
+    def test_quality_gate_rejects_registry_provenance_mismatch(self) -> None:
+        """A nonzero provenance mismatch must block otherwise-valid output."""
+        gates = {
+            "qty_leakage_count": 0,
+            "qty_leakage_names": [],
+            "unresolved_count": 0,
+            "alias_unique": True,
+            "category_coverage": 1.0,
+            "family_coverage": 1.0,
+            "category_threshold": 0.9,
+            "family_threshold": 0.9,
+            "rejected_not_merged": True,
+            "dangling_reference_count": 0,
+            "registry_provenance_mismatch_count": 1,
+            "registry_provenance_mismatch_ids": [1],
+        }
+
+        with pytest.raises(IngredientIdentityError) as exc_info:
+            enforce_quality_gates(gates, registry_size=1)
+
+        assert exc_info.value.code == "REGISTRY_PROVENANCE_MISMATCH"
 
     def test_synonym_merge_produces_alias(self, tmp_path: Path) -> None:
         overrides = tmp_path / "overrides.csv"
@@ -445,18 +508,40 @@ class TestRejectedAndForms:
 
 
 class TestFullScale:
+    def test_fixed_source_typo_芝麻鱼_resolves_to_canonical_芝麻油(self, tmp_path: Path) -> None:
+        """A typo in recipe 215 must not create a fish identity or lose its quantity."""
+        rows = load_verified_recipe_source(SOURCE_CSV, canonical_source_manifest())
+        rebuild_ingredient_identities(rows, OVERRIDES, tmp_path / "out")
+
+        registry = read_jsonl(tmp_path / "out" / "ingredient_registry.jsonl")
+        aliases = read_jsonl(tmp_path / "out" / "ingredient_aliases.jsonl")
+        crosswalk = read_jsonl(tmp_path / "out" / "ingredient_crosswalk.jsonl")
+        occurrences = read_jsonl(tmp_path / "out" / "ingredient_occurrences.jsonl")
+
+        occurrence = next(item for item in occurrences if item["occurrence_id"] == "215-11")
+        assert occurrence["resolved_ingredient_id"] == 66
+        assert occurrence["quantity_raw"] == "4毫升"
+        assert occurrence["unit_raw"] == "毫升"
+        assert "芝麻鱼" not in {item["name_canonical"] for item in registry}
+        assert {"alias": "芝麻鱼", "ingredient_id": 66} in aliases
+        decision = next(item for item in crosswalk if item["source_key"] == "芝麻鱼")
+        assert decision["target_ingredient_ids"] == [66]
+        assert decision["review_status"] == "approved"
+
     def test_real_2000_build_quality(self, tmp_path: Path) -> None:
         rows = load_verified_recipe_source(SOURCE_CSV, canonical_source_manifest())
         report = rebuild_ingredient_identities(rows, OVERRIDES, tmp_path / "out")
         gates = report["gates"]
-        assert report["registry_count"] == 1771
+        assert report["registry_count"] == 1770
         assert report["occurrence_count"] == 17509
         assert report["form_count"] == 381
-        assert report["alias_count"] == 21
+        assert report["alias_count"] == 22
         assert report["pending_decision_count"] == 0
         assert report["row_count"] == 2000
         assert gates["qty_leakage_count"] == 0
         assert gates["unresolved_count"] == 0
+        assert gates["registry_provenance_mismatch_count"] == 0
+        assert gates["registry_provenance_mismatch_ids"] == []
         assert gates["family_coverage"] == 1.0
         assert gates["category_coverage"] >= gates["category_threshold"]
         assert report["status"] == "passed"
@@ -473,6 +558,20 @@ class TestFullScale:
         assert "姜丝" not in {item["alias"] for item in aliases}
         # 文档化家族案例
         registry = read_jsonl(tmp_path / "out" / "ingredient_registry.jsonl")
+        relation_counts: dict[int, int] = {}
+        relation_recipe_ids: dict[int, set[int]] = {}
+        for relation in relations:
+            ingredient_id = relation["ingredient_id"]
+            relation_counts[ingredient_id] = relation_counts.get(ingredient_id, 0) + 1
+            relation_recipe_ids.setdefault(ingredient_id, set()).add(relation["recipe_id"])
+        assert sum(row["occurrence_count"] for row in registry) == len(relations) == 17493
+        assert sum(len(row["appears_in_recipes"]) for row in registry) == 16963
+        assert all(
+            row["occurrence_count"] == relation_counts.get(row["ingredient_id"], 0)
+            and row["appears_in_recipes"]
+            == sorted(relation_recipe_ids.get(row["ingredient_id"], set()))
+            for row in registry
+        )
         family = {r["name_canonical"]: r["family_name"] for r in registry}
         category = {r["name_canonical"]: r["category"] for r in registry}
         assert {
