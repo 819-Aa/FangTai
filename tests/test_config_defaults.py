@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from food_agent_v2.core.config import load_config
+from food_agent_v2.core.config import LLMConfig, load_config
 
 
 def test_load_config_uses_standard_default_ports(monkeypatch) -> None:
@@ -20,3 +20,23 @@ def test_load_config_uses_standard_default_ports(monkeypatch) -> None:
     assert config.qdrant.grpc_port == 6334
     assert config.redis.port == 6379
     assert config.api.port == 8000
+
+
+def test_query_understanding_uses_its_own_extra_body() -> None:
+    config = LLMConfig(
+        reasoning_extra_body={"enable_thinking": True},
+        query_extra_body={"enable_thinking": False},
+        answer_extra_body={"temperature": 0.2},
+    )
+
+    assert config.extra_body_for_role("query_understanding") == {"enable_thinking": False}
+    assert config.extra_body_for_role("menu_planning") == {"enable_thinking": True}
+    assert config.extra_body_for_role("answer_generation") == {"temperature": 0.2}
+
+
+def test_load_config_parses_query_extra_body(monkeypatch) -> None:
+    monkeypatch.setenv("LLM_MODEL_QUERY_EXTRA_BODY", '{"enable_thinking": false}')
+
+    config = load_config()
+
+    assert config.llm.query_extra_body == {"enable_thinking": False}

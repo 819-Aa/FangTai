@@ -65,6 +65,7 @@ class LLMConfig:
     max_retries: int = 1
     reasoning_extra_body: dict | None = None
     answer_extra_body: dict | None = None
+    query_extra_body: dict | None = None
 
     def model_for_role(self, role: str) -> str:
         """根据角色返回对应模型。"""
@@ -75,6 +76,8 @@ class LLMConfig:
     def extra_body_for_role(self, role: str) -> dict | None:
         if role == "answer_generation":
             return self.answer_extra_body
+        if role == "query_understanding":
+            return self.query_extra_body
         return self.reasoning_extra_body
 
 
@@ -145,6 +148,7 @@ def load_config() -> AppConfig:
             max_retries=int(os.getenv("LLM_MAX_RETRIES", "1")),
             reasoning_extra_body=_parse_json_env("LLM_MODEL_REASONING_EXTRA_BODY"),
             answer_extra_body=_parse_json_env("LLM_MODEL_ANSWER_EXTRA_BODY"),
+            query_extra_body=_parse_json_env("LLM_MODEL_QUERY_EXTRA_BODY"),
         ),
         models=ModelConfig(
             bge_model_path=os.getenv("BGE_MODEL_PATH", ".model-cache/bge-m3"),
