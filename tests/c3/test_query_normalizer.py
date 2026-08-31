@@ -224,6 +224,48 @@ def test_model_meal_supplement_is_grounded_by_tonight_alias() -> None:
     assert rewrite.meal_types == ("晚餐",)
 
 
+def test_model_include_requires_an_independent_ingredient_mention() -> None:
+    llm = _FakeLLM(
+        responses=[
+            json.dumps(
+                {
+                    "retrieval_query": "洋葱",
+                    "include_ingredients": ["葱"],
+                },
+                ensure_ascii=False,
+            )
+        ]
+    )
+
+    rewrite = QueryNormalizer(llm).normalize("想吃洋葱", ("p1",))
+
+    assert rewrite.retrieval_query == "洋葱"
+    assert rewrite.include_ingredients == ("洋葱",)
+
+
+def test_negated_meal_alias_invalidates_canonical_meal_grounding() -> None:
+    llm = _FakeLLM(
+        responses=[
+            json.dumps(
+                {
+                    "retrieval_query": "家常",
+                    "meal_types": ["晚餐"],
+                },
+                ensure_ascii=False,
+            )
+        ]
+    )
+
+    rewrite = QueryNormalizer(llm).normalize(
+        "今晚不想吃晚饭，推荐家常菜",
+        ("p1",),
+    )
+
+    assert rewrite.retrieval_query == "家常"
+    assert rewrite.meal_types == ()
+    assert rewrite.taste_tags == ("家常",)
+
+
 def test_negated_controlled_facet_is_not_grounded_by_raw_mention() -> None:
     llm = _FakeLLM(
         responses=[

@@ -191,7 +191,7 @@ def deterministic_semantic_fallback(message: str) -> SemanticRewrite:
         meal
         for meal in _MEALS
         if (meal in text or (meal == "晚餐" and "晚饭" in text))
-        and not _is_negated_term(text, meal)
+        and not _has_negated_meal_evidence(meal, text)
     )
     populations = tuple(
         tag for tag in _POPULATIONS if tag in text and not _is_negated_term(text, tag)
@@ -407,8 +407,11 @@ def _has_valid_semantic_filters(
     for field in evidence_fields:
         evidence = set(getattr(fallback, field)) | set(_previous_values(previous, field))
         if any(
+            field == "meal_types" and _has_negated_meal_evidence(value, message)
+            or (
             value not in evidence
             and not _value_has_message_evidence(field, value, message)
+            )
             for value in getattr(parsed, field)
         ):
             return False
@@ -480,11 +483,7 @@ def _scalar_has_evidence(
 
 def _value_has_message_evidence(field: str, value: str, message: str) -> bool:
     if field == "include_ingredients":
-        return (
-            value in message
-            and not _is_negated_term(message, value)
-            and value not in _extract_excludes(message)
-        )
+        return value in _extract_includes(message)
     if field == "exclude_ingredients":
         return value in _extract_excludes(message)
     if field == "nutrition_goal_codes":
@@ -492,11 +491,27 @@ def _value_has_message_evidence(field: str, value: str, message: str) -> bool:
             code == value and phrase in message
             for phrase, code in _NUTRITION_GOALS.items()
         )
+    if field == "meal_types":
+        return _has_positive_meal_evidence(value, message)
     if _is_negated_term(message, value):
         return False
     return value in message or any(
         alias in message and not _is_negated_term(message, alias)
         for alias in _MEAL_EVIDENCE_ALIASES.get(value, ())
+    )
+
+
+def _has_positive_meal_evidence(meal: str, message: str) -> bool:
+    terms = (meal, *_MEAL_EVIDENCE_ALIASES.get(meal, ()))
+    return any(term in message for term in terms) and not any(
+        _is_negated_term(message, term) for term in terms
+    )
+
+
+def _has_negated_meal_evidence(meal: str, message: str) -> bool:
+    return any(
+        _is_negated_term(message, term)
+        for term in (meal, *_MEAL_EVIDENCE_ALIASES.get(meal, ()))
     )
 
 
