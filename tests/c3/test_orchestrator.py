@@ -1,4 +1,4 @@
-"""确定性主编排器（P4）链路测试 —— 真实工具 + 真实 B2/B3/B4/C2，FakeC4。
+"""确定性主编排器（P4）链路测试 —— 真实 B2/B4/C2，确定性 C1/B3 fixture，FakeC4。
 
 覆盖单轮首次推荐成功路径；多轮（有前文菜单）与 replace/reject fallback legacy。
 依赖 MySQL 可用（工具执行真实领域服务）。
@@ -9,7 +9,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from food_agent_v2.b3.repository import RecipeHealthIngredientView, RecipeRetrievalView
+from food_agent_v2.b3.repository import (
+    RecipeHealthIngredientView,
+    RecipeRetrievalView,
+    RepositoryError,
+)
 from food_agent_v2.c1 import RetrievalCandidate, RetrievalResult
 from food_agent_v2.c3.fast_intent import FastIntentRouter, IntentDelta
 from food_agent_v2.c3.orchestrator import DeterministicRecommendationOrchestrator
@@ -192,6 +196,20 @@ def _deterministic_c1_candidates(monkeypatch: pytest.MonkeyPatch) -> None:
         (5, "红烧茄子"),
         (6, "宫保鸡丁"),
     )
+    from food_agent_v2.b3.recipe_views import get_view_builder
+
+    real_builder = get_view_builder()
+    health_views = {
+        recipe_id: real_builder.build_health_ingredient_view(recipe_id)
+        for recipe_id, _name in recipes
+    }
+    assert all(
+        view is not None
+        and view.ingredient_ids
+        and view.ingredient_relations
+        and view.ingredient_evidence_paths
+        for view in health_views.values()
+    ), "fixture recipes must retain complete B3 health views for real B4 evaluation"
 
     class RetrievalPort:
         def retrieve(self, _query: str, top_k: int = 20, **_kwargs):
@@ -215,19 +233,8 @@ def _deterministic_c1_candidates(monkeypatch: pytest.MonkeyPatch) -> None:
             )
 
     class FixtureViewBuilder:
-        def __init__(self) -> None:
-            self._health = {
-                recipe_id: RecipeHealthIngredientView(
-                    recipe_id=recipe_id,
-                    ingredient_ids=[],
-                    ingredient_relations=[],
-                    ingredient_evidence_paths=[],
-                    unresolved_occurrence_count=0,
-                    composition_expansion_status="complete",
-                    catalog_eligibility="eligible",
-                )
-                for recipe_id, _name in recipes
-            }
+        def __init__(self, health: dict[int, RecipeHealthIngredientView]) -> None:
+            self._health = health
             self._retrieval = {
                 recipe_id: RecipeRetrievalView(
                     recipe_id=recipe_id,
@@ -248,12 +255,33 @@ def _deterministic_c1_candidates(monkeypatch: pytest.MonkeyPatch) -> None:
         def build_retrieval_view(self, recipe_id: int):
             return self._retrieval.get(recipe_id)
 
-    fixture_builder = FixtureViewBuilder()
+    fixture_builder = FixtureViewBuilder(health_views)
+
+    class FixtureRepository:
+        def ready_build_id(self) -> str:
+            return real_builder.build_id
+
+        def get_retrieval_view(self, recipe_ids, build_id: str):
+            if build_id != self.ready_build_id():
+                raise RepositoryError("BUILD_IDENTITY_MISMATCH", "fixture build mismatch")
+            try:
+                return [fixture_builder._retrieval[int(recipe_id)] for recipe_id in recipe_ids]
+            except KeyError as exc:
+                raise RepositoryError("UNKNOWN_RECIPE_ID", str(exc)) from exc
+
+        def close(self) -> None:
+            pass
+
+    fixture_repository = FixtureRepository()
 
     monkeypatch.setattr(
         "food_agent_v2.c1.get_retrieval_service", lambda: RetrievalPort())
     monkeypatch.setattr(
         "food_agent_v2.b3.recipe_views.get_view_builder", lambda: fixture_builder)
+    monkeypatch.setattr(
+        "food_agent_v2.application.menu_projection.default_mysql_repository",
+        lambda: fixture_repository,
+    )
 
 
 class _FakeC4:
@@ -315,8 +343,11 @@ class TestDeterministicChain:
         _reset_d1(rid)
         runner = _make_orchestrator()
         runner.run(rid, "sess_det", "四菜一汤家常", [{"participant_ref": "p1", "user_id": "1"}])
-        status = d1_api.get_request_status(rid)[1]["status"]
-        assert status == "completed", f"确定性链路未 completed: {status}"
+        result = d1_api.get_request_status(rid)[1]
+        assert result["status"] == "completed", f"确定性链路未 completed: {result['status']}"
+        assert "番茄鸡蛋汤" in {
+            item["name"] for item in result["result_summary"]["menu_summary"]["items"]
+        }
 
     def test_dish_count_requested_respected(self) -> None:
         rid = _fresh_rid()
