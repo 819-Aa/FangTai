@@ -176,6 +176,7 @@ class RecipeRetrievalService:
         self._source = source or MySQLArtifactRecordSource()
         self._build_id: str | None = None
         self._eligible: set[int] = set()
+        self._supported_facets: dict[str, frozenset[str]] = {}
         self._loaded = False
 
     def load(self, path=None) -> None:
@@ -190,6 +191,16 @@ class RecipeRetrievalService:
             for document in rag_docs
             if document.get("catalog_eligibility") == "eligible"
         }
+        soft_facets = ("dish_type_tags", "taste_tags", "cuisine_tags", "scenario_tags")
+        self._supported_facets = {
+            field: frozenset(
+                str(value)
+                for document in rag_docs
+                if int(document["recipe_id"]) in self._eligible
+                for value in (document.get(field) or ())
+            )
+            for field in soft_facets
+        }
         self._loaded = True
 
     @property
@@ -199,6 +210,24 @@ class RecipeRetrievalService:
     def _ensure_loaded(self) -> None:
         if not self._loaded:
             raise RetrievalError("RETRIEVAL_NOT_LOADED", "检索服务未加载")
+
+    def project_filters(self, filters: RetrievalFilters) -> RetrievalFilters:
+        """Drop unsupported soft facets while preserving all hard filters."""
+        self._ensure_loaded()
+        soft = {
+            field: tuple(
+                value for value in getattr(filters, field)
+                if str(value) in self._supported_facets.get(field, frozenset())
+            )
+            for field in ("dish_type_tags", "taste_tags", "cuisine_tags", "scenario_tags")
+        }
+        return RetrievalFilters(
+            meal_tags=filters.meal_tags,
+            population_tags=filters.population_tags,
+            include_ingredients=filters.include_ingredients,
+            exclude_ingredients=filters.exclude_ingredients,
+            **soft,
+        )
 
     def retrieve(
         self,

@@ -175,6 +175,12 @@ def _retrieval_filters_from_query_plan(query_plan):
         ),
     )
 
+
+def _project_retrieval_filters(svc, filters):
+    """Project soft facets when the retrieval port supports ready-build projection."""
+    projector = getattr(svc, "project_filters", None)
+    return projector(filters) if callable(projector) else filters
+
 def _retrieve_recipes(args: dict, ctx: ToolContext) -> dict:
     """C1 混合检索。多人场景自动使用多路合并（文档 07 §8.4）。
 
@@ -191,6 +197,7 @@ def _retrieve_recipes(args: dict, ctx: ToolContext) -> dict:
     filters = _retrieval_filters_from_query_plan(
         ctx.previous_results.get("query_plan")
     )
+    filters = _project_retrieval_filters(svc, filters)
 
     # 多人 → 共享查询 + 每参与者口味偏好子查询
     if len(ctx.participant_user_mapping) > 1:
@@ -585,8 +592,9 @@ def _expand_retrieval(args: dict, ctx: ToolContext) -> dict:
 
     result = svc.retrieve(
         query,
-        filters=_retrieval_filters_from_query_plan(
-            ctx.previous_results.get("query_plan")
+        filters=_project_retrieval_filters(
+            svc,
+            _retrieval_filters_from_query_plan(ctx.previous_results.get("query_plan")),
         ),
         top_k=30,
         exclude_ids=set(original_ids),

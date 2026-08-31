@@ -173,3 +173,27 @@ class TestFullHybridRetrieval:
         )
 
         assert result.candidates == []
+
+    def test_projects_only_ready_build_supported_soft_facets(self) -> None:
+        service = _service()
+        filters = RetrievalFilters(
+            meal_tags=("晚餐",),
+            population_tags=("老人",),
+            dish_type_tags=("主菜", "汤羹"),
+            taste_tags=("家常", "麻辣"),
+            cuisine_tags=("中式",),
+            scenario_tags=("日常",),
+            include_ingredients=("豆腐",),
+            exclude_ingredients=("辣椒",),
+        )
+
+        projected = service.project_filters(filters)
+
+        assert projected.meal_tags == filters.meal_tags
+        assert projected.population_tags == filters.population_tags
+        assert projected.include_ingredients == filters.include_ingredients
+        assert projected.exclude_ingredients == filters.exclude_ingredients
+        assert projected.dish_type_tags == ("主菜",)
+        assert projected.taste_tags == ("家常",)
+        assert projected.cuisine_tags == ()
+        assert projected.scenario_tags == ()
