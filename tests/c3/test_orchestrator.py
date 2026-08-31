@@ -121,6 +121,49 @@ def test_semantic_rewrite_preserves_and_stably_merges_routed_constraints() -> No
     assert intent.time_constraint_policy == "hard"
 
 
+def test_semantic_rewrite_keeps_routed_collection_missing_from_rewrite() -> None:
+    orchestrator = DeterministicRecommendationOrchestrator(llm=SimpleNamespace())
+    routed = IntentDelta(
+        query="晚餐要有汤",
+        meal_types=("晚餐",),
+        dish_types=("汤",),
+        dish_count_requested=4,
+    )
+    rewrite = SemanticRewrite(
+        retrieval_query="素菜",
+        dish_types=("素菜",),
+        dish_count=2,
+    )
+
+    intent = orchestrator._apply_semantic_rewrite(
+        routed,
+        rewrite,
+        ("p1",),
+        has_current_menu=False,
+    )
+
+    assert intent.meal_types == ("晚餐",)
+    assert intent.dish_types == ("汤", "素菜")
+    assert intent.dish_count_requested == 4
+
+
+def test_semantic_rewrite_fills_empty_routed_health_exclusions() -> None:
+    orchestrator = DeterministicRecommendationOrchestrator(llm=SimpleNamespace())
+    rewrite = SemanticRewrite(
+        retrieval_query="清淡晚餐",
+        health_constraints=("糖尿病",),
+    )
+
+    intent = orchestrator._apply_semantic_rewrite(
+        IntentDelta(query="糖尿病也能吃"),
+        rewrite,
+        ("p1",),
+        has_current_menu=False,
+    )
+
+    assert intent.health_exclusions == ("p1:疾病:糖尿病",)
+
+
 pytestmark = pytest.mark.skipif(not _mysql_available(), reason="MySQL 不可用")
 
 
