@@ -327,6 +327,11 @@ class _FakeC4:
         pass
 
 
+class _UnavailableLLM:
+    def invoke(self, *_args, **_kwargs):
+        raise RuntimeError("test LLM unavailable")
+
+
 def _reset_d1(request_id: str) -> None:
     d1_api._requests.clear()
     d1_api._events.clear()
@@ -338,9 +343,9 @@ def _reset_d1(request_id: str) -> None:
     }
 
 
-def _make_orchestrator(has_current_menu: bool = False):
+def _make_orchestrator(has_current_menu: bool = False, *, llm=None):
     return DeterministicRecommendationOrchestrator(
-        llm=None, c4=_FakeC4(has_current_menu=has_current_menu))
+        llm=llm, c4=_FakeC4(has_current_menu=has_current_menu))
 
 
 class TestDeterministicChain:
@@ -365,16 +370,14 @@ class TestDeterministicChain:
         assert len(result["result_summary"]["menu_summary"]["recipe_ids"]) == 5
 
     def test_replace_falls_back_legacy(self) -> None:
-        """replace 意图（P5 第一版未覆盖）→ fallback legacy 五模型。"""
+        """replace 意图进入 legacy；模型不可用时进入 failed 终态。"""
         rid = _fresh_rid()
         _reset_d1(rid)
-        # legacy 需要 FakeLLM；此处只验证 fallback 分支被触发（不因确定性链崩溃）
-        runner = _make_orchestrator(has_current_menu=True)
-        # 无 LLM 时 legacy 会失败，但不应是确定性链的错误路径
+        runner = _make_orchestrator(
+            has_current_menu=True, llm=_UnavailableLLM())
         runner.run(rid, "sess_multi", "换成清淡的汤", [{"participant_ref": "p1", "user_id": "1"}])
         status = d1_api.get_request_status(rid)[1]["status"]
-        # fallback legacy：无 LLM 配置 → failed（而非确定性链 completed）
-        assert status != "completed"
+        assert status == "failed"
 
     def test_add_constraint_delta(self) -> None:
         """约束追加（有前文菜单）→ 确定性 delta 链路走通（最小修改，不 fallback）。"""
