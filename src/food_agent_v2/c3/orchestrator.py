@@ -56,6 +56,7 @@ from food_agent_v2.d1 import api as d1_api
 def _semantic_health_exclusions(
     constraints: tuple[str, ...],
     participant_refs: tuple[str, ...],
+    exclude_ingredients: tuple[str, ...],
 ) -> tuple[str, ...]:
     if not constraints:
         return ()
@@ -67,11 +68,21 @@ def _semantic_health_exclusions(
         if len(participant_refs) != 1:
             continue
         participant = participant_refs[0]
-        if "过敏" in constraint:
-            value = constraint.split("过敏", 1)[0].rsplit("对", 1)[-1]
-            value = value.removeprefix("我").strip()
-            if value:
-                output.append(f"{participant}:过敏:{value}")
+        if "过敏" in constraint or "不耐受" in constraint:
+            allergy = next(
+                (
+                    ingredient
+                    for ingredient in exclude_ingredients
+                    if re.search(
+                        rf"{re.escape(ingredient)}\s*(?:过敏|不耐受)"
+                        rf"|(?:过敏|不耐受)\s*{re.escape(ingredient)}",
+                        constraint,
+                    )
+                ),
+                None,
+            )
+            if allergy:
+                output.append(f"{participant}:过敏:{allergy}")
                 continue
         taboo = re.search(r"(?:不能吃|别吃)([\u4e00-\u9fff]{1,8})", constraint)
         if taboo:
@@ -208,6 +219,7 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
             health_exclusions = _semantic_health_exclusions(
                 rewrite.health_constraints,
                 participant_refs,
+                exclude_ingredients,
             )
         router_hard_time = (
             routed.time_constraint_policy == "hard"

@@ -170,6 +170,41 @@ def test_semantic_rewrite_fills_empty_routed_health_exclusions() -> None:
     assert intent.health_exclusions == ("p1:疾病:糖尿病",)
 
 
+def test_semantic_allergy_projects_the_normalized_excluded_ingredient() -> None:
+    """An allergy must use the normalized ingredient, not its raw sentence prefix."""
+    orchestrator = DeterministicRecommendationOrchestrator(llm=SimpleNamespace())
+    routed = FastIntentRouter.route("晚餐我花生过敏", ("p1",))
+    assert routed.health_exclusions == ()
+    rewrite = SemanticRewrite(
+        retrieval_query="晚餐 花生",
+        exclude_ingredients=("花生",),
+        health_constraints=("晚餐我花生过敏",),
+    )
+
+    intent = orchestrator._apply_semantic_rewrite(
+        routed, rewrite, ("p1",), has_current_menu=False
+    )
+    plan = orchestrator._build_query_plan(intent, _fresh_rid(), ["p1"])
+
+    assert plan.health_exclusions == ("p1:过敏:花生",)
+
+
+def test_semantic_allergy_does_not_promote_an_unrelated_excluded_ingredient() -> None:
+    """An excluded ingredient is allergy evidence only when it matches the allergy phrase."""
+    orchestrator = DeterministicRecommendationOrchestrator(llm=SimpleNamespace())
+    rewrite = SemanticRewrite(
+        retrieval_query="晚餐",
+        exclude_ingredients=("花生",),
+        health_constraints=("我海鲜过敏",),
+    )
+
+    intent = orchestrator._apply_semantic_rewrite(
+        IntentDelta(query="我海鲜过敏"), rewrite, ("p1",), has_current_menu=False
+    )
+
+    assert intent.health_exclusions == ()
+
+
 @pytest.mark.parametrize("constraint", ("我不能吃花生", "别吃花生"))
 def test_semantic_health_taboo_projects_to_participant_constraint(constraint: str) -> None:
     orchestrator = DeterministicRecommendationOrchestrator(llm=SimpleNamespace())
@@ -343,9 +378,25 @@ def _reset_d1(request_id: str) -> None:
     }
 
 
+def test_make_orchestrator_uses_local_llm_without_loading_configured_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The deterministic factory must not initialize the configured Qwen client."""
+    monkeypatch.setattr(
+        "food_agent_v2.c3.runner.get_llm_client",
+        lambda: pytest.fail("configured LLM client must not be loaded"),
+    )
+
+    runner = _make_orchestrator()
+
+    assert isinstance(runner._llm, _UnavailableLLM)
+
+
 def _make_orchestrator(has_current_menu: bool = False, *, llm=None):
     return DeterministicRecommendationOrchestrator(
-        llm=llm, c4=_FakeC4(has_current_menu=has_current_menu))
+        llm=llm if llm is not None else _UnavailableLLM(),
+        c4=_FakeC4(has_current_menu=has_current_menu),
+    )
 
 
 class TestDeterministicChain:
