@@ -64,7 +64,7 @@ _HEALTH_QUERY_TERMS = (
     "血压", "血糖", "血脂", "尿酸", "胆固醇",
 )
 _NEGATIVE_QUERY_RE = re.compile(
-    r"(?:不要|不能吃|不吃|别放|别吃|排除|忌口|过敏|不耐受|"
+    r"(?:不要|不能吃|不吃|不想吃|别放|别吃|排除|忌口|过敏|不耐受|"
     r"不(?:含|放|辣|甜|咸|油|盐|糖)|无(?:糖|盐|麸质)|少(?:油|盐|糖))"
 )
 _CONTROLLED_FIELDS = {
@@ -245,7 +245,7 @@ def deterministic_semantic_fallback(message: str) -> SemanticRewrite:
 
 def _extract_includes(text: str) -> tuple[str, ...]:
     found = []
-    for match in re.finditer(r"(?:想吃|想要|来点|包含|要有)([\u4e00-\u9fff]{1,8})", text):
+    for match in re.finditer(r"(?<!不)(?:想吃|想要|来点|包含|要有)([\u4e00-\u9fff]{1,8})", text):
         value = re.split(r"(?:不要|不吃|别放|并且|而且|和|，|。)", match.group(1))[0]
         if "的" in value:
             continue
@@ -265,7 +265,7 @@ def _extract_excludes(text: str) -> tuple[str, ...]:
     if any(marker in text for marker in ("不要辣", "不吃辣", "别放辣", "忌辣")):
         found.append("辣椒")
     for match in re.finditer(
-        r"(?:不要|不吃|别放|排除|不能吃|别吃)([\u4e00-\u9fff]{1,8})",
+        r"(?:不要|不吃|不想吃|别放|排除|不能吃|别吃)([\u4e00-\u9fff]{1,8})",
         text,
     ):
         value = re.split(r"(?:想吃|想要|并且|而且|和|但|，|。)", match.group(1))[0]

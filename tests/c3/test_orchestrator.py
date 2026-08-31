@@ -164,6 +164,20 @@ def test_semantic_rewrite_fills_empty_routed_health_exclusions() -> None:
     assert intent.health_exclusions == ("p1:疾病:糖尿病",)
 
 
+@pytest.mark.parametrize("constraint", ("我不能吃花生", "别吃花生"))
+def test_semantic_health_taboo_projects_to_participant_constraint(constraint: str) -> None:
+    orchestrator = DeterministicRecommendationOrchestrator(llm=SimpleNamespace())
+    rewrite = SemanticRewrite(retrieval_query="家常菜", health_constraints=(constraint,))
+
+    intent = orchestrator._apply_semantic_rewrite(
+        IntentDelta(query=constraint), rewrite, ("p1",), has_current_menu=False
+    )
+    plan = orchestrator._build_query_plan(intent, _fresh_rid(), ["p1"])
+
+    assert intent.health_exclusions == ("p1:禁忌:花生",)
+    assert plan.health_exclusions == ("p1:禁忌:花生",)
+
+
 pytestmark = pytest.mark.skipif(not _mysql_available(), reason="MySQL 不可用")
 
 

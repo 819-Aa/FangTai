@@ -15,6 +15,7 @@ replace/reject 在 P5 第一版仍 fallback legacy（公开用例 0 次）。
 
 from __future__ import annotations
 
+import re
 import time
 import uuid
 from dataclasses import replace
@@ -72,6 +73,10 @@ def _semantic_health_exclusions(
             if value:
                 output.append(f"{participant}:过敏:{value}")
                 continue
+        taboo = re.search(r"(?:不能吃|别吃)([\u4e00-\u9fff]{1,8})", constraint)
+        if taboo:
+            output.append(f"{participant}:禁忌:{taboo.group(1)}")
+            continue
         disease = next(
             (
                 item

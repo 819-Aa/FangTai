@@ -449,6 +449,38 @@ def test_cannot_eat_language_preserves_raw_health_and_exclusion(message: str) ->
     assert "花生" not in rewrite.retrieval_query
 
 
+@pytest.mark.parametrize("llm", (_FakeLLM(error=TimeoutError()), _FakeLLM(responses=["not json"])))
+def test_not_want_to_eat_does_not_parse_embedded_want_as_include(llm: _FakeLLM) -> None:
+    rewrite = QueryNormalizer(llm).normalize("不想吃花生，想吃豆腐", ("p1",))
+
+    assert rewrite.exclude_ingredients == ("花生",)
+    assert rewrite.include_ingredients == ("豆腐",)
+    assert rewrite.retrieval_query == "豆腐"
+    assert "花生" not in rewrite.retrieval_query
+    assert "不想吃" not in rewrite.retrieval_query
+
+
+def test_model_positive_query_with_not_want_to_eat_falls_back_to_safe_query() -> None:
+    llm = _FakeLLM(
+        responses=[
+            json.dumps(
+                {
+                    "retrieval_query": "不想吃花生 豆腐",
+                    "include_ingredients": ["豆腐"],
+                    "exclude_ingredients": ["花生"],
+                },
+                ensure_ascii=False,
+            )
+        ]
+    )
+
+    rewrite = QueryNormalizer(llm).normalize("不想吃花生，想吃豆腐", ("p1",))
+
+    assert rewrite.retrieval_query == "豆腐"
+    assert rewrite.include_ingredients == ("豆腐",)
+    assert rewrite.exclude_ingredients == ("花生",)
+
+
 def test_allergy_only_fallback_derives_allergen_and_rejects_positive_contamination() -> None:
     message = "我花生过敏"
     llm = _FakeLLM(
