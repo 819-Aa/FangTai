@@ -8,6 +8,7 @@ from collections.abc import Mapping, Sequence
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from food_agent_v2.c3.fast_intent import _dish_count, _time_constraint
 from food_agent_v2.c3.llm_client import get_llm_client
 
 _SYSTEM_PROMPT = """你只负责把用户的膳食请求重写成封闭、可验证的检索计划，不推荐菜名或
@@ -66,19 +67,6 @@ _NEGATIVE_QUERY_RE = re.compile(
     r"(?:不要|不能吃|不吃|别放|别吃|排除|忌口|过敏|不耐受|"
     r"不(?:含|放|辣|甜|咸|油|盐|糖)|无(?:糖|盐|麸质)|少(?:油|盐|糖))"
 )
-_CN_DIGITS = {
-    "一": 1,
-    "二": 2,
-    "两": 2,
-    "三": 3,
-    "四": 4,
-    "五": 5,
-    "六": 6,
-    "七": 7,
-    "八": 8,
-    "九": 9,
-    "十": 10,
-}
 _CONTROLLED_FIELDS = {
     "meal_types": frozenset(_MEALS),
     "population_tags": frozenset(_POPULATIONS),
@@ -145,10 +133,11 @@ class QueryNormalizer:
         timeout_seconds: float = 3.0,
     ) -> SemanticRewrite:
         fallback = deterministic_semantic_fallback(message)
+        previous = _previous_plan_dict(previous_query_plan)
         user_message = _build_user_message(
             message,
             participant_refs,
-            previous_query_plan,
+            previous,
         )
         try:
             response = self._llm.invoke(
@@ -159,7 +148,7 @@ class QueryNormalizer:
                 timeout_seconds=timeout_seconds,
             )
             parsed = SemanticRewrite.model_validate_json(response.get("content", ""))
-            if not _has_valid_semantic_filters(parsed, message):
+            if not _has_valid_semantic_filters(parsed, message, fallback, previous):
                 return fallback
             if not _is_positive_retrieval_query(parsed, fallback):
                 return fallback
@@ -171,22 +160,26 @@ class QueryNormalizer:
 def _build_user_message(
     message: str,
     participant_refs: Sequence[str],
-    previous_query_plan: Mapping | BaseModel | None,
+    previous_query_plan: Mapping | None,
 ) -> str:
-    if isinstance(previous_query_plan, BaseModel):
-        previous = previous_query_plan.model_dump(mode="json")
-    elif previous_query_plan is None:
-        previous = None
-    else:
-        previous = dict(previous_query_plan)
     return json.dumps(
         {
             "message": message,
             "participant_refs": list(participant_refs),
-            "previous_query_plan": previous,
+            "previous_query_plan": previous_query_plan or None,
         },
         ensure_ascii=False,
     )
+
+
+def _previous_plan_dict(
+    previous_query_plan: Mapping | BaseModel | None,
+) -> dict:
+    if isinstance(previous_query_plan, BaseModel):
+        return previous_query_plan.model_dump(mode="json")
+    if previous_query_plan is None:
+        return {}
+    return dict(previous_query_plan)
 
 
 def deterministic_semantic_fallback(message: str) -> SemanticRewrite:
@@ -194,17 +187,26 @@ def deterministic_semantic_fallback(message: str) -> SemanticRewrite:
     meal_types = tuple(
         meal
         for meal in _MEALS
-        if meal in text or (meal == "晚餐" and "晚饭" in text)
+        if (meal in text or (meal == "晚餐" and "晚饭" in text))
+        and not _is_negated_term(text, meal)
     )
-    populations = tuple(tag for tag in _POPULATIONS if tag in text)
+    populations = tuple(
+        tag for tag in _POPULATIONS if tag in text and not _is_negated_term(text, tag)
+    )
     tastes = tuple(
         taste
         for taste in _TASTES
-        if taste in text and not re.search(rf"(?:不|不要|别|忌).{{0,2}}{re.escape(taste)}", text)
+        if taste in text and not _is_negated_term(text, taste)
     )
-    dish_types = ("汤",) if "汤" in text else ()
-    cuisines = tuple(tag for tag in _CUISINES if tag != "家常" and tag in text)
-    scenarios = tuple(tag for tag in _SCENARIOS if tag in text)
+    dish_types = ("汤",) if "汤" in text and not _is_negated_term(text, "汤") else ()
+    cuisines = tuple(
+        tag
+        for tag in _CUISINES
+        if tag != "家常" and tag in text and not _is_negated_term(text, tag)
+    )
+    scenarios = tuple(
+        tag for tag in _SCENARIOS if tag in text and not _is_negated_term(text, tag)
+    )
     include = _extract_includes(text)
     exclude = _extract_excludes(text)
     seconds, policy = _time_constraint(text)
@@ -223,7 +225,7 @@ def deterministic_semantic_fallback(message: str) -> SemanticRewrite:
     retrieval_query = " ".join(dict.fromkeys(positive_parts))
     if not retrieval_query:
         retrieval_query = _sanitized_free_text_query(text, exclude)
-    return SemanticRewrite(
+    fallback = SemanticRewrite(
         retrieval_query=retrieval_query,
         meal_types=meal_types,
         population_tags=populations,
@@ -238,50 +240,15 @@ def deterministic_semantic_fallback(message: str) -> SemanticRewrite:
         max_time_minutes=max_time,
         dish_count=_dish_count(text),
     )
-
-
-def _parse_number(value: str) -> int | None:
-    if value.isdigit():
-        return int(value)
-    if value in _CN_DIGITS:
-        return _CN_DIGITS[value]
-    if "十" not in value:
-        return None
-    tens, _, ones = value.partition("十")
-    tens_value = _CN_DIGITS.get(tens, 1) if tens else 1
-    ones_value = _CN_DIGITS.get(ones, 0) if ones else 0
-    return tens_value * 10 + ones_value
-
-
-def _dish_count(message: str) -> int | None:
-    match = re.search(r"([一二两三四五六七八九十\d]+)\s*菜一汤", message)
-    if match:
-        count = _parse_number(match.group(1))
-        return count + 1 if count is not None else None
-    match = re.search(r"([一二两三四五六七八九十\d]+)\s*(?:道菜|个菜|菜)", message)
-    return _parse_number(match.group(1)) if match else None
-
-
-def _time_constraint(message: str) -> tuple[int | None, str]:
-    if "半小时" in message:
-        return 1800, "hard"
-    if "一刻钟" in message:
-        return 900, "hard"
-    match = re.search(r"(\d+)\s*分钟", message)
-    if match:
-        return int(match.group(1)) * 60, "hard"
-    match = re.search(r"([一二两三四五六七八九十]+)\s*分钟", message)
-    if match:
-        minutes = _parse_number(match.group(1))
-        if minutes is not None:
-            return minutes * 60, "hard"
-    return None, "flexible"
+    return _sanitize_deterministic_fallback(fallback, text)
 
 
 def _extract_includes(text: str) -> tuple[str, ...]:
     found = []
     for match in re.finditer(r"(?:想吃|想要|来点|包含|要有)([\u4e00-\u9fff]{1,8})", text):
         value = re.split(r"(?:不要|不吃|别放|并且|而且|和|，|。)", match.group(1))[0]
+        if "的" in value:
+            continue
         for suffix in ("面条", "汤", "粥", "面"):
             if value.endswith(suffix) and len(value) > len(suffix):
                 value = ""
@@ -297,13 +264,30 @@ def _extract_excludes(text: str) -> tuple[str, ...]:
     found: list[str] = []
     if any(marker in text for marker in ("不要辣", "不吃辣", "别放辣", "忌辣")):
         found.append("辣椒")
-    for match in re.finditer(r"(?:不要|不吃|别放|排除)([\u4e00-\u9fff]{1,8})", text):
-        value = re.split(r"(?:想吃|想要|并且|而且|和|，|。)", match.group(1))[0]
+    for match in re.finditer(
+        r"(?:不要|不吃|别放|排除|不能吃|别吃)([\u4e00-\u9fff]{1,8})",
+        text,
+    ):
+        value = re.split(r"(?:想吃|想要|并且|而且|和|但|，|。)", match.group(1))[0]
         if value == "辣":
             value = "辣椒"
         if value:
             found.append(value)
+    for match in re.finditer(
+        r"(?:我对|我|对)?([\u4e00-\u9fff]{1,8}?)(?:过敏|不耐受)",
+        text,
+    ):
+        value = match.group(1).strip()
+        if value:
+            found.append(value)
     return tuple(dict.fromkeys(found))
+
+
+def _is_negated_term(text: str, term: str) -> bool:
+    return re.search(
+        rf"(?:不要|不吃|不想吃|别吃|别放|排除|忌)\s*.{{0,2}}{re.escape(term)}",
+        text,
+    ) is not None
 
 
 def _unique(*groups: Sequence[str]) -> tuple[str, ...]:
@@ -345,15 +329,134 @@ def _merge_with_explicit_fallback(
     )
 
 
-def _has_valid_semantic_filters(parsed: SemanticRewrite, message: str) -> bool:
+def _sanitize_deterministic_fallback(
+    fallback: SemanticRewrite,
+    message: str,
+) -> SemanticRewrite:
+    collection_fields = (
+        "meal_types",
+        "population_tags",
+        "dish_types",
+        "taste_tags",
+        "cuisine_tags",
+        "scenario_tags",
+    )
+    updates = {
+        field: tuple(
+            value
+            for value in getattr(fallback, field)
+            if not _is_negated_term(message, value)
+        )
+        for field in collection_fields
+    }
+    updates["include_ingredients"] = tuple(
+        value
+        for value in fallback.include_ingredients
+        if value not in fallback.exclude_ingredients and not _is_negated_term(message, value)
+    )
+    positive_parts = tuple(
+        value
+        for field in (*collection_fields, "include_ingredients")
+        for value in updates[field]
+    )
+    updates["retrieval_query"] = (
+        " ".join(dict.fromkeys(positive_parts))
+        or _sanitized_free_text_query(message, fallback.exclude_ingredients)
+    )
+    sanitized = fallback.model_copy(update=updates)
+    if not _is_positive_retrieval_query(sanitized, sanitized):
+        return sanitized.model_copy(update={"retrieval_query": "家常菜"})
+    return sanitized
+
+
+def _has_valid_semantic_filters(
+    parsed: SemanticRewrite,
+    message: str,
+    fallback: SemanticRewrite,
+    previous: Mapping,
+) -> bool:
     for field, allowed in _CONTROLLED_FIELDS.items():
         if any(value not in allowed for value in getattr(parsed, field)):
             return False
+    evidence_fields = (
+        "meal_types",
+        "population_tags",
+        "dish_types",
+        "taste_tags",
+        "cuisine_tags",
+        "scenario_tags",
+        "include_ingredients",
+        "exclude_ingredients",
+        "nutrition_goal_codes",
+    )
+    for field in evidence_fields:
+        evidence = set(getattr(fallback, field)) | set(_previous_values(previous, field))
+        if not set(getattr(parsed, field)).issubset(evidence):
+            return False
+    if not _scalar_has_evidence(
+        parsed.max_time_minutes,
+        fallback.max_time_minutes,
+        _previous_time_minutes(previous),
+    ):
+        return False
+    if not _scalar_has_evidence(
+        parsed.dish_count,
+        fallback.dish_count,
+        _previous_positive_int(previous, "dish_count", "dish_count_requested"),
+    ):
+        return False
+    previous_health = set(_previous_values(previous, "health_constraints")) | set(
+        _previous_values(previous, "health_exclusions")
+    )
     return all(
-        _is_grounded_health_constraint(value)
-        and _health_constraint_matches_message(value, message)
+        value in previous_health
+        or (
+            _is_grounded_health_constraint(value)
+            and _health_constraint_matches_message(value, message)
+        )
         for value in parsed.health_constraints
     )
+
+
+def _previous_values(previous: Mapping, field: str) -> tuple[str, ...]:
+    value = previous.get(field)
+    if value is None:
+        return ()
+    if isinstance(value, str):
+        return (value.strip(),) if value.strip() else ()
+    if not isinstance(value, Sequence):
+        return ()
+    return tuple(str(item).strip() for item in value if str(item).strip())
+
+
+def _previous_positive_int(previous: Mapping, *fields: str) -> int | None:
+    for field in fields:
+        value = previous.get(field)
+        if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+            return value
+    return None
+
+
+def _previous_time_minutes(previous: Mapping) -> int | None:
+    minutes = _previous_positive_int(previous, "max_time_minutes")
+    if minutes is not None:
+        return minutes
+    seconds = _previous_positive_int(previous, "time_constraint_seconds")
+    if seconds is None or seconds % 60:
+        return None
+    if previous.get("time_constraint_policy", "hard") != "hard":
+        return None
+    return seconds // 60
+
+
+def _scalar_has_evidence(
+    value: int | None,
+    current: int | None,
+    previous: int | None,
+) -> bool:
+    if value is None or current is not None:
+        return True
+    return value == previous
 
 
 def _health_constraint_matches_message(value: str, message: str) -> bool:
@@ -370,11 +473,16 @@ def _is_positive_retrieval_query(
     if not query or _NEGATIVE_QUERY_RE.search(query):
         return False
     excluded = _unique(parsed.exclude_ingredients, fallback.exclude_ingredients)
-    if any(value in query for value in excluded):
+    if any(_query_contains_term(query, value) for value in excluded):
         return False
     if any(term in query for term in _HEALTH_QUERY_TERMS):
         return False
     return re.search(r"[\u4e00-\u9fff]{1,12}病", query) is None
+
+
+def _query_contains_term(query: str, term: str) -> bool:
+    tokens = re.split(r"[\s,，。；;、/]+", query.strip())
+    return term in tokens
 
 
 def _sanitized_free_text_query(text: str, exclude: Sequence[str]) -> str:
@@ -384,7 +492,7 @@ def _sanitized_free_text_query(text: str, exclude: Sequence[str]) -> str:
         candidate = clause.strip()
         if not candidate or _NEGATIVE_QUERY_RE.search(candidate):
             continue
-        if any(value in candidate for value in exclude):
+        if any(_query_contains_term(candidate, value) for value in exclude):
             continue
         if any(term in candidate for term in _HEALTH_QUERY_TERMS):
             continue
@@ -395,7 +503,7 @@ def _sanitized_free_text_query(text: str, exclude: Sequence[str]) -> str:
 
 
 def _is_grounded_health_constraint(value: str) -> bool:
-    if "过敏" in value or "不耐受" in value:
+    if any(marker in value for marker in ("过敏", "不耐受", "不能吃", "别吃")):
         return True
     if re.search(r"[\u4e00-\u9fff]{1,12}病", value):
         return True

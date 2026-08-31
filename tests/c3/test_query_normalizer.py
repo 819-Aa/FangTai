@@ -160,6 +160,50 @@ def test_previous_query_plan_not_free_text_history_is_sent_to_model() -> None:
     assert "history" not in payload
 
 
+def test_exact_previous_health_constraint_may_be_carried_by_model() -> None:
+    previous_health = "我花生过敏"
+    llm = _FakeLLM(
+        responses=[
+            json.dumps(
+                {
+                    "retrieval_query": "清淡",
+                    "taste_tags": ["清淡"],
+                    "health_constraints": [previous_health],
+                },
+                ensure_ascii=False,
+            )
+        ]
+    )
+
+    rewrite = QueryNormalizer(llm).normalize(
+        "再清淡一点",
+        ("p1",),
+        previous_query_plan={"health_constraints": [previous_health]},
+    )
+
+    assert rewrite.health_constraints == (previous_health,)
+
+
+def test_documented_meal_alias_is_grounded() -> None:
+    llm = _FakeLLM(
+        responses=[
+            json.dumps(
+                {
+                    "retrieval_query": "晚餐 豆腐",
+                    "meal_types": ["晚餐"],
+                    "include_ingredients": ["豆腐"],
+                },
+                ensure_ascii=False,
+            )
+        ]
+    )
+
+    rewrite = QueryNormalizer(llm).normalize("晚饭想吃豆腐", ("p1",))
+
+    assert rewrite.meal_types == ("晚餐",)
+    assert rewrite.include_ingredients == ("豆腐",)
+
+
 def test_valid_health_constraints_remain_allowed_in_semantic_rewrite() -> None:
     message = "给老人推荐晚餐，高血压也能吃"
     llm = _FakeLLM(
@@ -266,6 +310,7 @@ def test_sparse_model_arrays_merge_with_deterministic_explicit_fields() -> None:
     )
 
     assert len(llm.calls) == 1
+    assert rewrite.retrieval_query == "家常 日常 晚餐 豆腐"
     assert rewrite.meal_types == ("晚餐",)
     assert rewrite.dish_types == ("汤",)
     assert rewrite.taste_tags == ("家常",)
@@ -323,7 +368,9 @@ def test_invalid_controlled_vocab_falls_back_without_retry(field: str, value: st
     rewrite = QueryNormalizer(llm).normalize("今晚吃啥", ("p1",))
 
     assert len(llm.calls) == 1
-    assert value not in getattr(rewrite, field)
+    assert rewrite.retrieval_query == "今晚吃啥"
+    assert rewrite.meal_types == ()
+    assert rewrite.dish_types == ()
 
 
 def test_contaminated_positive_query_falls_back_and_keeps_health_fields() -> None:
@@ -349,6 +396,114 @@ def test_contaminated_positive_query_falls_back_and_keeps_health_fields() -> Non
     assert rewrite.meal_types == ("晚餐",)
     assert rewrite.exclude_ingredients == ("花生",)
     assert rewrite.health_constraints == (message,)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("meal_types", ["晚餐"]),
+        ("population_tags", ["老人"]),
+        ("dish_types", ["汤"]),
+        ("taste_tags", ["清淡"]),
+        ("cuisine_tags", ["川味"]),
+        ("scenario_tags", ["宴客"]),
+        ("include_ingredients", ["花生"]),
+        ("exclude_ingredients", ["花生"]),
+        ("nutrition_goal_codes", ["low_sodium"]),
+        ("max_time_minutes", 45),
+        ("dish_count", 4),
+    ),
+)
+def test_ungrounded_model_field_forces_whole_result_fallback(field: str, value) -> None:
+    llm = _FakeLLM(
+        responses=[
+            json.dumps(
+                {"retrieval_query": "家常", field: value},
+                ensure_ascii=False,
+            )
+        ]
+    )
+
+    rewrite = QueryNormalizer(llm).normalize("推荐家常菜", ("p1",))
+
+    assert rewrite.retrieval_query == "家常"
+    assert rewrite.meal_types == ()
+    assert rewrite.population_tags == ()
+    assert rewrite.dish_types == ()
+    assert rewrite.taste_tags == ("家常",)
+    assert rewrite.cuisine_tags == ()
+    assert rewrite.scenario_tags == ()
+    assert rewrite.include_ingredients == ()
+    assert rewrite.exclude_ingredients == ()
+    assert rewrite.nutrition_goal_codes == ()
+    assert rewrite.max_time_minutes is None
+    assert rewrite.dish_count is None
+
+
+@pytest.mark.parametrize("message", ("我不能吃花生", "别吃花生"))
+def test_cannot_eat_language_preserves_raw_health_and_exclusion(message: str) -> None:
+    rewrite = QueryNormalizer(_FakeLLM(error=TimeoutError())).normalize(message, ("p1",))
+
+    assert rewrite.exclude_ingredients == ("花生",)
+    assert rewrite.health_constraints == (message,)
+    assert "花生" not in rewrite.retrieval_query
+
+
+def test_allergy_only_fallback_derives_allergen_and_rejects_positive_contamination() -> None:
+    message = "我花生过敏"
+    llm = _FakeLLM(
+        responses=[
+            json.dumps(
+                {
+                    "retrieval_query": "花生",
+                    "exclude_ingredients": ["花生"],
+                    "health_constraints": [message],
+                },
+                ensure_ascii=False,
+            )
+        ]
+    )
+
+    rewrite = QueryNormalizer(llm).normalize(message, ("p1",))
+
+    assert rewrite.retrieval_query == "家常菜"
+    assert rewrite.exclude_ingredients == ("花生",)
+    assert rewrite.health_constraints == (message,)
+
+
+def test_negated_soup_is_absent_from_fallback_positive_semantics() -> None:
+    rewrite = QueryNormalizer(_FakeLLM(error=TimeoutError())).normalize("不要汤", ("p1",))
+
+    assert rewrite.dish_types == ()
+    assert "汤" not in rewrite.retrieval_query
+
+
+def test_ambiguous_include_phrase_does_not_create_hard_ingredient() -> None:
+    rewrite = QueryNormalizer(_FakeLLM(error=TimeoutError())).normalize(
+        "想吃清淡的豆腐",
+        ("p1",),
+    )
+
+    assert rewrite.include_ingredients == ()
+
+
+def test_excluded_term_does_not_contaminate_distinct_longer_query_token() -> None:
+    llm = _FakeLLM(
+        responses=[
+            json.dumps(
+                {
+                    "retrieval_query": "洋葱",
+                    "exclude_ingredients": ["葱"],
+                },
+                ensure_ascii=False,
+            )
+        ]
+    )
+
+    rewrite = QueryNormalizer(llm).normalize("不要葱，可以吃洋葱", ("p1",))
+
+    assert rewrite.retrieval_query == "洋葱"
+    assert rewrite.exclude_ingredients == ("葱",)
 
 
 def test_validated_rewrite_is_the_only_query_plan_and_retrieval_source() -> None:
