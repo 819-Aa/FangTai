@@ -204,6 +204,45 @@ def test_documented_meal_alias_is_grounded() -> None:
     assert rewrite.include_ingredients == ("豆腐",)
 
 
+def test_model_meal_supplement_is_grounded_by_tonight_alias() -> None:
+    llm = _FakeLLM(
+        responses=[
+            json.dumps(
+                {
+                    "retrieval_query": "晚餐",
+                    "meal_types": ["晚餐"],
+                },
+                ensure_ascii=False,
+            )
+        ]
+    )
+
+    rewrite = QueryNormalizer(llm).normalize("今晚吃什么", ("p1",))
+
+    assert len(llm.calls) == 1
+    assert rewrite.retrieval_query == "晚餐"
+    assert rewrite.meal_types == ("晚餐",)
+
+
+def test_negated_controlled_facet_is_not_grounded_by_raw_mention() -> None:
+    llm = _FakeLLM(
+        responses=[
+            json.dumps(
+                {
+                    "retrieval_query": "家常",
+                    "taste_tags": ["辣"],
+                },
+                ensure_ascii=False,
+            )
+        ]
+    )
+
+    rewrite = QueryNormalizer(llm).normalize("不要辣，推荐家常菜", ("p1",))
+
+    assert rewrite.taste_tags == ("家常",)
+    assert rewrite.exclude_ingredients == ("辣椒",)
+
+
 def test_valid_health_constraints_remain_allowed_in_semantic_rewrite() -> None:
     message = "给老人推荐晚餐，高血压也能吃"
     llm = _FakeLLM(
@@ -557,6 +596,37 @@ def test_excluded_term_at_compound_token_start_forces_fallback(model_query: str)
 
     assert rewrite.retrieval_query == "汤"
     assert rewrite.exclude_ingredients == ("花生",)
+
+
+def test_excluded_term_inside_compound_model_query_forces_clean_fallback() -> None:
+    llm = _FakeLLM(
+        responses=[
+            json.dumps(
+                {
+                    "retrieval_query": "老北京花生酱拌面",
+                    "include_ingredients": ["豆腐"],
+                    "exclude_ingredients": ["花生"],
+                },
+                ensure_ascii=False,
+            )
+        ]
+    )
+
+    rewrite = QueryNormalizer(llm).normalize("不要花生，想吃豆腐", ("p1",))
+
+    assert rewrite.retrieval_query == "豆腐"
+    assert rewrite.exclude_ingredients == ("花生",)
+
+
+def test_deterministic_fallback_removes_excluded_term_inside_compound_query() -> None:
+    rewrite = QueryNormalizer(_FakeLLM(error=TimeoutError())).normalize(
+        "不要花生，想吃老北京花生酱拌面",
+        ("p1",),
+    )
+
+    assert rewrite.exclude_ingredients == ("花生",)
+    assert "花生" not in rewrite.retrieval_query
+    assert rewrite.retrieval_query == "家常菜"
 
 
 @pytest.mark.parametrize("message", ("我花生过敏", "晚餐我花生过敏"))

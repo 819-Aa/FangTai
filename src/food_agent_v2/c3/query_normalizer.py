@@ -76,6 +76,9 @@ _CONTROLLED_FIELDS = {
     "scenario_tags": frozenset(_SCENARIOS),
     "nutrition_goal_codes": frozenset(_NUTRITION_GOALS.values()),
 }
+_MEAL_EVIDENCE_ALIASES = {
+    "晚餐": ("晚饭", "今晚"),
+}
 _NON_INGREDIENT_TERMS = frozenset(
     (*_MEALS, *_DISH_TYPES, *_TASTES, *_CUISINES, *_SCENARIOS)
 )
@@ -403,7 +406,11 @@ def _has_valid_semantic_filters(
     )
     for field in evidence_fields:
         evidence = set(getattr(fallback, field)) | set(_previous_values(previous, field))
-        if not set(getattr(parsed, field)).issubset(evidence):
+        if any(
+            value not in evidence
+            and not _value_has_message_evidence(field, value, message)
+            for value in getattr(parsed, field)
+        ):
             return False
     if not _scalar_has_evidence(
         parsed.max_time_minutes,
@@ -471,6 +478,28 @@ def _scalar_has_evidence(
     return value == previous
 
 
+def _value_has_message_evidence(field: str, value: str, message: str) -> bool:
+    if field == "include_ingredients":
+        return (
+            value in message
+            and not _is_negated_term(message, value)
+            and value not in _extract_excludes(message)
+        )
+    if field == "exclude_ingredients":
+        return value in _extract_excludes(message)
+    if field == "nutrition_goal_codes":
+        return any(
+            code == value and phrase in message
+            for phrase, code in _NUTRITION_GOALS.items()
+        )
+    if _is_negated_term(message, value):
+        return False
+    return value in message or any(
+        alias in message and not _is_negated_term(message, alias)
+        for alias in _MEAL_EVIDENCE_ALIASES.get(value, ())
+    )
+
+
 def _health_constraint_matches_message(value: str, message: str) -> bool:
     normalized_value = re.sub(r"\s+", "", value)
     normalized_message = re.sub(r"\s+", "", message)
@@ -494,7 +523,9 @@ def _is_positive_retrieval_query(
 
 def _query_contains_term(query: str, term: str) -> bool:
     tokens = re.split(r"[\s,，。；;、/]+", query.strip())
-    return any(token == term or token.startswith(term) for token in tokens)
+    if len(term) == 1:
+        return any(token == term or token.startswith(term) for token in tokens)
+    return any(term in token for token in tokens)
 
 
 def _sanitized_free_text_query(text: str, exclude: Sequence[str]) -> str:
