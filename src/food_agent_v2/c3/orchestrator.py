@@ -84,6 +84,8 @@ def _semantic_health_exclusions(
             if allergy:
                 output.append(f"{participant}:过敏:{allergy}")
                 continue
+            output.append(constraint)
+            continue
         taboo = re.search(r"(?:不能吃|别吃)([\u4e00-\u9fff]{1,8})", constraint)
         if taboo:
             output.append(f"{participant}:禁忌:{taboo.group(1)}")

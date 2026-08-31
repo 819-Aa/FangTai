@@ -189,8 +189,10 @@ def test_semantic_allergy_projects_the_normalized_excluded_ingredient() -> None:
     assert plan.health_exclusions == ("p1:过敏:花生",)
 
 
-def test_semantic_allergy_does_not_promote_an_unrelated_excluded_ingredient() -> None:
-    """An excluded ingredient is allergy evidence only when it matches the allergy phrase."""
+def test_semantic_allergy_preserves_unresolved_signal_for_clarification(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An unrelated exclusion must reach R-002 as an unparsed health signal."""
     orchestrator = DeterministicRecommendationOrchestrator(llm=SimpleNamespace())
     rewrite = SemanticRewrite(
         retrieval_query="晚餐",
@@ -201,9 +203,35 @@ def test_semantic_allergy_does_not_promote_an_unrelated_excluded_ingredient() ->
     intent = orchestrator._apply_semantic_rewrite(
         IntentDelta(query="我海鲜过敏"), rewrite, ("p1",), has_current_menu=False
     )
+    plan = orchestrator._build_query_plan(intent, _fresh_rid(), ["p1"])
 
-    assert intent.health_exclusions == ()
+    assert intent.health_exclusions == ("我海鲜过敏",)
+    assert "p1:过敏:花生" not in plan.health_exclusions
 
+    class _NoopProfileService:
+        def load(self, *, expected_build_id: str) -> None:
+            pass
+
+    from food_agent_v2.c3.state import RequestStatus, WorkflowState
+
+    monkeypatch.setattr(
+        "food_agent_v2.b2.UserHealthProfileService", _NoopProfileService
+    )
+    monkeypatch.setattr("food_agent_v2.c3.runner._ingredient_resolver", lambda: None)
+    state = WorkflowState(
+        request_id=_fresh_rid(),
+        build_id="test-build",
+        status=RequestStatus.RUNNING,
+        participant_refs=["p1"],
+    )
+
+    clarified = orchestrator._handle_query_plan_exclusions(
+        state, plan, "sess_unresolved", _FakeC4(), {"p1": 1}
+    )
+
+    assert clarified.status == RequestStatus.NEEDS_CLARIFICATION
+    assert clarified.error is not None
+    assert clarified.error.error_code == "HEALTH_SIGNAL_AMBIGUOUS"
 
 @pytest.mark.parametrize("constraint", ("我不能吃花生", "别吃花生"))
 def test_semantic_health_taboo_projects_to_participant_constraint(constraint: str) -> None:
