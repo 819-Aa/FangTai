@@ -9,6 +9,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from food_agent_v2.b3.repository import RecipeHealthIngredientView, RecipeRetrievalView
+from food_agent_v2.c1 import RetrievalCandidate, RetrievalResult
 from food_agent_v2.c3.fast_intent import FastIntentRouter, IntentDelta
 from food_agent_v2.c3.orchestrator import DeterministicRecommendationOrchestrator
 from food_agent_v2.c3.query_normalizer import SemanticRewrite
@@ -183,19 +185,75 @@ pytestmark = pytest.mark.skipif(not _mysql_available(), reason="MySQL 不可用"
 
 @pytest.fixture(autouse=True)
 def _deterministic_c1_candidates(monkeypatch: pytest.MonkeyPatch) -> None:
+    recipes = (
+        (1, "番茄鸡蛋汤"),
+        (2, "青椒肉丝"),
+        (3, "清炒时蔬"),
+        (5, "红烧茄子"),
+        (6, "宫保鸡丁"),
+    )
+
     class RetrievalPort:
         def retrieve(self, _query: str, top_k: int = 20, **_kwargs):
-            # 跳过固定数据缺食材视图的 recipe_id（19/39），避免 B4 完整覆盖 fail-closed
             candidates = [
-                SimpleNamespace(recipe_id=recipe_id, name=f"固定菜品{recipe_id}", source_paths=[])
-                for recipe_id in range(1, max(top_k, 30) + 1)
-                if recipe_id not in (19, 39)
+                RetrievalCandidate(
+                    recipe_id=recipe_id,
+                    document_id=f"fixture-{recipe_id}",
+                    name=name,
+                    score=float(len(recipes) - index),
+                    source_paths=["test-fixture"],
+                )
+                for index, (recipe_id, name) in enumerate(recipes)
             ]
-            return SimpleNamespace(
-                total_candidates=len(candidates), candidates=candidates)
+            return RetrievalResult(
+                retrieval_id="fixture-retrieval",
+                request_id=None,
+                candidates=candidates[:top_k],
+                total_candidates=len(candidates),
+                retrieval_path="test-fixture",
+                source_paths=["test-fixture"],
+            )
+
+    class FixtureViewBuilder:
+        def __init__(self) -> None:
+            self._health = {
+                recipe_id: RecipeHealthIngredientView(
+                    recipe_id=recipe_id,
+                    ingredient_ids=[],
+                    ingredient_relations=[],
+                    ingredient_evidence_paths=[],
+                    unresolved_occurrence_count=0,
+                    composition_expansion_status="complete",
+                    catalog_eligibility="eligible",
+                )
+                for recipe_id, _name in recipes
+            }
+            self._retrieval = {
+                recipe_id: RecipeRetrievalView(
+                    recipe_id=recipe_id,
+                    name=name,
+                    ingredient_display_names=[],
+                    ingredient_ids=[],
+                    searchable_fields={"name": name},
+                    step_summary=None,
+                    time_reference=None,
+                    ingredient_family_ids=[],
+                )
+                for recipe_id, name in recipes
+            }
+
+        def build_health_ingredient_view(self, recipe_id: int):
+            return self._health.get(recipe_id)
+
+        def build_retrieval_view(self, recipe_id: int):
+            return self._retrieval.get(recipe_id)
+
+    fixture_builder = FixtureViewBuilder()
 
     monkeypatch.setattr(
         "food_agent_v2.c1.get_retrieval_service", lambda: RetrievalPort())
+    monkeypatch.setattr(
+        "food_agent_v2.b3.recipe_views.get_view_builder", lambda: fixture_builder)
 
 
 class _FakeC4:
@@ -265,8 +323,9 @@ class TestDeterministicChain:
         _reset_d1(rid)
         runner = _make_orchestrator()
         runner.run(rid, "sess_cnt", "四菜一汤家常", [{"participant_ref": "p1", "user_id": "1"}])
-        status = d1_api.get_request_status(rid)[1]["status"]
-        assert status == "completed"
+        result = d1_api.get_request_status(rid)[1]
+        assert result["status"] == "completed"
+        assert len(result["result_summary"]["menu_summary"]["recipe_ids"]) == 5
 
     def test_replace_falls_back_legacy(self) -> None:
         """replace 意图（P5 第一版未覆盖）→ fallback legacy 五模型。"""
