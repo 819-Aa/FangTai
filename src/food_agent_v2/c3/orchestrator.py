@@ -84,6 +84,14 @@ def _semantic_health_exclusions(
             output.append(f"{participant}:疾病:{disease}")
     return tuple(output)
 
+
+def _stable_merge(*collections: tuple[str, ...]) -> tuple[str, ...]:
+    """按输入顺序合并集合，保留每个值首次出现的位置。"""
+    return tuple(dict.fromkeys(
+        value for collection in collections for value in collection
+    ))
+
+
 #: generate_feasible_menus 返回的业务终态 → reducer result 映射。
 _GENERATE_TERMINAL = {
     "no_safe_menu": "no_safe_menu",
@@ -157,33 +165,79 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
         action = routed.intent
         if action == "model_fallback":
             action = "add_constraint" if has_current_menu else "new_recommendation"
+        meal_types = _stable_merge(
+            (routed.meal_type,) if routed.meal_type else (),
+            routed.meal_types,
+            rewrite.meal_types,
+        )
+        population_tags = _stable_merge(
+            routed.population_tags,
+            rewrite.population_tags,
+        )
+        scenario_tags = _stable_merge(
+            (routed.scenario,) if routed.scenario else (),
+            routed.scenario_tags,
+            rewrite.scenario_tags,
+        )
+        taste_tags = _stable_merge(
+            routed.flavor_preferences,
+            routed.taste_tags,
+            rewrite.taste_tags,
+        )
+        cuisine_tags = _stable_merge(routed.cuisine_tags, rewrite.cuisine_tags)
+        dish_types = _stable_merge(routed.dish_types, rewrite.dish_types)
+        include_ingredients = _stable_merge(
+            routed.include_ingredients,
+            rewrite.include_ingredients,
+        )
+        exclude_ingredients = _stable_merge(
+            routed.exclude_ingredients,
+            rewrite.exclude_ingredients,
+        )
+        nutrition_goal_codes = _stable_merge(
+            routed.nutrition_goal_codes,
+            rewrite.nutrition_goal_codes,
+        )
         health_exclusions = routed.health_exclusions
         if not health_exclusions:
             health_exclusions = _semantic_health_exclusions(
                 rewrite.health_constraints,
                 participant_refs,
             )
+        router_hard_time = (
+            routed.time_constraint_policy == "hard"
+            and routed.time_constraint_seconds is not None
+        )
         return replace(
             routed,
             intent=action,
             rewritten_query=rewrite.retrieval_query,
-            meal_type=rewrite.meal_types[0] if rewrite.meal_types else None,
-            meal_types=rewrite.meal_types,
-            population_tags=rewrite.population_tags,
-            scenario=rewrite.scenario_tags[0] if rewrite.scenario_tags else None,
-            scenario_tags=rewrite.scenario_tags,
-            dish_count_requested=rewrite.dish_count,
-            flavor_preferences=rewrite.taste_tags,
-            taste_tags=rewrite.taste_tags,
-            cuisine_tags=rewrite.cuisine_tags,
-            dish_types=rewrite.dish_types,
-            include_ingredients=rewrite.include_ingredients,
-            exclude_ingredients=rewrite.exclude_ingredients,
-            nutrition_goal_codes=rewrite.nutrition_goal_codes,
+            meal_type=meal_types[0] if meal_types else None,
+            meal_types=meal_types,
+            population_tags=population_tags,
+            scenario=scenario_tags[0] if scenario_tags else None,
+            scenario_tags=scenario_tags,
+            dish_count_requested=(
+                routed.dish_count_requested
+                if routed.dish_count_requested is not None
+                else rewrite.dish_count
+            ),
+            flavor_preferences=taste_tags,
+            taste_tags=taste_tags,
+            cuisine_tags=cuisine_tags,
+            dish_types=dish_types,
+            include_ingredients=include_ingredients,
+            exclude_ingredients=exclude_ingredients,
+            nutrition_goal_codes=nutrition_goal_codes,
             health_exclusions=health_exclusions,
-            time_constraint_seconds=rewrite.time_constraint_seconds,
+            time_constraint_seconds=(
+                routed.time_constraint_seconds
+                if router_hard_time else rewrite.time_constraint_seconds
+            ),
             time_constraint_policy=(
-                "hard" if rewrite.max_time_minutes is not None else "flexible"
+                "hard"
+                if router_hard_time or rewrite.max_time_minutes is not None
+                else "flexible"
             ),
         )
 

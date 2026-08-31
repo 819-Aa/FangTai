@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from food_agent_v2.c3.fast_intent import FastIntentRouter
+from food_agent_v2.c3.fast_intent import FastIntentRouter, IntentDelta
 from food_agent_v2.c3.orchestrator import DeterministicRecommendationOrchestrator
 from food_agent_v2.c3.query_normalizer import SemanticRewrite
 from food_agent_v2.d1 import api as d1_api
@@ -60,6 +60,65 @@ def test_semantic_rewrite_is_the_only_query_plan_and_retrieval_source() -> None:
     assert plan.exclude_ingredients == ("辣椒",)
     assert plan.time_constraint_seconds == 1800
     assert orchestrator._retrieval_query(intent) == "老人 晚餐"
+
+
+def test_semantic_rewrite_preserves_and_stably_merges_routed_constraints() -> None:
+    orchestrator = DeterministicRecommendationOrchestrator(llm=SimpleNamespace())
+    routed = IntentDelta(
+        query="三菜一汤，30分钟内，不吃花生",
+        meal_types=("晚餐",),
+        population_tags=("老人",),
+        scenario_tags=("家庭",),
+        dish_count_requested=4,
+        flavor_preferences=("清淡",),
+        taste_tags=("清淡",),
+        cuisine_tags=("川菜",),
+        dish_types=("汤",),
+        include_ingredients=("豆腐",),
+        exclude_ingredients=("花生",),
+        nutrition_goal_codes=("low_salt",),
+        health_exclusions=("p1:高血压",),
+        time_constraint_seconds=1800,
+        time_constraint_policy="hard",
+    )
+    rewrite = SemanticRewrite(
+        retrieval_query="老人 晚餐 豆腐汤",
+        meal_types=("晚餐", "午餐"),
+        population_tags=("老人", "儿童"),
+        scenario_tags=("家庭", "聚餐"),
+        dish_count=2,
+        taste_tags=("清淡", "鲜香"),
+        cuisine_tags=("川菜", "粤菜"),
+        dish_types=("汤", "素菜"),
+        include_ingredients=("豆腐", "菌菇"),
+        exclude_ingredients=("花生", "香菜"),
+        nutrition_goal_codes=("low_salt", "high_protein"),
+        health_constraints=("糖尿病",),
+        max_time_minutes=45,
+    )
+
+    intent = orchestrator._apply_semantic_rewrite(
+        routed,
+        rewrite,
+        ("p1",),
+        has_current_menu=False,
+    )
+
+    assert intent.rewritten_query == "老人 晚餐 豆腐汤"
+    assert intent.meal_types == ("晚餐", "午餐")
+    assert intent.population_tags == ("老人", "儿童")
+    assert intent.scenario_tags == ("家庭", "聚餐")
+    assert intent.dish_count_requested == 4
+    assert intent.flavor_preferences == ("清淡", "鲜香")
+    assert intent.taste_tags == ("清淡", "鲜香")
+    assert intent.cuisine_tags == ("川菜", "粤菜")
+    assert intent.dish_types == ("汤", "素菜")
+    assert intent.include_ingredients == ("豆腐", "菌菇")
+    assert intent.exclude_ingredients == ("花生", "香菜")
+    assert intent.nutrition_goal_codes == ("low_salt", "high_protein")
+    assert intent.health_exclusions == ("p1:高血压",)
+    assert intent.time_constraint_seconds == 1800
+    assert intent.time_constraint_policy == "hard"
 
 
 pytestmark = pytest.mark.skipif(not _mysql_available(), reason="MySQL 不可用")
