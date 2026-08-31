@@ -471,8 +471,9 @@ def test_allergy_only_fallback_derives_allergen_and_rejects_positive_contaminati
     assert rewrite.health_constraints == (message,)
 
 
-def test_negated_soup_is_absent_from_fallback_positive_semantics() -> None:
-    rewrite = QueryNormalizer(_FakeLLM(error=TimeoutError())).normalize("不要汤", ("p1",))
+@pytest.mark.parametrize("message", ("不要汤", "不能吃汤"))
+def test_negated_soup_is_absent_from_fallback_positive_semantics(message: str) -> None:
+    rewrite = QueryNormalizer(_FakeLLM(error=TimeoutError())).normalize(message, ("p1",))
 
     assert rewrite.dish_types == ()
     assert "汤" not in rewrite.retrieval_query
@@ -504,6 +505,33 @@ def test_excluded_term_does_not_contaminate_distinct_longer_query_token() -> Non
 
     assert rewrite.retrieval_query == "洋葱"
     assert rewrite.exclude_ingredients == ("葱",)
+
+
+@pytest.mark.parametrize("model_query", ("花生汤", "花生酱拌面"))
+def test_excluded_term_at_compound_token_start_forces_fallback(model_query: str) -> None:
+    llm = _FakeLLM(
+        responses=[
+            json.dumps(
+                {
+                    "retrieval_query": model_query,
+                    "exclude_ingredients": ["花生"],
+                },
+                ensure_ascii=False,
+            )
+        ]
+    )
+
+    rewrite = QueryNormalizer(llm).normalize("不要花生，想吃汤", ("p1",))
+
+    assert rewrite.retrieval_query == "汤"
+    assert rewrite.exclude_ingredients == ("花生",)
+
+
+@pytest.mark.parametrize("message", ("我花生过敏", "晚餐我花生过敏"))
+def test_allergy_extraction_uses_local_noun_after_sentence_prefix(message: str) -> None:
+    rewrite = QueryNormalizer(_FakeLLM(error=TimeoutError())).normalize(message, ("p1",))
+
+    assert rewrite.exclude_ingredients == ("花生",)
 
 
 def test_validated_rewrite_is_the_only_query_plan_and_retrieval_source() -> None:

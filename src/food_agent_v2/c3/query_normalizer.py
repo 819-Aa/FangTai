@@ -273,19 +273,31 @@ def _extract_excludes(text: str) -> tuple[str, ...]:
             value = "辣椒"
         if value:
             found.append(value)
-    for match in re.finditer(
-        r"(?:我对|我|对)?([\u4e00-\u9fff]{1,8}?)(?:过敏|不耐受)",
-        text,
-    ):
-        value = match.group(1).strip()
-        if value:
-            found.append(value)
+    found.extend(_extract_allergens(text))
+    return tuple(dict.fromkeys(found))
+
+
+def _extract_allergens(text: str) -> tuple[str, ...]:
+    found = []
+    for match in re.finditer(r"过敏|不耐受", text):
+        local = re.split(r"[，。；;！？!?]", text[: match.start()])[-1].strip()
+        if "我对" in local:
+            local = local.rsplit("我对", 1)[-1]
+        elif "我" in local:
+            local = local.rsplit("我", 1)[-1]
+        else:
+            for context in (*_MEALS, *_POPULATIONS):
+                if context in local:
+                    local = local.rsplit(context, 1)[-1]
+        local = local.strip()
+        if re.fullmatch(r"[\u4e00-\u9fff]{1,8}", local):
+            found.append(local)
     return tuple(dict.fromkeys(found))
 
 
 def _is_negated_term(text: str, term: str) -> bool:
     return re.search(
-        rf"(?:不要|不吃|不想吃|别吃|别放|排除|忌)\s*.{{0,2}}{re.escape(term)}",
+        rf"(?:不要|不能吃|不吃|不想吃|别吃|别放|排除|忌)\s*.{{0,2}}{re.escape(term)}",
         text,
     ) is not None
 
@@ -482,7 +494,7 @@ def _is_positive_retrieval_query(
 
 def _query_contains_term(query: str, term: str) -> bool:
     tokens = re.split(r"[\s,，。；;、/]+", query.strip())
-    return term in tokens
+    return any(token == term or token.startswith(term) for token in tokens)
 
 
 def _sanitized_free_text_query(text: str, exclude: Sequence[str]) -> str:
