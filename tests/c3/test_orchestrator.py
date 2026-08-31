@@ -255,6 +255,12 @@ def _deterministic_c1_candidates(monkeypatch: pytest.MonkeyPatch) -> None:
         def build_retrieval_view(self, recipe_id: int):
             return self._retrieval.get(recipe_id)
 
+        def get_recipe(self, recipe_id: int) -> dict | None:
+            view = self._retrieval.get(int(recipe_id))
+            if view is None:
+                return None
+            return {"recipe_id": view.recipe_id, "名称": view.name}
+
     fixture_builder = FixtureViewBuilder(health_views)
 
     class FixtureRepository:
