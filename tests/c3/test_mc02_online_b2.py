@@ -12,6 +12,7 @@ from __future__ import annotations
 import ast
 import copy
 import uuid
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -20,7 +21,12 @@ import pytest
 from food_agent_v2.b2.repository import InMemoryUserProfileSource, ProfileRepositoryError
 from food_agent_v2.b2.service import UserHealthProfileService
 from food_agent_v2.c3.runner import WorkflowRunner
-from food_agent_v2.c3.tool_handler import ToolContext, ToolHandler, _retrieve_recipes
+from food_agent_v2.c3.tool_handler import (
+    ToolContext,
+    ToolHandler,
+    _expand_retrieval,
+    _retrieve_recipes,
+)
 from food_agent_v2.c4 import (
     B2PermanentConstraintLoader,
     ConstraintScope,
@@ -234,6 +240,102 @@ class TestNoLlmWhenB2Unavailable:
         assert filters.meal_tags == ("晚餐",)
         assert filters.population_tags == ("老人",)
         assert filters.exclude_ingredients == ("辣椒",)
+
+    def test_projection_reaches_single_person_retrieve(self, monkeypatch) -> None:
+        captured = {}
+
+        class _RetrievalService:
+            def project_filters(self, filters):
+                return replace(filters, taste_tags=("supported",))
+
+            def retrieve(self, query, **kwargs):
+                captured.update(kwargs)
+                return SimpleNamespace(total_candidates=0, candidates=[])
+
+        monkeypatch.setattr("food_agent_v2.c1.get_retrieval_service", lambda: _RetrievalService())
+        ctx = ToolContext(request_id=RID, build_id=BID, participant_user_mapping={"p1": 1})
+        ctx.previous_results["query_plan"] = SimpleNamespace(taste_tags=("unsupported",))
+
+        _retrieve_recipes({"query": "菜"}, ctx)
+
+        assert captured["filters"].taste_tags == ("supported",)
+
+    def test_projection_reaches_multi_person_and_fallback_retrieve(self, monkeypatch) -> None:
+        captured = []
+
+        class _RetrievalService:
+            def project_filters(self, filters):
+                return replace(filters, taste_tags=("supported",))
+
+            def multi_person_retrieve(self, query, prefs, **kwargs):
+                captured.append(("multi", kwargs["filters"]))
+                raise RuntimeError("multi unavailable")
+
+            def retrieve(self, query, **kwargs):
+                captured.append(("retrieve", kwargs["filters"]))
+                return SimpleNamespace(total_candidates=0, candidates=[])
+
+        monkeypatch.setattr("food_agent_v2.c1.get_retrieval_service", lambda: _RetrievalService())
+        monkeypatch.setattr(UserHealthProfileService, "load", lambda self, expected_build_id=None: None)
+        monkeypatch.setattr(UserHealthProfileService, "get_user", lambda self, uid: {"dietary_preferences": ["清淡"]})
+        ctx = ToolContext(
+            request_id=RID, build_id=BID,
+            participant_user_mapping={"p1": 1, "p2": 2},
+        )
+        ctx.previous_results["query_plan"] = SimpleNamespace(taste_tags=("unsupported",))
+
+        _retrieve_recipes({"query": "菜"}, ctx)
+
+        assert [kind for kind, _ in captured] == ["multi", "retrieve"]
+        assert all(filters.taste_tags == ("supported",) for _, filters in captured)
+
+    def test_projection_reaches_expansion_retrieve(self, monkeypatch) -> None:
+        captured = {}
+
+        class _RetrievalService:
+            def project_filters(self, filters):
+                return replace(filters, taste_tags=("supported",))
+
+            def retrieve(self, query, **kwargs):
+                captured.update(kwargs)
+                return SimpleNamespace(total_candidates=0, candidates=[])
+
+        monkeypatch.setattr("food_agent_v2.c1.get_retrieval_service", lambda: _RetrievalService())
+        ctx = ToolContext(request_id=RID, build_id=BID)
+        ctx.previous_results["query_plan"] = SimpleNamespace(taste_tags=("unsupported",))
+
+        result = _expand_retrieval({"query": "扩展", "original_ids": []}, ctx)
+
+        assert result["count"] == 0
+        assert captured["filters"].taste_tags == ("supported",)
+
+    def test_projection_compatibility_keeps_filters_for_legacy_port(self, monkeypatch) -> None:
+        captured = {}
+
+        class _LegacyRetrievalService:
+            def retrieve(self, query, **kwargs):
+                captured.update(kwargs)
+                return SimpleNamespace(total_candidates=0, candidates=[])
+
+        monkeypatch.setattr("food_agent_v2.c1.get_retrieval_service", lambda: _LegacyRetrievalService())
+        ctx = ToolContext(request_id=RID, build_id=BID, participant_user_mapping={"p1": 1})
+        ctx.previous_results["query_plan"] = SimpleNamespace(taste_tags=("unchanged",))
+
+        _retrieve_recipes({"query": "菜"}, ctx)
+
+        assert captured["filters"].taste_tags == ("unchanged",)
+
+    def test_projection_error_from_real_port_propagates(self, monkeypatch) -> None:
+        class _BrokenRetrievalService:
+            def project_filters(self, filters):
+                raise RuntimeError("projection failed")
+
+        monkeypatch.setattr("food_agent_v2.c1.get_retrieval_service", lambda: _BrokenRetrievalService())
+        ctx = ToolContext(request_id=RID, build_id=BID, participant_user_mapping={"p1": 1})
+        ctx.previous_results["query_plan"] = SimpleNamespace()
+
+        with pytest.raises(RuntimeError, match="projection failed"):
+            _retrieve_recipes({"query": "菜"}, ctx)
 
     def test_multiplayer_b2_failure_produces_failed_tool_receipt(self, monkeypatch) -> None:
         """真实 ToolHandler 边界把 B2 异常记录为失败回执，而不是成功检索。"""

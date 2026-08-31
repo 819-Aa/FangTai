@@ -14,3 +14,9 @@ Validation:
 - `uv run pytest tests/c1/test_full_hybrid_retrieval.py tests/c3/test_mc02_online_b2.py -q` — 20 passed.
 - `uv run pytest tests/c1 tests/c3/test_mc02_online_b2.py -q` — 31 passed.
 - `git diff --check` — passed.
+
+Follow-up C3 path coverage:
+
+- Added tests for projection reaching single-person, multi-person, fallback, and expansion retrieval.
+- Added tests for legacy ports retaining filters and projection errors propagating.
+- `uv run pytest tests/c1/test_full_hybrid_retrieval.py tests/c3/test_mc02_online_b2.py -q` — 25 passed.
