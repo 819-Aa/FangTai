@@ -77,7 +77,7 @@ class LLMConfig:
         if role == "answer_generation":
             return self.answer_extra_body
         if role == "query_understanding":
-            return self.query_extra_body
+            return self.query_extra_body if self.query_extra_body is not None else self.reasoning_extra_body
         return self.reasoning_extra_body
 
 

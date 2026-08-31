@@ -34,6 +34,12 @@ def test_query_understanding_uses_its_own_extra_body() -> None:
     assert config.extra_body_for_role("answer_generation") == {"temperature": 0.2}
 
 
+def test_query_understanding_falls_back_to_reasoning_extra_body() -> None:
+    config = LLMConfig(reasoning_extra_body={"enable_thinking": True})
+
+    assert config.extra_body_for_role("query_understanding") == {"enable_thinking": True}
+
+
 def test_load_config_parses_query_extra_body(monkeypatch) -> None:
     monkeypatch.setenv("LLM_MODEL_QUERY_EXTRA_BODY", '{"enable_thinking": false}')
 
