@@ -10,6 +10,7 @@ from food_agent_v2.contracts.artifacts import (
     FinalValidationArtifact,
     HealthEvaluationArtifact,
     MenuDecisionArtifact,
+    QueryPlanArtifact,
     ReviewArtifact,
 )
 from food_agent_v2.d1 import api as d1_api
@@ -213,3 +214,53 @@ def test_current_menu_updated_only_on_commit() -> None:
     # 提交成功后 current_menu 更新为 fva 的 plan_id/recipe_ids
     assert c4._sessions[SID].current_menu.plan_id == PLAN
     assert c4._sessions[SID].current_menu.recipe_ids == [101, 202]
+
+
+def test_completed_commit_contains_stable_semantic_query_plan_snapshot() -> None:
+    """成功提交只记语义字段，不把本轮随机 Artifact 身份写进多轮记忆。"""
+    _seed_request()
+    state = _completed_state()
+    state.query_plan_artifact = QueryPlanArtifact(
+        artifact_id=UUID("60000000-0000-0000-0000-000000000001"),
+        request_id=UUID(RID),
+        participant_refs=("p1",),
+        rewritten_query="晚餐 豆腐",
+        meal_types=("晚餐",),
+        taste_tags=("清淡",),
+        include_ingredients=("豆腐",),
+        exclude_ingredients=("花生",),
+        nutrition_goal_codes=("low_sodium",),
+        dish_count_requested=3,
+        health_exclusions=("p1:过敏:花生",),
+        time_constraint_seconds=1800,
+        time_constraint_policy="hard",
+        evidence_refs=("query:evidence",),
+        input_fingerprint="7" * 64,
+        content_hash="8" * 64,
+    )
+    runner = WorkflowRunner(build_id="7" * 32, llm=object(), c4=_C4())
+
+    with patch.object(d1_api, "_persist_request", lambda request_id: None), \
+            patch("food_agent_v2.application.commit_request_result",
+                  return_value={"committed": True}) as commit, \
+            patch("food_agent_v2.application.menu_projection.build_public_menu",
+                  return_value=[]):
+        runner._finalize(state, RID, _C4(), lock_token="1")
+
+    snapshot = commit.call_args.kwargs["health_evidence"]["query_plan"]
+    assert snapshot == {
+        "rewritten_query": "晚餐 豆腐",
+        "meal_types": ["晚餐"],
+        "population_tags": [],
+        "dish_types": [],
+        "taste_tags": ["清淡"],
+        "cuisine_tags": [],
+        "scenario_tags": [],
+        "include_ingredients": ["豆腐"],
+        "exclude_ingredients": ["花生"],
+        "nutrition_goal_codes": ["low_sodium"],
+        "dish_count_requested": 3,
+        "health_exclusions": ["p1:过敏:花生"],
+        "time_constraint_seconds": 1800,
+        "time_constraint_policy": "hard",
+    }

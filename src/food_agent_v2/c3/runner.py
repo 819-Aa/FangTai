@@ -85,6 +85,38 @@ class WorkflowRunner:
         "get_artifact_chain",
     }
 
+    QUERY_PLAN_SNAPSHOT_FIELDS = (
+        "rewritten_query",
+        "meal_types",
+        "population_tags",
+        "dish_types",
+        "taste_tags",
+        "cuisine_tags",
+        "scenario_tags",
+        "include_ingredients",
+        "exclude_ingredients",
+        "nutrition_goal_codes",
+        "dish_count_requested",
+        "health_exclusions",
+        "time_constraint_seconds",
+        "time_constraint_policy",
+    )
+
+    @classmethod
+    def _query_plan_snapshot(cls, artifact: Any) -> dict | None:
+        """只投影可供下一轮复用的稳定语义字段。"""
+        if isinstance(artifact, BaseModel):
+            data = artifact.model_dump(mode="json")
+        elif isinstance(artifact, dict):
+            data = artifact
+        else:
+            return None
+        snapshot = {}
+        for field in cls.QUERY_PLAN_SNAPSHOT_FIELDS:
+            value = data.get(field)
+            snapshot[field] = list(value) if isinstance(value, tuple) else value
+        return snapshot
+
     def __init__(
         self,
         *,
@@ -1424,6 +1456,9 @@ class WorkflowRunner:
                     if isinstance(ans, AnswerArtifact) else False,
                     "tool_receipt_count": len(state.tool_receipts),
                 }
+                query_plan = self._query_plan_snapshot(state.query_plan_artifact)
+                if query_plan is not None:
+                    health_evidence["query_plan"] = query_plan
                 # 结构化菜单名只从同一 ready build 的固定 B3 视图派生；
                 # 不解析模型回答，不允许缺菜/错 build 后继续提交。
                 from food_agent_v2.application.menu_projection import build_public_menu

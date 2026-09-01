@@ -4,6 +4,7 @@
 依赖 MySQL 可用（工具执行真实领域服务）。
 """
 
+import json
 import uuid
 from types import SimpleNamespace
 
@@ -404,9 +405,11 @@ def _deterministic_c1_candidates(monkeypatch: pytest.MonkeyPatch) -> None:
 class _FakeC4:
     """确定性链路所需的 C4 替身（无前文菜单，供首次推荐 fast path）。"""
 
-    def __init__(self, has_current_menu: bool = False) -> None:
+    def __init__(self, has_current_menu: bool = False,
+                 query_plan: dict | None = None) -> None:
         self._sessions: dict = {}
         self._has_current_menu = has_current_menu
+        self._query_plan = query_plan
 
     def build_shared_context(self, session_id, participant_refs, raw, mapping,
                              request_id=None, build_id=None):
@@ -422,7 +425,8 @@ class _FakeC4:
     def get_session_state(self, session_id):
         if self._has_current_menu:
             return {"session_id": session_id,
-                    "current_menu": {"plan_id": "p1", "recipe_ids": [1, 2, 3]}}
+                    "current_menu": {"plan_id": "p1", "recipe_ids": [1, 2, 3]},
+                    "query_plan": self._query_plan}
         return None
 
     def store_temporary_constraint(self, session_id, constraint):
@@ -468,10 +472,11 @@ def test_make_orchestrator_uses_local_llm_without_loading_configured_client(
     assert isinstance(runner._llm, _UnavailableLLM)
 
 
-def _make_orchestrator(has_current_menu: bool = False, *, llm=None):
+def _make_orchestrator(has_current_menu: bool = False, *, llm=None,
+                       query_plan: dict | None = None):
     return DeterministicRecommendationOrchestrator(
         llm=llm if llm is not None else _UnavailableLLM(),
-        c4=_FakeC4(has_current_menu=has_current_menu),
+        c4=_FakeC4(has_current_menu=has_current_menu, query_plan=query_plan),
     )
 
 
@@ -515,3 +520,34 @@ class TestDeterministicChain:
         status = d1_api.get_request_status(rid)[1]["status"]
         # FakeC4 不真实存储临时约束，当前菜单（1/2/3）仍安全 → 菜单不变但 completed
         assert status == "completed", f"约束追加 delta 未 completed: {status}"
+
+    def test_second_turn_passes_committed_query_plan_to_qwen(self) -> None:
+        """生产编排入口把上一轮餐次/排除条件交给本轮 QueryNormalizer。"""
+        previous = {
+            "rewritten_query": "晚餐 豆腐",
+            "meal_types": ["晚餐"],
+            "exclude_ingredients": ["花生"],
+        }
+
+        class _ContextAwareLLM:
+            payload = None
+
+            def invoke(self, _role, _system_prompt, user_message, **_kwargs):
+                self.payload = json.loads(user_message)
+                return {"content": json.dumps({
+                    "retrieval_query": "晚餐 清淡",
+                    "meal_types": ["晚餐"],
+                    "taste_tags": ["清淡"],
+                    "exclude_ingredients": ["花生"],
+                }, ensure_ascii=False)}
+
+        llm = _ContextAwareLLM()
+        rid = _fresh_rid()
+        _reset_d1(rid)
+        runner = _make_orchestrator(
+            has_current_menu=True, llm=llm, query_plan=previous)
+
+        runner.run(rid, "sess_previous", "再清淡一点",
+                   [{"participant_ref": "p1", "user_id": "1"}])
+
+        assert llm.payload["previous_query_plan"] == previous

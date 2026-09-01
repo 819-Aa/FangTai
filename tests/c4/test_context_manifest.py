@@ -436,6 +436,67 @@ class TestRestoreCombined:
             {"recipe_id": 1, "name": "番茄炒蛋"},
         ]
 
+    def test_get_session_state_binds_query_plan_to_current_menu_plan(self) -> None:
+        """不得按时间误取非 current_menu_plan_id 对应的成功计划。"""
+        import json
+
+        from food_agent_v2.b3.repository import RecipeRetrievalView
+        from food_agent_v2.c4.mysql_repository import MySQLSessionMemorySource
+
+        class _Cursor:
+            def __init__(self):
+                self.sql = ""
+
+            def execute(self, sql, params):
+                self.sql = sql
+                self.params = params
+
+            def fetchone(self):
+                if "FROM sessions WHERE" in self.sql:
+                    return ("sess-plan", '["p1"]', "plan-A", 2, None)
+                if "recommendation_logs" in self.sql:
+                    return (json.dumps({
+                        "query_plan": {
+                            "meal_types": ["晚餐"],
+                            "exclude_ingredients": ["花生"],
+                        }
+                    }, ensure_ascii=False),)
+                return None
+
+            def fetchall(self):
+                if "menu_versions" in self.sql:
+                    return (
+                        ("plan-A", "a" * 64, "[1]", "2026-01-01"),
+                        ("plan-B", "b" * 64, "[2]", "2026-01-02"),
+                    )
+                return ()
+
+        class _MenuRepo:
+            def ready_build_id(self):
+                return "build-ready"
+
+            def get_retrieval_view(self, recipe_ids, build_id):
+                return [RecipeRetrievalView(
+                    recipe_id, f"菜{recipe_id}", [], [], {}, None, None, [])
+                    for recipe_id in recipe_ids]
+
+            def close(self):
+                pass
+
+        source = MySQLSessionMemorySource()
+        source._connection = object()
+        source._cursor = _Cursor()
+        state = ContextService(
+            memory_source=source, menu_repository=_MenuRepo()
+        ).get_session_state("sess-plan")
+
+        assert state["current_menu"]["plan_id"] == "plan-A"
+        assert state["query_plan"] == {
+            "meal_types": ["晚餐"],
+            "exclude_ingredients": ["花生"],
+        }
+        assert source._cursor.params == ("sess-plan", "plan-A")
+
 
 class _FakeConstraint:
     def __init__(self, code: str, refs: list[str]) -> None:

@@ -19,6 +19,7 @@ class SessionMemorySource(Protocol):
     def load_session(self, session_id: str) -> dict | None: ...
     def load_committed_events(self, session_id: str) -> list[dict]: ...
     def load_menu_versions(self, session_id: str) -> list[dict]: ...
+    def load_query_plan(self, session_id: str, plan_id: str) -> dict | None: ...
     def save_session(self, session_id: str, participant_refs: list[str]) -> None: ...
 
 
@@ -106,6 +107,21 @@ class MySQLSessionMemorySource:
             })
         return versions
 
+    def load_query_plan(self, session_id: str, plan_id: str) -> dict | None:
+        """读取当前菜单对应的最近 completed QueryPlan；旧审计无快照时返回 None。"""
+        self.cursor.execute(
+            "SELECT health_evidence FROM recommendation_logs "
+            "WHERE session_id=%s AND final_plan_id=%s AND status='completed' "
+            "ORDER BY created_at DESC, log_id DESC LIMIT 1",
+            (session_id, plan_id),
+        )
+        row = self.cursor.fetchone()
+        if not row or not row[0]:
+            return None
+        evidence = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+        query_plan = evidence.get("query_plan") if isinstance(evidence, dict) else None
+        return dict(query_plan) if isinstance(query_plan, dict) else None
+
 
 class InMemorySessionMemorySource:
     """单元测试 Fake：内存中的已提交会话记忆。"""
@@ -114,6 +130,7 @@ class InMemorySessionMemorySource:
         self.sessions: dict[str, dict] = {}
         self.events: dict[str, list[dict]] = {}
         self.menus: dict[str, list[dict]] = {}
+        self.query_plans: dict[tuple[str, str], dict] = {}
 
     def load_session(self, session_id: str) -> dict | None:
         meta = self.sessions.get(session_id)
@@ -126,6 +143,10 @@ class InMemorySessionMemorySource:
 
     def load_menu_versions(self, session_id: str) -> list[dict]:
         return list(self.menus.get(session_id, []))
+
+    def load_query_plan(self, session_id: str, plan_id: str) -> dict | None:
+        plan = self.query_plans.get((session_id, plan_id))
+        return dict(plan) if plan is not None else None
 
     def save_session(self, session_id: str, participant_refs: list[str]) -> None:
         self.sessions[session_id] = {"session_id": session_id,

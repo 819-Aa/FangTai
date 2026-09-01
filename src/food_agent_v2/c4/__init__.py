@@ -423,7 +423,19 @@ class ContextService:
         if not meta:
             return None
         menus = src.load_menu_versions(session_id)
-        current_menu = menus[-1] if menus else None
+        current_plan_id = meta.get("current_menu_plan_id")
+        if current_plan_id:
+            current_menu = next(
+                (menu for menu in reversed(menus)
+                 if menu.get("plan_id") == current_plan_id),
+                None,
+            )
+        else:
+            current_menu = menus[-1] if menus else None
+        query_plan = None
+        load_query_plan = getattr(src, "load_query_plan", None)
+        if current_menu and callable(load_query_plan):
+            query_plan = load_query_plan(session_id, current_menu["plan_id"])
         if current_menu:
             from food_agent_v2.application.menu_projection import (
                 build_current_public_menu,
@@ -442,6 +454,7 @@ class ContextService:
             "request_count": meta.get("request_count", 0),
             "last_request_at": meta.get("last_request_at"),
             "current_menu": current_menu,
+            "query_plan": query_plan,
         }
 
     def build_shared_context(
