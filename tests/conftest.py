@@ -20,7 +20,7 @@ def _clean_fixed_keys() -> None:
         if store._client is None:
             return
         for key in _FIXED_TEST_KEYS:
-            idem_key = f"v2:idem:{key}"
+            idem_key = store._key("idem", key)
             raw = store._client.get(idem_key)
             store._client.delete(idem_key)
             if raw:
@@ -29,7 +29,7 @@ def _clean_fixed_keys() -> None:
                 except Exception:
                     rid = None
                 if rid:
-                    store._client.delete(f"v2:request:{rid}")
+                    store._client.delete(store._key("request", rid))
     except Exception:
         pass
 

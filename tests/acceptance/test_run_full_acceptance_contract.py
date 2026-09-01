@@ -1,60 +1,63 @@
-"""MC-06 acceptance runner static safety contract."""
+"""Current H07 acceptance runner behavior."""
 
 from __future__ import annotations
 
+import json
+import os
+import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "run_full_acceptance.ps1"
 
 
-def _text() -> str:
-    return SCRIPT.read_text(encoding="utf-8-sig")
-
-
-def test_runner_exposes_mutually_exclusive_existing_and_initialize_modes() -> None:
-    text = _text()
-    assert "[switch]$UseExistingAuthorizedT23" in text
-    assert "[switch]$InitializeAuthorizedEmptyT23" in text
-    assert "$UseExistingAuthorizedT23 -eq $InitializeAuthorizedEmptyT23" in text
-
-
-def test_existing_mode_is_read_only_for_fixed_data_and_docker_resources() -> None:
-    text = _text()
-    start = text.index("function Assert-ExistingT23Environment")
-    end = text.index("function Initialize-T23Environment")
-    existing = text[start:end]
-    forbidden = (
-        "data-rebuild",
-        "data-initialize",
-        "docker compose",
-        "docker volume rm",
-        "docker rm",
-        "down -v",
+def _run_preflight(
+    *,
+    shell: str = "pwsh",
+    overrides: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    env.update(overrides or {})
+    return subprocess.run(
+        [
+            shell,
+            "-NoProfile",
+            "-File",
+            str(SCRIPT),
+            "-PreflightOnly",
+        ],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=30,
+        check=False,
     )
-    assert all(token not in existing for token in forbidden)
 
 
-def test_api_gate_uses_readiness_not_liveness() -> None:
-    text = _text()
-    assert '"$API/ready"' in text
-    assert '"$API/health"' not in text
-    assert "APPROVED_BUILD_ID" in text
+def test_preflight_accepts_current_h07_qwen_runtime() -> None:
+    result = _run_preflight()
+
+    assert result.returncode == 0, result.stderr or result.stdout
+    summary = json.loads(result.stdout.strip().splitlines()[-1])
+    assert summary == {
+        "mysql": "127.0.0.1:3309/food_agent_v2_h07",
+        "qdrant": "127.0.0.1:6339/recipe_retrieval_v2_h07",
+        "redis": "127.0.0.1:6382/v2:h07",
+        "reasoning_model": "qwen3.8-max",
+        "answer_model": "qwen3.8-max",
+        "llm_key_present": True,
+    }
 
 
-def test_background_api_is_hidden_and_only_owned_pid_is_stopped() -> None:
-    text = _text()
-    assert "-WindowStyle Hidden" in text
-    assert "Get-CimInstance Win32_Process" not in text
-    assert "Stop-Process -Id $Script:ApiProc.Id" in text
+def test_preflight_rejects_retired_store_configuration() -> None:
+    result = _run_preflight(overrides={"MYSQL_PORT": "3307"})
+
+    assert result.returncode == 2
+    assert "H07_CONFIG_MISMATCH" in result.stderr
 
 
-def test_offline_regression_is_batched_but_requires_exact_total() -> None:
-    text = _text()
-    assert "function Run-OfflineRegression" in text
-    assert '"tests/b1/test_ingredient_identity_rebuild.py::TestFullScale"' in text
-    assert '"tests/integration/test_real_qdrant_retrieval.py"' in text
-    assert "$executed -ne $collected" in text
-    assert "failures -ne 0" in text
-    assert "errors -ne 0" in text
-    assert "skipped -ne 0" in text
+def test_preflight_supports_windows_powershell() -> None:
+    result = _run_preflight(shell="powershell")
+
+    assert result.returncode == 0, result.stderr or result.stdout

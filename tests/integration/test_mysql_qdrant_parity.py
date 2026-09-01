@@ -14,7 +14,7 @@ from food_agent_v2.b1.database_loader import (
     initialize_verified_fixed_data,
 )
 from food_agent_v2.c1.qdrant_client import QdrantVectorStore, rag_document_payload
-from food_agent_v2.core.config import QdrantConfig
+from food_agent_v2.core.config import QdrantConfig, load_config
 
 from .test_staging_initialization import FakeMySQLTarget, FakeVectorTarget
 
@@ -144,6 +144,8 @@ def test_qdrant_payload_projects_all_rag_filter_arrays_without_old_step_fields()
 
 
 def test_online_vector_store_recognizes_published_alias(monkeypatch: pytest.MonkeyPatch) -> None:
+    configured_alias = load_config().qdrant.collection
+
     class AliasOnlyClient:
         def __init__(self, **_: object) -> None:
             self.create_calls = 0
@@ -153,8 +155,8 @@ def test_online_vector_store_recognizes_published_alias(monkeypatch: pytest.Monk
 
         def get_aliases(self) -> SimpleNamespace:
             alias = SimpleNamespace(
-                alias_name="recipe_retrieval_v2",
-                collection_name="recipe_retrieval_v2__staging__fixed",
+                alias_name=configured_alias,
+                collection_name=f"{configured_alias}__staging__fixed",
             )
             return SimpleNamespace(aliases=[alias])
 

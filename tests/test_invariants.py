@@ -198,7 +198,7 @@ class TestD1:
         assert code == 200
         store = RedisSessionStore()
         store._connect()
-        assert store._client.get(f"v2:cancel:{rid}")
+        assert store._client.get(store._key("cancel", rid))
 
     def test_state_persist_restore(self):
         from food_agent_v2.d1 import api

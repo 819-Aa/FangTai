@@ -7,6 +7,7 @@
 
 from unittest.mock import patch
 
+from food_agent_v2.b3.repository import MySQLArtifactRecordSource
 from food_agent_v2.c3.runner import WorkflowRunner, _parse_health_exclusion
 from food_agent_v2.c3.state import RequestStatus
 from food_agent_v2.c4 import (
@@ -18,7 +19,11 @@ from food_agent_v2.contracts.artifacts import QueryPlanArtifact
 
 RID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 SID = "sess_r002"
-BUILD = "8f98393e-4ae2-4c00-bd0b-1cb07cd91a6f"
+
+
+def _ready_build_id() -> str:
+    """Read the active build instead of pinning a retired publication."""
+    return MySQLArtifactRecordSource().ready_build_id()
 
 
 def _mem_c4() -> ContextService:
@@ -133,7 +138,7 @@ class TestRunnerNeedsClarification:
         runner = WorkflowRunner()
         c4 = _mem_c4()
         state = WorkflowState(
-            request_id=RID, build_id=BUILD, status=RequestStatus.RUNNING,
+            request_id=RID, build_id=_ready_build_id(), status=RequestStatus.RUNNING,
             participant_refs=["p1"],
         )
         artifact = QueryPlanArtifact(
@@ -163,7 +168,7 @@ class TestRunnerNeedsClarification:
         c4 = _mem_c4()
         c4._sessions[SID] = _session()
         state = WorkflowState(
-            request_id=RID, build_id=BUILD, status=RequestStatus.RUNNING,
+            request_id=RID, build_id=_ready_build_id(), status=RequestStatus.RUNNING,
             participant_refs=["p1"],
         )
         artifact = QueryPlanArtifact(
@@ -289,13 +294,14 @@ class TestEvaluateMergesTemporaryConstraint:
         })
 
         # 1) 无临时约束时评估该菜 → safe
-        ctx0 = ToolContext(request_id=RID, build_id=BUILD,
+        ready_build = _ready_build_id()
+        ctx0 = ToolContext(request_id=RID, build_id=ready_build,
                            participant_user_mapping={"p1": 1})
         res0 = _evaluate_recipe_health({"recipe_ids": [cilantro_dish]}, ctx0)
         assert cilantro_dish in res0["safe_recipe_ids"], "无临时约束时含香菜菜应为 safe"
 
         # 2) 带 C4 临时禁忌评估 → excluded
-        ctx1 = ToolContext(request_id=RID, build_id=BUILD,
+        ctx1 = ToolContext(request_id=RID, build_id=ready_build,
                            participant_user_mapping={"p1": 1},
                            session_id=SID, context_service=c4)
         res1 = _evaluate_recipe_health({"recipe_ids": [cilantro_dish]}, ctx1)

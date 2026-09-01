@@ -136,19 +136,10 @@ class BM25Index:
 
 
 def _get_production_reranker() -> RerankerPort:
-    # 默认硅基流动 API 重排；本地 CrossEncoder 加载已注释备用
+    """返回 SiliconFlow BGE Reranker API 客户端。"""
     from food_agent_v2.c1.siliconflow import SiliconFlowReranker
 
     return SiliconFlowReranker()
-    # ---- 本地 CrossEncoder 加载（CPU 冷加载慢，已停用备用）----
-    # from sentence_transformers import CrossEncoder
-    # from food_agent_v2.c1.qdrant_client import _model_device, _model_source
-    # cfg = load_config().models
-    # return CrossEncoder(
-    #     _model_source(cfg.reranker_model_path, "BAAI/bge-reranker-v2-m3"),
-    #     cache_folder=".model-cache",
-    #     device=_model_device(),
-    # )
 
 
 def low_memory_model_mode() -> bool:

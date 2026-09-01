@@ -6,7 +6,7 @@ user_id）、每轮消息、端到端耗时、双 TTFT（visible/authoritative�
 
 用法：
     .venv/Scripts/python.exe scripts/run_e2e_report.py \
-        --api http://localhost:8000 \
+        --api http://localhost:8003 \
         --cases data/raw/对话用例.json \
         --perf-log <API 进程日志文件路径> \
         --output reports/e2e_report.html
@@ -238,7 +238,7 @@ def generate_html(cases, turns, perf_map, output_path: str) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="端到端集成测试报告")
-    parser.add_argument("--api", default=os.environ.get("PERF_API_BASE", "http://localhost:8000"))
+    parser.add_argument("--api", default=os.environ.get("PERF_API_BASE", "http://localhost:8003"))
     parser.add_argument("--cases", default="data/raw/对话用例.json")
     parser.add_argument("--perf-log", default="")
     parser.add_argument("--max-wait", type=int, default=120)

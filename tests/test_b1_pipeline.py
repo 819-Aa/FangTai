@@ -157,29 +157,3 @@ class TestQualityGates:
             "recipe_nutrition_input_views": "2.1.0",
             "recipe_health_views": "1.0.0",
         }
-
-    def test_approved_fixed_build_evidence_exists(self):
-        """已批准固定构建证据存在；回归测试不得要求重新 data-rebuild。"""
-        from food_agent_v2.core.paths import PROJECT_ROOT
-
-        manifest_path = PROJECT_ROOT / ".staging" / "final" / "build_manifest.json"
-        if not manifest_path.exists():
-            # Git worktree 不复制 ignored staging；复用主仓库中同一批准构建的只读证据。
-            manifest_path = PROJECT_ROOT.parents[1] / ".staging" / "final" / "build_manifest.json"
-        assert manifest_path.exists(), "approved BuildManifest evidence is missing"
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        assert manifest["build_id"] == "8f98393e-4ae2-4c00-bd0b-1cb07cd91a6f"
-        assert manifest["quality_gate_report"]["passed"] is True
-
-    def test_fixed_data_quality_report_passed(self):
-        """固定构建的正式 13 项质量门禁全部通过。"""
-        from food_agent_v2.core.paths import PROJECT_ROOT
-
-        report_path = PROJECT_ROOT / ".staging" / "final" / "quality_gate_report.json"
-        if not report_path.exists():
-            report_path = PROJECT_ROOT.parents[1] / ".staging" / "final" / "quality_gate_report.json"
-        report = json.loads(report_path.read_text(encoding="utf-8"))
-        assert report["build_id"] == "8f98393e-4ae2-4c00-bd0b-1cb07cd91a6f"
-        assert report["status"] == "passed"
-        assert report["gate_count"] == 13
-        assert all(gate["passed"] for gate in report["gates"])

@@ -1,10 +1,10 @@
 import { expect, test } from "@playwright/test";
 
 // T23 浏览器跨端最小验收（真实浏览器，主用户流程可用优先）。
-// 前置：T23 隔离环境已 data-initialize、隔离 API 运行于 38001、Vite 注入
-// VITE_API_BASE_URL=38001。成功路径只接受 completed / result_committed。
+// 前置：H07 存储 ready、API 运行于 8003、Vite 注入 VITE_API_BASE_URL。
+// 成功路径只接受 completed / result_committed。
 
-const API = process.env.T23_API_BASE || "http://localhost:38001";
+const API = process.env.H07_API_BASE || "http://localhost:8003";
 
 function terminalLabel(status: string): string {
   const map: Record<string, string> = {

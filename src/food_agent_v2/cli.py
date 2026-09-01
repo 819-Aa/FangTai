@@ -117,10 +117,9 @@ def main() -> None:
         sys.exit(2)
 
     elif command == "models-prepare":
-        print("Model preparation: placeholder")
-        print("Required models: BGE-M3 (embedding), BGE-Reranker-v2-M3 (reranker)")
-        print("Place model files in .model-cache/ or configure BGE_MODEL_PATH")
-        print("V1 models can be symlinked if already downloaded.")
+        print("Retrieval models are provided through the SiliconFlow API.")
+        print("Configure SILICONFLOW_API_KEY, SILICONFLOW_EMBEDDING_MODEL,")
+        print("and SILICONFLOW_RERANK_MODEL; no local model download is required.")
 
     elif command == "time-profiler":
         from food_agent_v2.b1.llm_time_profiler import run

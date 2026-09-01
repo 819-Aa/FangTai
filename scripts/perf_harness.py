@@ -6,12 +6,12 @@ e2e（POST → 终态）。服务端节点级耗时由 API 进程的 ``[V2][perf
 
 用法：
     .venv/Scripts/python.exe scripts/perf_harness.py \
-        [--api http://localhost:8000] \
+        [--api http://localhost:8003] \
         [--cases data/raw/对话用例.json] \
         [--max-wait 180]
 
-前置：API 服务器与 MySQL/Qdrant/Redis/SiliconFlow/DeepSeek 就绪（同
-tests/e2e/test_full_chain_real.py 的 T23 live 前置）。
+前置：API 服务器与 MySQL/Qdrant/Redis/SiliconFlow/Qwen 就绪（同
+tests/e2e/test_full_chain_real.py 的 H07 live 前置）。
 """
 
 from __future__ import annotations
@@ -172,7 +172,7 @@ def run_case(api: str, case: dict, max_wait: int) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="P1 性能 harness")
-    parser.add_argument("--api", default=os.environ.get("PERF_API_BASE", "http://localhost:8000"))
+    parser.add_argument("--api", default=os.environ.get("PERF_API_BASE", "http://localhost:8003"))
     parser.add_argument("--cases", default="data/raw/对话用例.json")
     parser.add_argument("--max-wait", type=int, default=180)
     args = parser.parse_args()

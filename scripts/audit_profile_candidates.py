@@ -18,7 +18,6 @@ from food_agent_v2.b1.source_manifest import (
 )
 from food_agent_v2.core.paths import PROJECT_ROOT, RECIPES_RAW
 
-
 EXPECTED_FIELDS = {
     "recipe_id",
     "meal_tags",

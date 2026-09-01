@@ -319,7 +319,10 @@ def full_dependency_build(tmp_path_factory):
 
     staging = tmp_path_factory.mktemp("fixed-dependency-build")
     real_publisher = rebuild.publish_downstream_build_views
-    cache = TimeGraphCache(PROJECT_ROOT / "data" / "cache" / "recipe_time_graphs.jsonl")
+    cache_path = PROJECT_ROOT / "data" / "cache" / "recipe_time_graphs.jsonl"
+    if not cache_path.exists():
+        pytest.skip("full rebuild requires the external approved time-graph cache")
+    cache = TimeGraphCache(cache_path)
 
     def publish_with_approved_time_cache(*args, **kwargs):
         return real_publisher(
@@ -341,6 +344,7 @@ def full_dependency_build(tmp_path_factory):
     return staging, report, json.loads(manifest_path.read_text(encoding="utf-8"))
 
 
+@pytest.mark.live
 def test_full_fixed_build_publishes_all_approved_recipe_dependencies(
     full_dependency_build,
 ) -> None:
@@ -371,6 +375,7 @@ def test_full_fixed_build_publishes_all_approved_recipe_dependencies(
     }
 
 
+@pytest.mark.live
 def test_g18_rejects_missing_meal_bundle_dependency(
     full_dependency_build,
 ) -> None:
@@ -506,6 +511,7 @@ def _g18_artifacts_with_one_modified_dependency(
     )
 
 
+@pytest.mark.live
 def test_g18_accepts_modified_review_authorized_dependency(
     full_dependency_build,
     tmp_path: Path,
@@ -526,6 +532,7 @@ def test_g18_accepts_modified_review_authorized_dependency(
     )
 
 
+@pytest.mark.live
 def test_g18_rejects_missing_modified_review_authorized_dependency(
     full_dependency_build,
     tmp_path: Path,
@@ -566,6 +573,7 @@ def test_g18_rejects_missing_modified_review_authorized_dependency(
     assert caught.value.code == "G18_RECIPE_DEPENDENCY_CLOSURE"
 
 
+@pytest.mark.live
 def test_g18_rejects_altered_modified_review_authorized_dependency(
     full_dependency_build,
     tmp_path: Path,

@@ -77,7 +77,7 @@ class LLMStructuredModel:
             sort_keys=True,
             separators=(",", ":"),
         )
-        # DeepSeek's OpenAI-compatible endpoint supports JSON Object mode but rejects
+        # Some OpenAI-compatible endpoints support JSON Object mode but reject
         # response_format=json_schema. Pydantic below remains the strict schema gate.
         self.response_format = {"type": "json_object"}
 

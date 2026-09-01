@@ -19,8 +19,7 @@ node_modules/
 frontend/dist/
 .vite/
 
-# Models and runtime state
-.model-cache/
+# Runtime state
 .runtime/
 *.log
 

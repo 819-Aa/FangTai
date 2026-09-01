@@ -2,9 +2,13 @@
 
 `program_v2`是健康菜品推荐系统的新一代模块化实现，与旧项目`../program`并列存在。
 
-当前仓库已包含后端、前端、数据库和测试的完整实现。2026-08-14 已通过 20 组竞赛对话用例的功能与性能验收（单轮 e2e 7–11s、多轮平均 <12s、零意外失败），默认走确定性快速路径（`WORKFLOW_MODE=fast_path`），legacy 五模型链作为回滚开关保留。
+当前主链为：Qwen 语义重写 → 确定性约束解析与失败兜底 → H07 RAG → B4 健康校验 → 菜单规划 → Redis 会话版本记忆。嵌入与重排通过 SiliconFlow API 调用 BGE-M3/BGE-Reranker，不需要本地模型文件。默认走确定性快速路径（`WORKFLOW_MODE=fast_path`）。
 
-验收报告见 [reports/2026-08-14-fast-path-performance-acceptance.md](reports/2026-08-14-fast-path-performance-acceptance.md)；性能快速路径设计见 [设计文档](docs/superpowers/specs/2026-08-14-performance-fast-path-design.md)，整改计划见 [整改计划](docs/superpowers/plans/2026-08-14-performance-fast-path-remediation.md)。
+当前验收与集成记录见 [H07 Agent 链路集成验证](reports/2026-09-01-h07-agent-chain-integration-verification.md)。一键验收：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/run_full_acceptance.ps1
+```
 
 ## 建设原则
 

@@ -880,8 +880,8 @@ class WorkflowRunner:
     def _artifact_response_format(policy: Any, role: str) -> dict | None:
         """为模型传 response_format 强制 JSON 对象。
 
-        当前 LLM 供应商（DeepSeek）不支持 json_schema；用 json_object 强制 JSON
-        对象输出，严格 Artifact Schema 由 _validate_artifact 强制（fail-closed）。
+        当前 OpenAI 兼容调用统一使用 json_object；严格 Artifact Schema 由
+        _validate_artifact 强制（fail-closed）。
         """
         return {"type": "json_object"}
 

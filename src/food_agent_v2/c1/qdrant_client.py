@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import gc
-from pathlib import Path
 
 from food_agent_v2.core.config import load_config
 
-# 模块级 BGE-M3 模型缓存：避免每次检索都重新加载 ~2GB 模型（文档 07 §13：启动预热，首轮不承担冷加载）
+# 模块级嵌入客户端缓存：启动预热后复用 SiliconFlow API 客户端。
 _embedding_model = None
 
 RAG_PAYLOAD_FIELDS = (
@@ -64,36 +63,13 @@ def rag_document_payload(document: dict) -> dict:
     return payload
 
 
-def _model_source(configured_path: str, model_id: str) -> str:
-    path = Path(configured_path)
-    return str(path) if path.exists() else model_id
-
-
-def _model_device() -> str:
-    cfg = load_config().models
-    import torch
-
-    device = cfg.device
-    if device == "auto":
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-    return device
-
-
 def _get_embedding_model():
-    """返回缓存的 BGE-M3 嵌入（默认硅基流动 API；本地加载已注释备用）。"""
+    """返回缓存的 SiliconFlow BGE-M3 嵌入客户端。"""
     global _embedding_model
     if _embedding_model is None:
         from food_agent_v2.c1.siliconflow import SiliconFlowEmbedder
 
         _embedding_model = SiliconFlowEmbedder()
-        # ---- 本地 SentenceTransformer 加载（CPU 冷加载 2-4 分钟，已停用备用）----
-        # from sentence_transformers import SentenceTransformer
-        # cfg = load_config().models
-        # _embedding_model = SentenceTransformer(
-        #     _model_source(cfg.bge_model_path, "BAAI/bge-m3"),
-        #     cache_folder=".model-cache",
-        #     device=_model_device(),
-        # )
     return _embedding_model
 
 
