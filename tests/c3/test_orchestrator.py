@@ -233,6 +233,54 @@ def test_semantic_allergy_preserves_unresolved_signal_for_clarification(
     assert clarified.error is not None
     assert clarified.error.error_code == "HEALTH_SIGNAL_AMBIGUOUS"
 
+
+def test_semantic_health_signal_without_participant_fails_closed_for_clarification(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A multi-participant signal without an owner must reach R-002 unresolved."""
+    orchestrator = DeterministicRecommendationOrchestrator(llm=SimpleNamespace())
+    rewrite = SemanticRewrite(
+        retrieval_query="晚餐",
+        health_constraints=("有人海鲜过敏",),
+    )
+
+    intent = orchestrator._apply_semantic_rewrite(
+        IntentDelta(query="有人海鲜过敏"),
+        rewrite,
+        ("p1", "p2"),
+        has_current_menu=False,
+    )
+    plan = orchestrator._build_query_plan(intent, _fresh_rid(), ["p1", "p2"])
+
+    assert intent.health_exclusions == ("有人海鲜过敏",)
+    assert plan.health_exclusions == ("有人海鲜过敏",)
+
+    class _NoopProfileService:
+        def load(self, *, expected_build_id: str) -> None:
+            pass
+
+    from food_agent_v2.c3.state import RequestStatus, WorkflowState
+
+    monkeypatch.setattr(
+        "food_agent_v2.b2.UserHealthProfileService", _NoopProfileService
+    )
+    monkeypatch.setattr("food_agent_v2.c3.runner._ingredient_resolver", lambda: None)
+    state = WorkflowState(
+        request_id=_fresh_rid(),
+        build_id="test-build",
+        status=RequestStatus.RUNNING,
+        participant_refs=["p1", "p2"],
+    )
+
+    clarified = orchestrator._handle_query_plan_exclusions(
+        state, plan, "sess_multi_unresolved", _FakeC4(), {"p1": 1, "p2": 2}
+    )
+
+    assert clarified.status == RequestStatus.NEEDS_CLARIFICATION
+    assert clarified.error is not None
+    assert clarified.error.error_code == "HEALTH_SIGNAL_AMBIGUOUS"
+
+
 @pytest.mark.parametrize("constraint", ("我不能吃花生", "别吃花生"))
 def test_semantic_health_taboo_projects_to_participant_constraint(constraint: str) -> None:
     orchestrator = DeterministicRecommendationOrchestrator(llm=SimpleNamespace())

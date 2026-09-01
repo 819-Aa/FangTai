@@ -66,6 +66,7 @@ def _semantic_health_exclusions(
             output.append(constraint)
             continue
         if len(participant_refs) != 1:
+            output.append(constraint)
             continue
         participant = participant_refs[0]
         if "过敏" in constraint or "不耐受" in constraint:
