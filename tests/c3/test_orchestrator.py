@@ -633,6 +633,52 @@ class TestDeterministicChain:
         assert result["status"] == "needs_clarification"
         assert captured[0].health_exclusions == ("我海鲜过敏",)
 
+    def test_restore_reconciled_historical_exclusions_continue_to_b4(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        captured = {"gate_calls": 0, "gate_terminal": None, "b4_ids": None}
+        rid = _fresh_rid()
+        _reset_d1(rid)
+        runner = _make_orchestrator(
+            has_current_menu=True,
+            menu_history=[
+                {
+                    "plan_id": "p1",
+                    "recipe_ids": [5, 6, 3],
+                    "query_plan": {"health_exclusions": ["p1:过敏:虾"]},
+                },
+                {"plan_id": "p2", "recipe_ids": [1, 2, 3], "query_plan": None},
+            ],
+        )
+        real_gate = runner._handle_query_plan_exclusions
+        real_execute = ToolHandler.execute
+
+        def _capture_gate(state, query_plan, session_id, c4, mapping):
+            captured["gate_calls"] += 1
+            result = real_gate(state, query_plan, session_id, c4, mapping)
+            captured["gate_terminal"] = result.is_terminal()
+            return result
+
+        def _capture_execute(handler, tool_name, arguments):
+            if tool_name == "evaluate_recipe_health":
+                captured["b4_ids"] = list(arguments["recipe_ids"])
+            return real_execute(handler, tool_name, arguments)
+
+        monkeypatch.setattr(runner, "_handle_query_plan_exclusions", _capture_gate)
+        monkeypatch.setattr(ToolHandler, "execute", _capture_execute)
+
+        runner.run(rid, "sess_restore", "恢复上一版", [
+            {"participant_ref": "p1", "user_id": "1"},
+        ])
+
+        result = d1_api.get_request_status(rid)[1]
+        assert result["status"] == "completed"
+        assert captured == {
+            "gate_calls": 1,
+            "gate_terminal": False,
+            "b4_ids": [5, 6, 3],
+        }
+
     @pytest.mark.parametrize(
         ("stop_at", "expected_tools"),
         ((1, []), (2, ["evaluate_recipe_health"])),
