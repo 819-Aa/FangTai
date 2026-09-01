@@ -14,14 +14,15 @@ def test_qdrant_alias_exists() -> None:
     import qdrant_client
 
     store = QdrantVectorStore()
-    assert store.available, "Qdrant recipe_retrieval_v2 别名不可用（H04 环境未启动/未初始化）"
+    expected_alias = load_config().qdrant.collection
+    assert store.available, f"Qdrant {expected_alias} 别名不可用（当前环境未启动/未初始化）"
     client = qdrant_client.QdrantClient(
         host=load_config().qdrant.host,
         port=load_config().qdrant.rest_port,
         timeout=10,
     )
     aliases = {a.alias_name: a.collection_name for a in client.get_aliases().aliases}
-    assert "recipe_retrieval_v2" in aliases, "缺少 recipe_retrieval_v2 别名"
+    assert expected_alias in aliases, f"缺少 {expected_alias} 别名"
 
 
 def test_real_vector_search_returns_ids() -> None:
