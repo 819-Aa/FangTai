@@ -432,8 +432,16 @@ class ContextService:
             )
         else:
             current_menu = menus[-1] if menus else None
-        query_plan = None
         load_query_plan = getattr(src, "load_query_plan", None)
+        menu_history = []
+        for menu in menus[-5:]:
+            item = dict(menu)
+            item["query_plan"] = (
+                load_query_plan(session_id, item["plan_id"])
+                if callable(load_query_plan) else None
+            )
+            menu_history.append(item)
+        query_plan = None
         if current_menu and callable(load_query_plan):
             query_plan = load_query_plan(session_id, current_menu["plan_id"])
         if current_menu:
@@ -455,6 +463,7 @@ class ContextService:
             "last_request_at": meta.get("last_request_at"),
             "current_menu": current_menu,
             "query_plan": query_plan,
+            "menu_history": menu_history,
         }
 
     def build_shared_context(

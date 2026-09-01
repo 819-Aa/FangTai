@@ -10,7 +10,7 @@ R-002 临时约束闭环与 P1 性能观测。仅 override ``_run_locked``：
     FastIntentRouter → store 临时约束 → retrieve 补充 → evaluate(当前+补充)
     → generate(locked=安全当前菜) → 选优 → validate → answer
 
-replace/reject 在 P5 第一版仍 fallback legacy（公开用例 0 次）。
+replace/reject/restore 复用已提交菜单与 QueryPlan，走确定性增量链路。
 """
 
 from __future__ import annotations
@@ -119,7 +119,7 @@ _GENERATE_TERMINAL = {
 
 
 class DeterministicRecommendationOrchestrator(WorkflowRunner):
-    """确定性主编排器：首次推荐 + 约束追加走确定性链路，replace/reject fallback。"""
+    """确定性主编排器：首次推荐与多轮菜单操作走确定性链路。"""
 
     #: 确定性链路中各工具调用的语义节点（回执 node_id，非空即可，供审计信封）。
     _NODE_RETRIEVE = NodeType.QUERY_UNDERSTANDING.value
@@ -141,6 +141,65 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
         except Exception:
             return True
         return bool(state and state.get("current_menu"))
+
+    @staticmethod
+    def _resolve_replace_target(message: str, current_menu: dict) -> int | None:
+        matches = {
+            int(item["recipe_id"])
+            for item in current_menu.get("items", [])
+            if str(item.get("name") or "").strip()
+            and str(item["name"]).strip() in message
+        }
+        return next(iter(matches)) if len(matches) == 1 else None
+
+    @staticmethod
+    def _replace_previous_plan(previous: dict | None) -> dict | None:
+        if not previous:
+            return None
+        hard_keys = {
+            "meal_types", "population_tags", "exclude_ingredients",
+            "nutrition_goal_codes", "health_exclusions",
+            "time_constraint_seconds", "time_constraint_policy",
+            "dish_count_requested",
+        }
+        return {key: value for key, value in previous.items() if key in hard_keys}
+
+    @staticmethod
+    def _previous_menu_version(session_state: dict) -> dict | None:
+        history = list(session_state.get("menu_history") or [])
+        current_id = (session_state.get("current_menu") or {}).get("plan_id")
+        indexes = [
+            index for index, item in enumerate(history)
+            if item.get("plan_id") == current_id
+        ]
+        if len(indexes) != 1 or indexes[0] == 0:
+            return None
+        return history[indexes[0] - 1]
+
+    @staticmethod
+    def _restore_intent(snapshot: dict | None, message: str,
+                        dish_count: int) -> IntentDelta:
+        source = snapshot or {}
+        return IntentDelta(
+            intent="restore",
+            query=str(source.get("rewritten_query") or message),
+            rewritten_query=str(source.get("rewritten_query") or message),
+            meal_types=tuple(source.get("meal_types") or ()),
+            population_tags=tuple(source.get("population_tags") or ()),
+            scenario_tags=tuple(source.get("scenario_tags") or ()),
+            dish_count_requested=dish_count,
+            taste_tags=tuple(source.get("taste_tags") or ()),
+            cuisine_tags=tuple(source.get("cuisine_tags") or ()),
+            dish_types=tuple(source.get("dish_types") or ()),
+            include_ingredients=tuple(source.get("include_ingredients") or ()),
+            exclude_ingredients=tuple(source.get("exclude_ingredients") or ()),
+            nutrition_goal_codes=tuple(source.get("nutrition_goal_codes") or ()),
+            health_exclusions=tuple(source.get("health_exclusions") or ()),
+            time_constraint_seconds=source.get("time_constraint_seconds"),
+            time_constraint_policy=str(
+                source.get("time_constraint_policy") or "flexible"
+            ),
+        )
 
     def _build_query_plan(self, intent, request_id: str,
                           participant_refs: list[str]) -> QueryPlanArtifact:
@@ -439,10 +498,50 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
                                          c4, lock_token, intent)
             return
 
-        # replace/restore 需 target 解析 / menu_history 绑定，仍 fallback legacy
         if intent.intent in ("replace", "restore"):
-            super()._run_locked(request_id, session_id, message, participants,
-                                config, c4, lock_token, lost)
+            session_state = c4.get_session_state(session_id) or {}
+            current_menu = session_state.get("current_menu") or {}
+            if not current_menu:
+                self._finalize_clarification(
+                    request_id, session_id, participants, c4, lock_token,
+                    replace(intent, clarification_reason="当前没有可操作的菜单"),
+                )
+                return
+            if intent.intent == "restore":
+                previous_menu = self._previous_menu_version(session_state)
+                if previous_menu is None:
+                    self._finalize_clarification(
+                        request_id, session_id, participants, c4, lock_token,
+                        replace(intent, clarification_reason="没有可恢复的上一版菜单"),
+                    )
+                    return
+                self._run_restore(
+                    request_id, session_id, message, participants, c4,
+                    lock_token, lost, session_state, previous_menu,
+                )
+                return
+            target_recipe_id = self._resolve_replace_target(message, current_menu)
+            if target_recipe_id is None:
+                self._finalize_clarification(
+                    request_id, session_id, participants, c4, lock_token,
+                    replace(intent, clarification_reason="请明确要替换的当前菜名"),
+                )
+                return
+            rewrite = QueryNormalizer(self._llm).normalize(
+                message,
+                tuple(participant_refs),
+                previous_query_plan=self._replace_previous_plan(
+                    session_state.get("query_plan")
+                ),
+            )
+            intent = self._apply_semantic_rewrite(
+                replace(intent, target_recipe_id=target_recipe_id),
+                rewrite,
+                tuple(participant_refs),
+                has_current_menu=True,
+            )
+            self._run_delta(request_id, session_id, message, participants,
+                            config, c4, lock_token, lost, intent)
             return
 
         has_current_menu = self._has_current_menu(c4, session_id)
@@ -577,6 +676,102 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
 
     # ---- L1.3：多轮 delta（约束追加/方案否定，在已有菜单上最小修改）----
 
+    def _run_restore(self, request_id, session_id, message, participants, c4,
+                     lock_token, lost, session_state, previous_menu):
+        build_id = self._resolve_build_id()
+        participant_refs = [p["participant_ref"] for p in participants]
+        user_id_mapping = {p["participant_ref"]: int(p["user_id"]) for p in participants}
+        state = WorkflowState(
+            request_id=request_id, build_id=build_id,
+            status=RequestStatus.RUNNING, participant_refs=participant_refs)
+        tool_ctx = ToolContext(
+            request_id=request_id, build_id=build_id,
+            participant_user_mapping=user_id_mapping,
+            session_id=session_id, context_service=c4)
+
+        state, ok = self._build_context(
+            state, tool_ctx, message, participant_refs, user_id_mapping,
+            request_id, session_id, build_id, c4)
+        if not ok:
+            self._finalize(state, request_id, c4, lock_token)
+            return
+
+        recipe_ids = [int(value) for value in previous_menu.get("recipe_ids", [])]
+        snapshot = previous_menu.get("query_plan") or session_state.get("query_plan")
+        qp = self._build_query_plan(
+            self._restore_intent(snapshot, message, len(recipe_ids)),
+            request_id,
+            participant_refs,
+        )
+        state = reduce_workflow_state(
+            state, action="set_artifact", artifact="query_plan", value=qp)
+        tool_ctx.previous_results["query_plan"] = qp
+        if qp.time_constraint_policy == "hard" and qp.time_constraint_seconds:
+            tool_ctx.max_estimated_time_seconds = qp.time_constraint_seconds
+
+        from food_agent_v2.b3.recipe_views import get_view_builder
+
+        builder = get_view_builder()
+        if (not recipe_ids or len(set(recipe_ids)) != len(recipe_ids)
+                or any(builder.build_retrieval_view(rid) is None for rid in recipe_ids)):
+            self._finalize(
+                self._fail(
+                    state,
+                    "RESTORE_VERSION_UNAVAILABLE",
+                    "上一版菜单在当前构建中不可用",
+                ),
+                request_id, c4, lock_token,
+            )
+            return
+
+        handler = ToolHandler(tool_ctx)
+        tool_ctx.node_id = self._NODE_HEALTH
+        evaluated = handler.execute(
+            "evaluate_recipe_health", {"recipe_ids": recipe_ids})
+        if isinstance(evaluated, dict) and "error" in evaluated:
+            self._finalize(
+                self._fail(state, "TOOL_EXECUTION_FAILED",
+                           f"健康审查失败: {evaluated.get('error')}"),
+                request_id, c4, lock_token,
+            )
+            return
+        health = tool_ctx.previous_results.get("health_evaluation")
+        safe_ids = [int(value) for value in getattr(health, "safe_recipe_ids", ())]
+        if set(safe_ids) != set(recipe_ids):
+            self._finalize(reduce_workflow_state(
+                state, action="health_menu_planning", result="no_safe_menu"),
+                request_id, c4, lock_token)
+            return
+
+        generated = handler.execute("generate_feasible_menus", {
+            "safe_recipe_ids": recipe_ids,
+            "locked_recipe_ids": recipe_ids,
+        })
+        if isinstance(generated, dict) and "error" in generated:
+            self._finalize(
+                self._fail(state, "TOOL_EXECUTION_FAILED",
+                           f"菜单生成失败: {generated.get('error')}"),
+                request_id, c4, lock_token,
+            )
+            return
+        expected = set(recipe_ids)
+        plans = [
+            plan for plan in tool_ctx.previous_results.get("feasible_menus", [])
+            if set(plan.recipe_ids) == expected and len(plan.recipe_ids) == len(recipe_ids)
+        ]
+        if not plans:
+            self._finalize(reduce_workflow_state(
+                state, action="health_menu_planning", result="no_feasible_menu"),
+                request_id, c4, lock_token)
+            return
+        for plan in plans:
+            plan.recipe_ids = list(recipe_ids)
+        tool_ctx.previous_results["feasible_menus"] = plans
+        state = self._select_validate_answer(
+            state, tool_ctx, plans, request_id, participant_refs,
+            c4, session_id, lock_token, lost)
+        self._finalize(state, request_id, c4, lock_token)
+
     def _run_delta(self, request_id, session_id, message,
                    participants, config, c4, lock_token, lost, intent):
         build_id = self._resolve_build_id()
@@ -659,9 +854,14 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
         safe_ids = list(getattr(health, "safe_recipe_ids", []) or [])
 
         # 5. DeltaPlanner 计算最小修改（锁定安全当前菜 / 拒绝否定菜）
-        delta_intent = "reject_plan" if intent.intent == "reject_plan" else "add_constraint"
         delta = DeltaPlanner().plan(
-            current_ids, IntentDelta(intent=delta_intent), safe_ids)
+            current_ids,
+            IntentDelta(
+                intent=intent.intent,
+                target_recipe_id=intent.target_recipe_id,
+            ),
+            safe_ids,
+        )
         locked = list(delta.locked_recipe_ids)
         rejected = list(delta.rejected_recipe_ids)
         if not safe_ids:

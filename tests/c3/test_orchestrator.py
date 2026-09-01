@@ -406,10 +406,12 @@ class _FakeC4:
     """确定性链路所需的 C4 替身（无前文菜单，供首次推荐 fast path）。"""
 
     def __init__(self, has_current_menu: bool = False,
-                 query_plan: dict | None = None) -> None:
+                 query_plan: dict | None = None,
+                 menu_history: list[dict] | None = None) -> None:
         self._sessions: dict = {}
         self._has_current_menu = has_current_menu
         self._query_plan = query_plan
+        self._menu_history = menu_history
 
     def build_shared_context(self, session_id, participant_refs, raw, mapping,
                              request_id=None, build_id=None):
@@ -425,8 +427,16 @@ class _FakeC4:
     def get_session_state(self, session_id):
         if self._has_current_menu:
             return {"session_id": session_id,
-                    "current_menu": {"plan_id": "p1", "recipe_ids": [1, 2, 3]},
-                    "query_plan": self._query_plan}
+                    "current_menu": {
+                        "plan_id": "p2", "recipe_ids": [1, 2, 3],
+                        "items": [
+                            {"recipe_id": 1, "name": "番茄鸡蛋汤"},
+                            {"recipe_id": 2, "name": "青椒肉丝"},
+                            {"recipe_id": 3, "name": "清炒时蔬"},
+                        ],
+                    },
+                    "query_plan": self._query_plan,
+                    "menu_history": self._menu_history or []}
         return None
 
     def store_temporary_constraint(self, session_id, constraint):
@@ -473,10 +483,15 @@ def test_make_orchestrator_uses_local_llm_without_loading_configured_client(
 
 
 def _make_orchestrator(has_current_menu: bool = False, *, llm=None,
-                       query_plan: dict | None = None):
+                       query_plan: dict | None = None,
+                       menu_history: list[dict] | None = None):
     return DeterministicRecommendationOrchestrator(
         llm=llm if llm is not None else _UnavailableLLM(),
-        c4=_FakeC4(has_current_menu=has_current_menu, query_plan=query_plan),
+        c4=_FakeC4(
+            has_current_menu=has_current_menu,
+            query_plan=query_plan,
+            menu_history=menu_history,
+        ),
     )
 
 
@@ -501,15 +516,168 @@ class TestDeterministicChain:
         assert result["status"] == "completed"
         assert len(result["result_summary"]["menu_summary"]["recipe_ids"]) == 5
 
-    def test_replace_falls_back_legacy(self) -> None:
-        """replace 意图进入 legacy；模型不可用时进入 failed 终态。"""
+    def test_replace_exact_current_name_rejects_only_target(self) -> None:
         rid = _fresh_rid()
         _reset_d1(rid)
         runner = _make_orchestrator(
             has_current_menu=True, llm=_UnavailableLLM())
-        runner.run(rid, "sess_multi", "换成清淡的汤", [{"participant_ref": "p1", "user_id": "1"}])
-        status = d1_api.get_request_status(rid)[1]["status"]
-        assert status == "failed"
+        runner.run(rid, "sess_multi", "把青椒肉丝换成红烧茄子", [
+            {"participant_ref": "p1", "user_id": "1"},
+        ])
+        result = d1_api.get_request_status(rid)[1]
+        assert result["status"] == "completed"
+        assert 2 not in result["result_summary"]["menu_summary"]["recipe_ids"]
+
+    def test_replace_without_unique_current_name_needs_clarification(self) -> None:
+        rid = _fresh_rid()
+        _reset_d1(rid)
+        runner = _make_orchestrator(has_current_menu=True)
+
+        runner.run(rid, "sess_multi", "不要这道", [
+            {"participant_ref": "p1", "user_id": "1"},
+        ])
+
+        assert d1_api.get_request_status(rid)[1]["status"] == "needs_clarification"
+
+    def test_restore_previous_version_commits_exact_recipe_ids_without_qwen_or_rag(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        class _CountingLLM:
+            calls = 0
+
+            def invoke(self, *_args, **_kwargs):
+                self.calls += 1
+                raise RuntimeError("restore must not call Qwen")
+
+        class _ForbiddenRetrieval:
+            def retrieve(self, *_args, **_kwargs):
+                pytest.fail("restore must not call RAG")
+
+        monkeypatch.setattr(
+            "food_agent_v2.c1.get_retrieval_service",
+            lambda: _ForbiddenRetrieval(),
+        )
+        llm = _CountingLLM()
+        rid = _fresh_rid()
+        _reset_d1(rid)
+        runner = _make_orchestrator(
+            has_current_menu=True,
+            llm=llm,
+            menu_history=[
+                {"plan_id": "p1", "recipe_ids": [5, 6, 3], "query_plan": None},
+                {"plan_id": "p2", "recipe_ids": [1, 2, 3], "query_plan": None},
+            ],
+        )
+
+        runner.run(rid, "sess_restore", "恢复上一版", [
+            {"participant_ref": "p1", "user_id": "1"},
+        ])
+
+        result = d1_api.get_request_status(rid)[1]
+        assert result["status"] == "completed"
+        assert result["result_summary"]["menu_summary"]["recipe_ids"] == [5, 6, 3]
+        assert llm.calls == 0
+
+    def test_restore_without_previous_version_needs_clarification(self) -> None:
+        rid = _fresh_rid()
+        _reset_d1(rid)
+        runner = _make_orchestrator(
+            has_current_menu=True,
+            menu_history=[
+                {"plan_id": "p2", "recipe_ids": [1, 2, 3], "query_plan": None},
+            ],
+        )
+
+        runner.run(rid, "sess_restore", "恢复上一版", [
+            {"participant_ref": "p1", "user_id": "1"},
+        ])
+
+        assert d1_api.get_request_status(rid)[1]["status"] == "needs_clarification"
+
+    def test_restore_unavailable_recipe_fails_closed(self) -> None:
+        rid = _fresh_rid()
+        _reset_d1(rid)
+        runner = _make_orchestrator(
+            has_current_menu=True,
+            menu_history=[
+                {"plan_id": "p1", "recipe_ids": [5, 6, 999999], "query_plan": None},
+                {"plan_id": "p2", "recipe_ids": [1, 2, 3], "query_plan": None},
+            ],
+        )
+
+        runner.run(rid, "sess_restore", "恢复上一版", [
+            {"participant_ref": "p1", "user_id": "1"},
+        ])
+
+        result = d1_api.get_request_status(rid)[1]
+        assert result["status"] == "failed"
+        assert result["error"]["code"] == "RESTORE_VERSION_UNAVAILABLE"
+
+    def test_replace_passes_only_hard_previous_context_to_qwen_and_rag(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        previous = {
+            "rewritten_query": "晚餐 豆腐",
+            "meal_types": ["晚餐"],
+            "include_ingredients": ["豆腐"],
+            "exclude_ingredients": ["花生"],
+            "health_exclusions": ["p1:过敏:花生"],
+            "dish_count_requested": 3,
+        }
+        captured = {}
+        from food_agent_v2.c3 import tool_handler
+
+        real_projection = tool_handler._retrieval_filters_from_query_plan
+
+        def _capture_projection(query_plan):
+            captured["query_plan"] = query_plan
+            return real_projection(query_plan)
+
+        monkeypatch.setattr(
+            tool_handler, "_retrieval_filters_from_query_plan", _capture_projection)
+
+        class _ReplacementLLM:
+            payload = None
+
+            def invoke(self, _role, _system_prompt, user_message, **_kwargs):
+                self.payload = json.loads(user_message)
+                return {"content": json.dumps({
+                    "retrieval_query": "红烧茄子",
+                    "include_ingredients": ["茄子"],
+                }, ensure_ascii=False)}
+
+        llm = _ReplacementLLM()
+        rid = _fresh_rid()
+        _reset_d1(rid)
+        runner = _make_orchestrator(
+            has_current_menu=True, llm=llm, query_plan=previous)
+
+        runner.run(rid, "sess_replace", "把青椒肉丝换掉，要有茄子", [
+            {"participant_ref": "p1", "user_id": "1"},
+        ])
+
+        assert llm.payload["previous_query_plan"] == {
+            "meal_types": ["晚餐"],
+            "exclude_ingredients": ["花生"],
+            "health_exclusions": ["p1:过敏:花生"],
+            "dish_count_requested": 3,
+        }
+        query_plan = captured["query_plan"]
+        assert query_plan.meal_types == ("晚餐",)
+        assert query_plan.exclude_ingredients == ("花生",)
+        assert query_plan.health_exclusions == ("p1:过敏:花生",)
+        assert query_plan.include_ingredients == ("茄子",)
+
+    def test_reject_plan_stays_on_deterministic_delta_path(self) -> None:
+        rid = _fresh_rid()
+        _reset_d1(rid)
+        runner = _make_orchestrator(has_current_menu=True)
+
+        runner.run(rid, "sess_reject", "换一批", [
+            {"participant_ref": "p1", "user_id": "1"},
+        ])
+
+        assert d1_api.get_request_status(rid)[1]["status"] != "failed"
 
     def test_add_constraint_delta(self) -> None:
         """约束追加（有前文菜单）→ 确定性 delta 链路走通（最小修改，不 fallback）。"""

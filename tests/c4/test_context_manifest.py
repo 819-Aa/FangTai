@@ -510,6 +510,52 @@ class _FakeConstraintSet:
         self.hard_constraints = hard_constraints
 
 
+def test_get_session_state_projects_last_five_versioned_query_plans() -> None:
+    from food_agent_v2.b3.repository import RecipeRetrievalView
+
+    class _MenuRepo:
+        def ready_build_id(self):
+            return "build-ready"
+
+        def get_retrieval_view(self, recipe_ids, build_id):
+            return [RecipeRetrievalView(
+                recipe_id, f"菜{recipe_id}", [], [], {}, None, None, [])
+                for recipe_id in recipe_ids]
+
+        def close(self):
+            pass
+
+    source = InMemorySessionMemorySource()
+    sid = uniq("history")
+    source.sessions[sid] = {
+        "session_id": sid,
+        "participant_refs": ["p1"],
+        "current_menu_plan_id": "plan-5",
+        "request_count": 6,
+    }
+    source.menus[sid] = [{
+        "plan_id": f"plan-{index}",
+        "menu_hash": str(index) * 64,
+        "recipe_ids": [index],
+        "committed_at": f"t{index}",
+    } for index in range(1, 7)]
+    for index in range(1, 6):
+        source.query_plans[(sid, f"plan-{index}")] = {
+            "meal_types": ["晚餐"] if index == 5 else ["午餐"],
+        }
+
+    state = ContextService(
+        memory_source=source, menu_repository=_MenuRepo()
+    ).get_session_state(sid)
+
+    assert [item["plan_id"] for item in state["menu_history"]] == [
+        "plan-2", "plan-3", "plan-4", "plan-5", "plan-6",
+    ]
+    assert state["current_menu"]["plan_id"] == "plan-5"
+    assert state["menu_history"][3]["query_plan"]["meal_types"] == ["晚餐"]
+    assert state["menu_history"][4]["query_plan"] is None
+
+
 class _EmptyLoader:
     """单元测试隔离：默认 B2 加载器返回空（不依赖 B2 数据）。"""
 
