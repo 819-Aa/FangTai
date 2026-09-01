@@ -152,12 +152,14 @@ class QueryNormalizer:
             )
             parsed = SemanticRewrite.model_validate_json(response.get("content", ""))
             if not _has_valid_semantic_filters(parsed, message, fallback, previous):
-                return fallback
-            if not _is_positive_retrieval_query(parsed, fallback):
-                return fallback
-            return _merge_with_explicit_fallback(parsed, fallback)
+                rewrite = fallback
+            elif not _is_positive_retrieval_query(parsed, fallback):
+                rewrite = fallback
+            else:
+                rewrite = _merge_with_explicit_fallback(parsed, fallback)
         except Exception:
-            return fallback
+            rewrite = fallback
+        return _inherit_previous_plan(rewrite, previous)
 
 
 def _build_user_message(
@@ -342,6 +344,68 @@ def _merge_with_explicit_fallback(
         ),
         dish_count=fallback.dish_count if fallback.dish_count is not None else parsed.dish_count,
     )
+
+
+def _inherit_previous_plan(
+    rewrite: SemanticRewrite,
+    previous: Mapping,
+) -> SemanticRewrite:
+    """增量轮确定性继承上一轮语义；本轮明确字段保持优先。"""
+    if not previous:
+        return rewrite
+    collection_fields = (
+        "meal_types",
+        "population_tags",
+        "dish_types",
+        "taste_tags",
+        "cuisine_tags",
+        "scenario_tags",
+        "include_ingredients",
+        "exclude_ingredients",
+        "nutrition_goal_codes",
+    )
+    updates = {
+        field: _unique(getattr(rewrite, field), _previous_values(previous, field))
+        for field in collection_fields
+    }
+    updates["health_constraints"] = _unique(
+        rewrite.health_constraints,
+        _previous_values(previous, "health_constraints"),
+        _previous_values(previous, "health_exclusions"),
+    )
+    updates["include_ingredients"] = tuple(
+        value for value in updates["include_ingredients"]
+        if value not in updates["exclude_ingredients"]
+    )
+    previous_query = str(
+        previous.get("rewritten_query") or previous.get("retrieval_query") or ""
+    ).strip()
+    query_parts = tuple(
+        query for query in (previous_query, rewrite.retrieval_query)
+        if _is_safe_inherited_query(query, updates["exclude_ingredients"])
+    )
+    updates["retrieval_query"] = " ".join(dict.fromkeys(query_parts)) or "家常菜"
+    updates["max_time_minutes"] = (
+        rewrite.max_time_minutes
+        if rewrite.max_time_minutes is not None
+        else _previous_time_minutes(previous)
+    )
+    updates["dish_count"] = (
+        rewrite.dish_count
+        if rewrite.dish_count is not None
+        else _previous_positive_int(previous, "dish_count", "dish_count_requested")
+    )
+    return rewrite.model_copy(update=updates)
+
+
+def _is_safe_inherited_query(query: str, excluded: Sequence[str]) -> bool:
+    if not query or _NEGATIVE_QUERY_RE.search(query):
+        return False
+    if any(_query_contains_term(query, value) for value in excluded):
+        return False
+    if any(term in query for term in _HEALTH_QUERY_TERMS):
+        return False
+    return re.search(r"[\u4e00-\u9fff]{1,12}病", query) is None
 
 
 def _sanitize_deterministic_fallback(

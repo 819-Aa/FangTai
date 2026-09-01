@@ -184,6 +184,72 @@ def test_exact_previous_health_constraint_may_be_carried_by_model() -> None:
     assert rewrite.health_constraints == (previous_health,)
 
 
+def test_sparse_model_rewrite_inherits_all_previous_plan_semantics() -> None:
+    """模型成功但省略旧字段时，增量轮仍必须保留上一轮硬约束。"""
+    previous = {
+        "rewritten_query": "晚餐 豆腐",
+        "meal_types": ["晚餐"],
+        "population_tags": ["老人"],
+        "dish_types": ["汤"],
+        "taste_tags": ["家常"],
+        "cuisine_tags": ["粤式"],
+        "scenario_tags": ["家庭"],
+        "include_ingredients": ["豆腐"],
+        "exclude_ingredients": ["花生"],
+        "nutrition_goal_codes": ["low_sodium"],
+        "health_exclusions": ["p1:过敏:花生"],
+        "dish_count_requested": 3,
+        "time_constraint_seconds": 1800,
+        "time_constraint_policy": "hard",
+    }
+    llm = _FakeLLM(responses=[json.dumps({
+        "retrieval_query": "清淡",
+        "taste_tags": ["清淡"],
+    }, ensure_ascii=False)])
+
+    rewrite = QueryNormalizer(llm).normalize(
+        "再清淡一点", ("p1",), previous_query_plan=previous)
+
+    assert rewrite.retrieval_query == "晚餐 豆腐 清淡"
+    assert rewrite.meal_types == ("晚餐",)
+    assert rewrite.population_tags == ("老人",)
+    assert rewrite.dish_types == ("汤",)
+    assert rewrite.taste_tags == ("清淡", "家常")
+    assert rewrite.cuisine_tags == ("粤式",)
+    assert rewrite.scenario_tags == ("家庭",)
+    assert rewrite.include_ingredients == ("豆腐",)
+    assert rewrite.exclude_ingredients == ("花生",)
+    assert rewrite.nutrition_goal_codes == ("low_sodium",)
+    assert rewrite.health_constraints == ("p1:过敏:花生",)
+    assert rewrite.dish_count == 3
+    assert rewrite.max_time_minutes == 30
+
+
+def test_model_timeout_inherits_previous_plan_and_current_hard_scalars_win() -> None:
+    """模型失败也保留旧计划，但本轮明确菜数/时限优先。"""
+    previous = {
+        "rewritten_query": "晚餐 豆腐",
+        "meal_types": ["晚餐"],
+        "exclude_ingredients": ["花生"],
+        "health_exclusions": ["p1:过敏:花生"],
+        "dish_count_requested": 3,
+        "time_constraint_seconds": 1800,
+        "time_constraint_policy": "hard",
+    }
+
+    rewrite = QueryNormalizer(_FakeLLM(error=TimeoutError())).normalize(
+        "再清淡一点，四菜一汤，45分钟内",
+        ("p1",),
+        previous_query_plan=previous,
+    )
+
+    assert rewrite.meal_types == ("晚餐",)
+    assert rewrite.exclude_ingredients == ("花生",)
+    assert rewrite.health_constraints == ("p1:过敏:花生",)
+    assert rewrite.dish_count == 5
+    assert rewrite.max_time_minutes == 45
+
+
 def test_documented_meal_alias_is_grounded() -> None:
     llm = _FakeLLM(
         responses=[

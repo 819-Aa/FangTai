@@ -447,7 +447,7 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
 
         has_current_menu = self._has_current_menu(c4, session_id)
         previous_query_plan = None
-        if has_current_menu:
+        if has_current_menu and intent.intent in ("add_constraint", "reject_plan"):
             session_state = c4.get_session_state(session_id) or {}
             previous_query_plan = session_state.get("query_plan")
         rewrite = QueryNormalizer(self._llm).normalize(

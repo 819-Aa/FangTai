@@ -521,13 +521,27 @@ class TestDeterministicChain:
         # FakeC4 不真实存储临时约束，当前菜单（1/2/3）仍安全 → 菜单不变但 completed
         assert status == "completed", f"约束追加 delta 未 completed: {status}"
 
-    def test_second_turn_passes_committed_query_plan_to_qwen(self) -> None:
+    def test_second_turn_passes_committed_query_plan_to_qwen_and_rag(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """生产编排入口把上一轮餐次/排除条件交给本轮 QueryNormalizer。"""
         previous = {
             "rewritten_query": "晚餐 豆腐",
             "meal_types": ["晚餐"],
             "exclude_ingredients": ["花生"],
+            "dish_count_requested": 3,
         }
+        captured = {}
+        from food_agent_v2.c3 import tool_handler
+
+        real_projection = tool_handler._retrieval_filters_from_query_plan
+
+        def _capture_projection(query_plan):
+            captured["query_plan"] = query_plan
+            return real_projection(query_plan)
+
+        monkeypatch.setattr(
+            tool_handler, "_retrieval_filters_from_query_plan", _capture_projection)
 
         class _ContextAwareLLM:
             payload = None
@@ -535,10 +549,8 @@ class TestDeterministicChain:
             def invoke(self, _role, _system_prompt, user_message, **_kwargs):
                 self.payload = json.loads(user_message)
                 return {"content": json.dumps({
-                    "retrieval_query": "晚餐 清淡",
-                    "meal_types": ["晚餐"],
+                    "retrieval_query": "清淡",
                     "taste_tags": ["清淡"],
-                    "exclude_ingredients": ["花生"],
                 }, ensure_ascii=False)}
 
         llm = _ContextAwareLLM()
@@ -551,3 +563,34 @@ class TestDeterministicChain:
                    [{"participant_ref": "p1", "user_id": "1"}])
 
         assert llm.payload["previous_query_plan"] == previous
+        query_plan = captured["query_plan"]
+        assert query_plan.meal_types == ("晚餐",)
+        assert query_plan.exclude_ingredients == ("花生",)
+        assert query_plan.dish_count_requested == 3
+
+    def test_new_recommendation_does_not_inherit_previous_query_plan(self) -> None:
+        """已有菜单时的新推荐仍从本轮需求开始，不盲目继承旧约束。"""
+        class _CaptureLLM:
+            payload = None
+
+            def invoke(self, _role, _system_prompt, user_message, **_kwargs):
+                self.payload = json.loads(user_message)
+                return {"content": json.dumps({
+                    "retrieval_query": "午餐 家常",
+                    "meal_types": ["午餐"],
+                    "taste_tags": ["家常"],
+                }, ensure_ascii=False)}
+
+        llm = _CaptureLLM()
+        rid = _fresh_rid()
+        _reset_d1(rid)
+        runner = _make_orchestrator(
+            has_current_menu=True,
+            llm=llm,
+            query_plan={"meal_types": ["晚餐"], "exclude_ingredients": ["花生"]},
+        )
+
+        runner.run(rid, "sess_new", "午餐家常菜",
+                   [{"participant_ref": "p1", "user_id": "1"}])
+
+        assert llm.payload["previous_query_plan"] is None
