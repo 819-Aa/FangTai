@@ -390,7 +390,8 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
     # ---- 公共：从已生成的 feasible_menus 到终态 state ----
 
     def _select_validate_answer(self, state, tool_ctx, plans, request_id,
-                                participant_refs, c4, session_id, lock_token, lost):
+                                participant_refs, c4, session_id, lock_token, lost,
+                                *, allow_polish: bool = True):
         """选优 → 最终校验 → MenuDecision → 确定性回答 → 回执 → 终态 state。"""
         handler = ToolHandler(tool_ctx)
 
@@ -447,7 +448,7 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
             time_note=f"按当前步骤估算，预计需要 {estimated_minutes} 分钟。",
         )
         # 可选润色（默认关闭；剩余预算 ≥2.5s 才启用，最多 2.0s，失败回退）
-        if narrative_polish_enabled() and self._trace is not None:
+        if allow_polish and narrative_polish_enabled() and self._trace is not None:
             elapsed = time.perf_counter() - self._trace.processing_started_at
             if elapsed < 5.5:  # 8s 总预算 − 2.5s 润色余量
                 answer = NarrativePolisher().polish(
@@ -706,6 +707,12 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
         state = reduce_workflow_state(
             state, action="set_artifact", artifact="query_plan", value=qp)
         tool_ctx.previous_results["query_plan"] = qp
+        if qp.health_exclusions:
+            state = self._handle_query_plan_exclusions(
+                state, qp, session_id, c4, user_id_mapping)
+            if state.is_terminal():
+                self._finalize(state, request_id, c4, lock_token)
+                return
         if qp.time_constraint_policy == "hard" and qp.time_constraint_seconds:
             tool_ctx.max_estimated_time_seconds = qp.time_constraint_seconds
 
@@ -724,6 +731,10 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
             )
             return
 
+        guard = self._guard_active(state, c4, session_id, lock_token, lost)
+        if guard is not None:
+            self._finalize(guard, request_id, c4, lock_token)
+            return
         handler = ToolHandler(tool_ctx)
         tool_ctx.node_id = self._NODE_HEALTH
         evaluated = handler.execute(
@@ -743,6 +754,10 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
                 request_id, c4, lock_token)
             return
 
+        guard = self._guard_active(state, c4, session_id, lock_token, lost)
+        if guard is not None:
+            self._finalize(guard, request_id, c4, lock_token)
+            return
         generated = handler.execute("generate_feasible_menus", {
             "safe_recipe_ids": recipe_ids,
             "locked_recipe_ids": recipe_ids,
@@ -769,7 +784,7 @@ class DeterministicRecommendationOrchestrator(WorkflowRunner):
         tool_ctx.previous_results["feasible_menus"] = plans
         state = self._select_validate_answer(
             state, tool_ctx, plans, request_id, participant_refs,
-            c4, session_id, lock_token, lost)
+            c4, session_id, lock_token, lost, allow_polish=False)
         self._finalize(state, request_id, c4, lock_token)
 
     def _run_delta(self, request_id, session_id, message,

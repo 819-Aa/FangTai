@@ -16,9 +16,11 @@ from food_agent_v2.b3.repository import (
     RepositoryError,
 )
 from food_agent_v2.c1 import RetrievalCandidate, RetrievalResult
+from food_agent_v2.c3.delta_planner import DeltaPlanner
 from food_agent_v2.c3.fast_intent import FastIntentRouter, IntentDelta
 from food_agent_v2.c3.orchestrator import DeterministicRecommendationOrchestrator
 from food_agent_v2.c3.query_normalizer import SemanticRewrite
+from food_agent_v2.c3.tool_handler import ToolHandler
 from food_agent_v2.d1 import api as d1_api
 
 
@@ -557,6 +559,20 @@ class TestDeterministicChain:
             "food_agent_v2.c1.get_retrieval_service",
             lambda: _ForbiddenRetrieval(),
         )
+        monkeypatch.setattr(
+            "food_agent_v2.c3.orchestrator.narrative_polish_enabled",
+            lambda: True,
+        )
+        monkeypatch.setattr(
+            "food_agent_v2.c3.orchestrator.time.perf_counter",
+            lambda: 1.0,
+        )
+        monkeypatch.setattr(
+            "food_agent_v2.c3.orchestrator.NarrativePolisher.polish",
+            lambda *_args, **_kwargs: pytest.fail(
+                "restore must not call NarrativePolisher"
+            ),
+        )
         llm = _CountingLLM()
         rid = _fresh_rid()
         _reset_d1(rid)
@@ -577,6 +593,91 @@ class TestDeterministicChain:
         assert result["status"] == "completed"
         assert result["result_summary"]["menu_summary"]["recipe_ids"] == [5, 6, 3]
         assert llm.calls == 0
+
+    def test_restore_historical_health_exclusions_run_r002_before_b4(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        captured = []
+        rid = _fresh_rid()
+        _reset_d1(rid)
+        runner = _make_orchestrator(
+            has_current_menu=True,
+            menu_history=[
+                {
+                    "plan_id": "p1",
+                    "recipe_ids": [5, 6, 3],
+                    "query_plan": {"health_exclusions": ["我海鲜过敏"]},
+                },
+                {"plan_id": "p2", "recipe_ids": [1, 2, 3], "query_plan": None},
+            ],
+        )
+        real_gate = runner._handle_query_plan_exclusions
+
+        def _capture_gate(state, query_plan, session_id, c4, mapping):
+            captured.append(query_plan)
+            return real_gate(state, query_plan, session_id, c4, mapping)
+
+        monkeypatch.setattr(runner, "_handle_query_plan_exclusions", _capture_gate)
+        monkeypatch.setattr(
+            "food_agent_v2.c3.orchestrator.ToolHandler.execute",
+            lambda *_args, **_kwargs: pytest.fail(
+                "B4/generation must not run after terminal R-002"
+            ),
+        )
+
+        runner.run(rid, "sess_restore", "恢复上一版", [
+            {"participant_ref": "p1", "user_id": "1"},
+        ])
+
+        result = d1_api.get_request_status(rid)[1]
+        assert result["status"] == "needs_clarification"
+        assert captured[0].health_exclusions == ("我海鲜过敏",)
+
+    @pytest.mark.parametrize(
+        ("stop_at", "expected_tools"),
+        ((1, []), (2, ["evaluate_recipe_health"])),
+    )
+    def test_restore_guard_stops_before_next_health_tool(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        stop_at: int,
+        expected_tools: list[str],
+    ) -> None:
+        from food_agent_v2.c3.state import RequestStatus, reduce_workflow_state
+
+        calls = {"guards": 0, "tools": []}
+        rid = _fresh_rid()
+        _reset_d1(rid)
+        runner = _make_orchestrator(
+            has_current_menu=True,
+            menu_history=[
+                {"plan_id": "p1", "recipe_ids": [5, 6, 3], "query_plan": None},
+                {"plan_id": "p2", "recipe_ids": [1, 2, 3], "query_plan": None},
+            ],
+        )
+        real_execute = ToolHandler.execute
+
+        def _guard(state, *_args):
+            calls["guards"] += 1
+            if calls["guards"] == stop_at:
+                return reduce_workflow_state(
+                    state, action="set_status", status=RequestStatus.CANCELLED
+                )
+            return None
+
+        def _capture_execute(handler, tool_name, arguments):
+            calls["tools"].append(tool_name)
+            return real_execute(handler, tool_name, arguments)
+
+        monkeypatch.setattr(runner, "_guard_active", _guard)
+        monkeypatch.setattr(ToolHandler, "execute", _capture_execute)
+
+        runner.run(rid, "sess_restore", "恢复上一版", [
+            {"participant_ref": "p1", "user_id": "1"},
+        ])
+
+        assert d1_api.get_request_status(rid)[1]["status"] == "cancelled"
+        assert calls["tools"] == expected_tools
 
     def test_restore_without_previous_version_needs_clarification(self) -> None:
         rid = _fresh_rid()
@@ -668,7 +769,20 @@ class TestDeterministicChain:
         assert query_plan.health_exclusions == ("p1:过敏:花生",)
         assert query_plan.include_ingredients == ("茄子",)
 
-    def test_reject_plan_stays_on_deterministic_delta_path(self) -> None:
+    def test_reject_plan_rejects_every_current_id_on_deterministic_path(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        captured = {}
+        real_plan = DeltaPlanner.plan
+
+        def _capture_plan(planner, current_recipe_ids, intent, safe_recipe_ids):
+            result = real_plan(planner, current_recipe_ids, intent, safe_recipe_ids)
+            captured["intent"] = intent.intent
+            captured["current_ids"] = tuple(current_recipe_ids)
+            captured["rejected_ids"] = result.rejected_recipe_ids
+            return result
+
+        monkeypatch.setattr(DeltaPlanner, "plan", _capture_plan)
         rid = _fresh_rid()
         _reset_d1(rid)
         runner = _make_orchestrator(has_current_menu=True)
@@ -677,7 +791,12 @@ class TestDeterministicChain:
             {"participant_ref": "p1", "user_id": "1"},
         ])
 
-        assert d1_api.get_request_status(rid)[1]["status"] != "failed"
+        assert d1_api.get_request_status(rid)[1]["status"] == "no_feasible_menu"
+        assert captured == {
+            "intent": "reject_plan",
+            "current_ids": (1, 2, 3),
+            "rejected_ids": (1, 2, 3),
+        }
 
     def test_add_constraint_delta(self) -> None:
         """约束追加（有前文菜单）→ 确定性 delta 链路走通（最小修改，不 fallback）。"""
