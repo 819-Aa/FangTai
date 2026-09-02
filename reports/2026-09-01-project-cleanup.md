@@ -48,3 +48,13 @@
 - H07 API 与前端开发服务器当前未常驻启动；需要联调时再启动。
 - `data/cache/recipe_time_graphs.jsonl` 未纳入仓库。若需要重新发布数据，必须先按离线流程生成并批准该缓存；现有 H07 已发布数据不受影响。
 - 历史计划、ADR 和审计报告保留，用于追溯，不作为当前运行入口。
+
+## 竞赛工作区根目录清理（2026-09-02）
+
+- 盘点 `C:\Users\zhiyo\Desktop\竞赛` 后，确认当前项目为 `program_v2`；旧 `program` 没有 Git 仓库、运行进程或 Docker 容器占用。
+- 从旧 `program` 删除约 6.54 GiB 本地模型缓存、约 1.04 GiB 虚拟环境、约 319 MiB `node_modules`、测试/运行/Python 缓存和空构建目录。
+- 删除约 1.82 GiB 未完成的百度云下载文件，以及旧 `program/.env`；旧源码、锁文件、数据、报告和 `.env.example` 保留，可按需重建环境。
+- 删除根目录残缺且不能构成 Git 仓库的 `.git/info/exclude`、根级 pytest 缓存和 `tmp/performance-review` 临时转换文件。
+- 根目录 3 个原始输入与 `program_v2/data/raw` 的 SHA-256 完全一致，已删除根目录重复副本；`datas/raw` 内容不同，连同 `datas/processed` 一并保留。
+- 保留竞赛通知、赛题细则、报名表、工具配置目录、旧项目源码/数据/报告，以及当前 `program_v2` 的依赖、配置和 H07 数据。
+- 本轮预计释放约 9.5 GiB，不修改 `program_v2` 业务代码和 H07 存储。
