@@ -1,6 +1,6 @@
 # 健康菜品推荐系统 V2
 
-`program_v2`是健康菜品推荐系统的新一代模块化实现，与旧项目`../program`并列存在。
+`program_v2`是当前唯一维护的健康菜品推荐系统实现。
 
 当前主链为：Qwen 语义重写 → 确定性约束解析与失败兜底 → H07 RAG → B4 健康校验 → 菜单规划 → Redis 会话版本记忆。嵌入与重排通过 SiliconFlow API 调用 BGE-M3/BGE-Reranker，不需要本地模型文件。默认走确定性快速路径（`WORKFLOW_MODE=fast_path`）。
 

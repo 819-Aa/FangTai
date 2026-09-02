@@ -56,5 +56,12 @@
 - 删除约 1.82 GiB 未完成的百度云下载文件，以及旧 `program/.env`；旧源码、锁文件、数据、报告和 `.env.example` 保留，可按需重建环境。
 - 删除根目录残缺且不能构成 Git 仓库的 `.git/info/exclude`、根级 pytest 缓存和 `tmp/performance-review` 临时转换文件。
 - 根目录 3 个原始输入与 `program_v2/data/raw` 的 SHA-256 完全一致，已删除根目录重复副本；`datas/raw` 内容不同，连同 `datas/processed` 一并保留。
-- 保留竞赛通知、赛题细则、报名表、工具配置目录、旧项目源码/数据/报告，以及当前 `program_v2` 的依赖、配置和 H07 数据。
+- 保留竞赛通知、赛题细则、报名表，以及当前 `program_v2` 的依赖、配置和 H07 数据。
 - 本轮预计释放约 9.5 GiB，不修改 `program_v2` 业务代码和 H07 存储。
+
+## 竞赛工作区二次收缩（2026-09-02）
+
+- 经所有者确认只保留当前实际使用内容后，删除未被 `program_v2` 引用的旧 `program` 源码/数据/报告、旧 `datas` 原始与处理数据，以及根目录 `.agents`、`.claude`、`.superpowers` 遗留配置。
+- 上述目录不受 Git 管理，本次为永久删除；当前项目使用的原始输入仍保存在 `program_v2/data/raw`，H07 数据卷未受影响。
+- README 不再描述已经删除的并列旧项目。
+- `C:\Users\zhiyo\Desktop\竞赛` 根目录最终只保留当前 `program_v2` 和三份官方竞赛材料。
