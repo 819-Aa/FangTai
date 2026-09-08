@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Work only in `C:\Users\zhiyo\Desktop\竞赛\program_v2\.worktrees\recipe-rag-nutrition-time-v2` on `feature/recipe-rag-nutrition-time-v2`.
+- Work only in `<repo-root>/.worktrees/recipe-rag-nutrition-time-v2` on `feature/recipe-rag-nutrition-time-v2`.
 - The repository is already dirty with owner and prior-task work. Preserve every unrelated change and do not use destructive Git commands.
 - Use strict test-driven development: add a failing focused test before implementation, then implement the minimum change and run the focused and full B1 suites.
 - Do not commit. Produce task-scoped snapshots/report/review artifacts so this batch can be reviewed independently from the dirty worktree.

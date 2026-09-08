@@ -43,4 +43,4 @@ docs/
 
 已批准的逐任务交付方案见[2026-08-09 V2 全链路整改执行计划](superpowers/plans/2026-08-09-v2-full-chain-remediation.md)。执行者必须同时遵守 DeepSeek 执行契约，不能只读取计划而忽略阶段闸门。
 
-实际交接从仓库根目录的 [DEEPSEEK_START_HERE.md](../DEEPSEEK_START_HERE.md) 开始；该入口固定工作目录、基线标签、执行分支和 T00 校验命令。
+历史整改交接说明见 [legacy-remediation-handoff.md](legacy-remediation-handoff.md)；该文档只用于追溯早期整改流程，不代表当前运行入口。

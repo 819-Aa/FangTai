@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Work only in `C:\Users\zhiyo\Desktop\竞赛\program_v2\.worktrees\recipe-rag-nutrition-time-v2` on `feature/recipe-rag-nutrition-time-v2`.
+- Work only in `<repo-root>/.worktrees/recipe-rag-nutrition-time-v2` on `feature/recipe-rag-nutrition-time-v2`.
 - Preserve the dirty worktree and all unrelated owner/prior-task changes. Do not commit or use destructive Git operations.
 - Use strict TDD: add a focused behavior test, run and record the expected RED result, then implement the minimum source/data change.
 - `hard_exclude` in this batch means the recipe must not be recommended to a user with the matching allergy because a reasonable composition risk exists; it does not assert that every commercial formulation contains the allergen.

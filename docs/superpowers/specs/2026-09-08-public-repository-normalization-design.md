@@ -12,8 +12,9 @@ Prepare the current project for GitHub presentation without changing business be
 - Replace internal workflow labels such as `B4` and `C2` in the README diagram with business-facing component names.
 - Describe only the active `WORKFLOW_MODE=fast_path` workflow in the README.
 - Replace tracked Windows user-directory paths with repository-relative or generic paths.
-- Normalize human-facing filenames by convention: Markdown and general data files use lowercase kebab-case, Python files use snake_case, and Vue components use PascalCase.
+- Normalize human-facing documentation and execution-envelope filenames by convention: Markdown uses lowercase kebab-case, Python files use snake_case, Vue components use PascalCase, and task envelopes use lowercase identifiers.
 - Preserve the existing `b1`/`b2`/`c1`-style Python package names because renaming them would be a behavior-affecting refactor across source, tests, and documentation.
+- Preserve fixed source-data filenames because they are part of Source Manifest identity and data-build contracts.
 
 ## Publication Boundary
 
@@ -41,5 +42,6 @@ Per the owner's instruction, this cleanup will not rerun the application test su
 
 - No business logic, API, database schema, or frontend behavior changes.
 - No renaming of Python packages or imports.
+- No renaming of fixed source-data files.
 - No Docker startup, data rebuild, or paid live-model execution.
 - No deletion of local Docker volumes or other runtime data.

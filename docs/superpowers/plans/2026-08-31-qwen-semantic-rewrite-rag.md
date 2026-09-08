@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Work only in `C:/Users/zhiyo/Desktop/竞赛/program_v2/.worktrees/recipe-rag-nutrition-time-v2-reviewed-build-20260830`.
+- Work only in `<repo-root>/.worktrees/recipe-rag-nutrition-time-v2-reviewed-build-20260830`.
 - Design source of truth: `docs/superpowers/specs/2026-08-31-qwen-semantic-rewrite-rag-design.md`.
 - Do not modify H07 data, MySQL, Qdrant collections/aliases, Redis, B4, C2/B5, or answer-generation behavior.
 - Keep `45分钟内` as a hard 2700-second constraint.

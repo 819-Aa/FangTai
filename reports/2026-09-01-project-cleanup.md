@@ -51,7 +51,7 @@
 
 ## 竞赛工作区根目录清理（2026-09-02）
 
-- 盘点 `C:\Users\zhiyo\Desktop\竞赛` 后，确认当前项目为 `program_v2`；旧 `program` 没有 Git 仓库、运行进程或 Docker 容器占用。
+- 盘点 `<workspace-root>` 后，确认当前项目为 `program_v2`；旧 `program` 没有 Git 仓库、运行进程或 Docker 容器占用。
 - 从旧 `program` 删除约 6.54 GiB 本地模型缓存、约 1.04 GiB 虚拟环境、约 319 MiB `node_modules`、测试/运行/Python 缓存和空构建目录。
 - 删除约 1.82 GiB 未完成的百度云下载文件，以及旧 `program/.env`；旧源码、锁文件、数据、报告和 `.env.example` 保留，可按需重建环境。
 - 删除根目录残缺且不能构成 Git 仓库的 `.git/info/exclude`、根级 pytest 缓存和 `tmp/performance-review` 临时转换文件。
@@ -64,4 +64,4 @@
 - 经所有者确认只保留当前实际使用内容后，删除未被 `program_v2` 引用的旧 `program` 源码/数据/报告、旧 `datas` 原始与处理数据，以及根目录 `.agents`、`.claude`、`.superpowers` 遗留配置。
 - 上述目录不受 Git 管理，本次为永久删除；当前项目使用的原始输入仍保存在 `program_v2/data/raw`，H07 数据卷未受影响。
 - README 不再描述已经删除的并列旧项目。
-- `C:\Users\zhiyo\Desktop\竞赛` 根目录最终只保留当前 `program_v2` 和三份官方竞赛材料。
+- `<workspace-root>` 根目录最终只保留当前 `program_v2` 和三份官方竞赛材料。

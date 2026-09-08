@@ -3,7 +3,7 @@
 本目录保存 T01 建立、由外部控制者维护的不可变任务护栏：
 
 - `task-envelope.schema.json` — TaskEnvelope 的权威 JSON Schema。
-- `tasks/T01.yaml` — T01 的任务信封；后续每个任务由外部控制者写入一份
+- `tasks/t01.yaml` — T01 的任务信封；后续每个任务由外部控制者写入一份
   `tasks/T0X.yaml`，DeepSeek 无写权限。
 
 ## 任务信封（TaskEnvelope）
@@ -30,7 +30,7 @@
 生成或核对信封时使用：
 
 ```powershell
-uv run python scripts/execution/verify_task_envelope.py --envelope execution/tasks/T01.yaml --print-spec-hash
+uv run python scripts/execution/verify_task_envelope.py --envelope execution/tasks/t01.yaml --print-spec-hash
 ```
 
 ### 信封格式约束

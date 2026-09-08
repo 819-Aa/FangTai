@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- 只在 `C:\Users\zhiyo\Desktop\竞赛\program_v2\.worktrees\recipe-rag-nutrition-time-v2` 工作，分支为 `feature/recipe-rag-nutrition-time-v2`。
+- 只在 `<repo-root>/.worktrees/recipe-rag-nutrition-time-v2` 工作，分支为 `feature/recipe-rag-nutrition-time-v2`。
 - 保留已有 dirty worktree 和所有不相关 owner/prior-task 改动；禁止 destructive Git 命令。
 - 不 commit、不 stage；通过任务级 before/after 快照、SHA-256、RED/GREEN 输出和 review package 留痕。
 - 严格 TDD：每项生产行为必须先有真实失败测试并记录 RED，再修改生产代码。

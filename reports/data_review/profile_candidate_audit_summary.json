@@ -1,6 +1,6 @@
 {
   "generated_at": "2026-08-23T09:35:25+08:00",
-  "candidate_file": "C:/Users/zhiyo/Desktop/竞赛/program_v2/.worktrees/recipe-rag-nutrition-time-v2/reports/data_review/profile_candidates.jsonl",
+  "candidate_file": "reports/data_review/profile_candidates.jsonl",
   "status": "review_required",
   "structural_gates": {
     "candidate_rows": 2000,

@@ -67,4 +67,4 @@
 - 没有可作为绝对真值的餐次标注集，因此本次不对 1435 条未命中规则的单道菜做自动正确性背书。
 - 各问题类别存在重叠，优先级计数按每个 recipe_id 的最高优先级去重：P0=233、P1=321、P2=11。
 
-待审明细：`C:/Users/zhiyo/Desktop/竞赛/program_v2/.worktrees/recipe-rag-nutrition-time-v2/reports/data_review/profile_candidate_review_queue.csv`
+待审明细：`reports/data_review/profile_candidate_review_queue.csv`

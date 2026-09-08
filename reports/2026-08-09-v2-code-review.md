@@ -28,7 +28,7 @@ V2 文档具备较完整的架构、模块职责、数据流、全局不变量�
 - `docs/modules/01-data-engineering.md` 至 `14-migration-and-cleanup.md`；
 - `docs/scenarios/recommendation-lifecycle.md`；
 - ADR-0001、ADR-0002、ADR-0003；
-- `reports/FINAL_REVIEW.md`。
+- `reports/final-review.md`。
 
 ### 2.2 已审查实现
 
@@ -71,7 +71,7 @@ V2 文档具备较完整的架构、模块职责、数据流、全局不变量�
 - 统一端口：隔离方案是 API `8001`、前端 `5174`，`docs/modules/11-api-and-sse.md` 仍写 `8000/5173`；
 - 统一模型供应商和配置表述：DeepSeek、Qwen/DashScope 的描述并存；
 - 删除或标记过期的 README 描述，例如“尚无可运行业务代码”；
-- 将 `reports/FINAL_REVIEW.md` 的历史结论标记为未验证快照，不能继续作为当前通过证明；
+- 将 `reports/final-review.md` 的历史结论标记为未验证快照，不能继续作为当前通过证明；
 - 为每条不变量补充机器可执行的验收用例、失败码和证据字段；
 - ADR 偏离必须同时回写模块文档，避免“ADR 允许、模块文档禁止”的双重标准。
 
@@ -265,7 +265,7 @@ V2 文档具备较完整的架构、模块职责、数据流、全局不变量�
 - 3 个在线 LLM 用例只打印 WARN，没有断言；
 - `tests/test_b2_b4_health.py::test_inv003_no_pending_relations` 的测试体是 `pass`；
 - 无前端测试；
-- `reports/FINAL_REVIEW.md` 声称 68 passed、真实 E2E、MySQL 幂等和 Redis 恢复，与上述事实不一致。
+- `reports/final-review.md` 声称 68 passed、真实 E2E、MySQL 幂等和 Redis 恢复，与上述事实不一致。
 
 影响：测试数字包含空壳、在线依赖和被跳过基础设施，不能作为退出 V1 的证据。
 

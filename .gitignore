@@ -27,6 +27,7 @@ frontend/dist/
 mysql-data/
 qdrant-data/
 redis-data/
+/docker-compose.yml
 
 # Generated data and reports
 .staging/

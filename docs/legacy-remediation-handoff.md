@@ -1,23 +1,23 @@
 # DeepSeek V4 Flash 执行入口
 
 - 状态：`EXECUTED`（整改已执行至 T24 + MC-01..06 收尾；本文件保留历史交接与执行纪律追溯用途）
-- 仓库根：`C:\Users\zhiyo\Desktop\竞赛\program_v2`
+- 仓库根：`<repo-root>`
 - 基线标签：`v2-remediation-baseline-2026-08-09`
 - 执行分支：`remediation/deepseek-v4-flash`
 
 ## 唯一任务
 
-严格执行 [V2 全链路整改计划](docs/superpowers/plans/2026-08-09-v2-full-chain-remediation.md)，使当前候选实现满足正式 V2 准则并通过真实前后端全链路验收。不得重新设计需求，不得修改固定 2,000 条源数据，不得替人批准健康关系。
+严格执行 [V2 全链路整改计划](superpowers/plans/2026-08-09-v2-full-chain-remediation.md)，使当前候选实现满足正式 V2 准则并通过真实前后端全链路验收。不得重新设计需求，不得修改固定 2,000 条源数据，不得替人批准健康关系。
 
 ## 开始前必须完整读取
 
 按顺序读取：
 
-1. [DeepSeek 整改执行契约](docs/contracts/deepseek-execution-contract.md)
-2. [全链路整改计划](docs/superpowers/plans/2026-08-09-v2-full-chain-remediation.md)
-3. [V2 文档权威入口](docs/README.md)
-4. [代码审查报告](reports/2026-08-09-v2-code-review.md)
-5. [整改前交接基线](reports/2026-08-09-v2-handoff-baseline.md)
+1. [DeepSeek 整改执行契约](contracts/deepseek-execution-contract.md)
+2. [全链路整改计划](superpowers/plans/2026-08-09-v2-full-chain-remediation.md)
+3. [V2 文档权威入口](README.md)
+4. [代码审查报告](../reports/2026-08-09-v2-code-review.md)
+5. [整改前交接基线](../reports/2026-08-09-v2-handoff-baseline.md)
 
 不得只读取本入口的摘要后直接改代码。
 

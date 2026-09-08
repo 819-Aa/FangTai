@@ -30,4 +30,4 @@
 
 ## 4. DeepSeek 的起点
 
-DeepSeek 首先按仓库根目录 [DEEPSEEK_START_HERE.md](../DEEPSEEK_START_HERE.md) 执行 T00。T01 之后的每项验证必须与本报告区分：本报告是整改前红色基线，不能被覆盖为整改后证据。
+历史整改首先按 [legacy-remediation-handoff.md](../docs/legacy-remediation-handoff.md) 执行 T00。T01 之后的每项验证必须与本报告区分：本报告是整改前红色基线，不能被覆盖为整改后证据。

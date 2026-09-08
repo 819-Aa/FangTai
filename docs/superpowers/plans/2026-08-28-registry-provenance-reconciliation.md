@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Work only in `C:\Users\zhiyo\Desktop\竞赛\program_v2\.worktrees\recipe-rag-nutrition-time-v2` on branch `feature/recipe-rag-nutrition-time-v2`.
+- Work only in `<repo-root>/.worktrees/recipe-rag-nutrition-time-v2` on branch `feature/recipe-rag-nutrition-time-v2`.
 - Preserve the existing dirty worktree and unrelated owner/prior-task changes. Do not commit or use destructive Git operations.
 - Use strict TDD: create a real failing regression test and record RED before editing production code.
 - Scope is the current T06 entry point `rebuild_ingredient_identities()`; do not alter the legacy `build_ingredient_registry()` API or its legacy tests.

@@ -26,7 +26,7 @@
 - ADR：0004、0005、0006
 - 审查问题：`reports/2026-08-09-v2-code-review.md` 的 R-001..R-020
 
-历史 `reports/FINAL_REVIEW.md` 和 ADR-0003 均为 `SUPERSEDED`，不得作为实现理由。
+历史 `reports/final-review.md` 和 ADR-0003 均为 `SUPERSEDED`，不得作为实现理由。
 
 ### 0.2 固定数据常量
 
@@ -88,7 +88,7 @@ Expected: 命令均成功，顶层目录严格等于 `program_v2`，`HEAD` 与�
 
 - Create: `execution/README.md`
 - Create: `execution/task-envelope.schema.json`
-- Create: `execution/tasks/T01.yaml`（后续每任务各一份，由控制者写入）
+- Create: `execution/tasks/t01.yaml`（后续每任务各一份，由控制者写入）
 - Create: `scripts/execution/verify_task_envelope.py`
 - Create: `scripts/execution/collect_evidence.py`
 - Create: `scripts/execution/check_changed_paths.py`

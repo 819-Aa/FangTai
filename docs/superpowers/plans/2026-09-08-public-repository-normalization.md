@@ -12,6 +12,7 @@
 
 - Do not modify business logic, API behavior, database schema, or frontend behavior.
 - Do not rename `b1`/`b2`/`c1`-style Python packages or imports.
+- Do not rename fixed files under `data/raw`; their paths participate in Source Manifest identity and data-build contracts.
 - Keep `docker-compose.yml` on the local machine but absent from the Git index.
 - Do not rerun application, Docker, database, frontend, or live-model tests.
 - Validate only Git structure, Markdown links, tracked-path portability, and publication safety.
@@ -52,7 +53,7 @@ Run the PowerShell relative-link scan used during review and `git diff --check -
 - Rename: `execution/tasks/T01.yaml` to `execution/tasks/t01.yaml`
 - Move: `DEEPSEEK_START_HERE.md` to `docs/legacy-remediation-handoff.md`
 - Modify: tracked Markdown, JSON, and YAML references to the renamed files
-- Modify: the 10 tracked Markdown/JSON files containing `C:\Users\...` or `C:/Users/...`
+- Modify: the 10 tracked Markdown/JSON files containing Windows user-directory paths
 
 **Interfaces:**
 - Consumes: existing historical documentation and execution-envelope references.
