@@ -1,7 +1,7 @@
 """C3 性能观测基线（P1）—— 节点级阶段计时 + 模型调用计数。
 
 纯观测：只记录单调时钟时间戳与调用元数据，不改变任何业务行为。
-每次请求一个 PerfTrace 实例（`_trigger_workflow` 每请求新建 WorkflowRunner，
+每次请求一个 PerfTrace 实例（`_trigger_workflow` 每请求新建 LangGraphRecommendationOrchestrator，
 故实例属性非并发共享）。最终以一行结构化 JSON 日志输出，供性能 harness
 采集诊断瓶颈。
 

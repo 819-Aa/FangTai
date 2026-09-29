@@ -13,6 +13,7 @@ import { terminalLabel } from "@/stores/recommendation";
 import type {
   AnonymousParticipant,
   ChatMessage,
+  ClarificationView,
   PhaseEvent,
   PublicMenuSummary,
 } from "@/types";
@@ -22,13 +23,17 @@ const props = defineProps<{
   phases: PhaseEvent[];
   answer: string;
   clarification: string;
+  activeClarification?: ClarificationView | null;
   status: string;
   isStreaming: boolean;
   canSend: boolean;
   participants: AnonymousParticipant[];
   currentMenu: PublicMenuSummary | null;
 }>();
-const emit = defineEmits<{ send: [message: string] }>();
+const emit = defineEmits<{
+  send: [message: string];
+  selectOption: [optionId: number];
+}>();
 
 const draft = ref("");
 const suggestions = [
@@ -159,7 +164,30 @@ function phaseBadge(e: PhaseEvent): string {
       </ol>
     </div>
 
-    <div v-if="needsClarification" class="clarification-bar" role="status">
+    <div
+      v-if="props.activeClarification && props.activeClarification.options && props.activeClarification.options.length"
+      class="clarification-panel"
+      role="region"
+      aria-label="澄清选项"
+    >
+      <div class="clarification-title">
+        <span class="clarification-label">待确认</span>
+        <span class="clarification-text">{{ props.activeClarification.question_text }}</span>
+      </div>
+      <div class="clarification-options">
+        <button
+          v-for="opt in props.activeClarification.options"
+          :key="opt.option_id"
+          type="button"
+          class="clarification-option-btn"
+          :disabled="props.isStreaming"
+          @click="emit('selectOption', opt.option_id)"
+        >
+          <span class="option-num">{{ opt.option_id }}.</span> {{ opt.text }}
+        </button>
+      </div>
+    </div>
+    <div v-else-if="needsClarification" class="clarification-bar" role="status">
       <span class="clarification-label">待确认</span>
       <span class="clarification-text">{{ props.clarification }}</span>
     </div>

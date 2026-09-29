@@ -163,6 +163,11 @@ class OutboxDispatcher:
                 request_id, payload.get("menu_summary", {}),
                 event_id=event_id,
             )
+        elif event_type == "clarification_needed":
+            d1.publish_clarification_event(
+                request_id, payload,
+                event_id=event_id,
+            )
         else:
             raise RuntimeError(f"unknown outbox event_type: {event_type}")
 

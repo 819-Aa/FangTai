@@ -52,7 +52,8 @@ def _commit_hash(request_id: str, session_id: str, status: str,
                  final_plan_id: str, health_evidence: dict,
                  answer_text: str, menu_hash: str, menu_ref: str,
                  evidence_refs: list[str], participant_refs: list[str],
-                 error_code: str | None, error_message: str | None) -> str:
+                 error_code: str | None, error_message: str | None,
+                 clarification_transition: dict | None = None) -> str:
     """完整规范化不可变提交信封的确定性 hash（幂等比较）。
 
     直接覆盖完整、已验证并规范化的 health_evidence（含各 Artifact ref/hash/内容、
@@ -61,7 +62,7 @@ def _commit_hash(request_id: str, session_id: str, status: str,
     evidence 全部绑定。任何证据、hash、Artifact ref、tool_call_id、session_id、
     menu_ref 变化 → 不同 hash → IDEMPOTENCY_CONFLICT。真正重试必须复用同一 Artifact 链。
     """
-    return canonical_json_hash({
+    payload = {
         "request_id": request_id,
         "session_id": session_id,
         "participant_refs": list(participant_refs or []),
@@ -73,7 +74,10 @@ def _commit_hash(request_id: str, session_id: str, status: str,
         "menu_ref": menu_ref,
         "evidence_refs": list(evidence_refs or []),
         "health_evidence": health_evidence,
-    })
+    }
+    if clarification_transition:
+        payload["clarification_transition"] = clarification_transition
+    return canonical_json_hash(payload)
 
 
 def _validate_commit_payload(health_evidence: dict, status: str,
@@ -260,11 +264,15 @@ def commit_request_result(
     menu_hash: str = "",
     menu_ref: str = "",
     evidence_refs: list[str] | None = None,
+    clarification_transition: dict | None = None,
+    execution_owner: str | None = None,
+    execution_generation: int | None = None,
 ) -> dict:
     """将请求终态 + 健康审计 + 会话事实 + outbox 原子写入 MySQL。
 
     - request_id 结果 insert-once：同 payload 幂等返回原提交，不同 payload 冲突；
-    - fencing token 为事务强制参数（生产 completed 必须正整数，stale 回滚）。
+    - fencing token 为事务强制参数（生产 completed 必须正整数，stale 回滚）；
+    - clarification_transition 声明问题消费、新问题生成与 active_clarification_question_id 原子转移。
     """
     conn = _connect()
     try:
@@ -290,11 +298,19 @@ def commit_request_result(
                                if menu_hash
                                else (_audit_evidence.get("menu_hash") or ""))
 
+        transition_dict: dict | None = None
+        if clarification_transition is not None:
+            if hasattr(clarification_transition, "model_dump"):
+                transition_dict = clarification_transition.model_dump(mode="json")
+            elif isinstance(clarification_transition, dict):
+                transition_dict = clarification_transition
+
         cursor = conn.cursor()
         commit_hash = _commit_hash(
             request_id, session_id, status, final_plan_id, health_evidence,
             answer_text, effective_menu_hash, menu_ref, evidence_refs or [],
-            effective_participant_refs, error_code, error_message)
+            effective_participant_refs, error_code, error_message,
+            clarification_transition=transition_dict)
 
         # 1. 会话行存在（INSERT IGNORE 不递增 request_count；participant_refs 用 effective 值）
         cursor.execute(
@@ -305,12 +321,45 @@ def commit_request_result(
         )
         # 2. 锁定 session 行（FOR UPDATE：并发提交序列化）
         cursor.execute(
-            "SELECT fencing_token FROM sessions WHERE session_id=%s FOR UPDATE",
+            "SELECT fencing_token, active_fencing_token, active_clarification_question_id, "
+            "clarification_revision, workflow_mode, clarification_protocol_version "
+            "FROM sessions WHERE session_id=%s FOR UPDATE",
             (session_id,))
         row = cursor.fetchone()
         stored_token = int(row[0]) if row and row[0] is not None else None
+        active_fencing_token = int(row[1]) if row and len(row) > 1 and row[1] is not None else None
+        active_qid = row[2] if row and len(row) > 2 else None
+        clarification_rev = int(row[3]) if row and len(row) > 3 and row[3] is not None else 0
+        _workflow_mode = row[4] if row and len(row) > 4 else None
+        protocol_version = row[5] if row and len(row) > 5 else None
 
-        # 3. 幂等：同 request 已提交 → 同信封原样返回，不同信封冲突
+        # Session -> acceptance is the common lock order for v2 commits. A claim
+        # updates only acceptance, so commit and reclaim serialize on that row.
+        acceptance = None
+        if protocol_version == "v2":
+            cursor.execute(
+                "SELECT session_id, status, execution_owner, execution_generation, "
+                "execution_lease_until > CURRENT_TIMESTAMP "
+                "FROM request_acceptances WHERE request_id=%s FOR UPDATE",
+                (request_id,),
+            )
+            acceptance = cursor.fetchone()
+            if acceptance:
+                owned = (
+                    acceptance[0] == session_id
+                    and isinstance(execution_owner, str) and bool(execution_owner)
+                    and acceptance[2] == execution_owner
+                    and type(execution_generation) is int
+                    and int(acceptance[3]) == execution_generation
+                )
+                if not owned:
+                    raise AuditCommitFailed("EXECUTION_LEASE_INVALID: owner or generation mismatch")
+                if acceptance[1] == "running" and acceptance[4] != 1:
+                    raise AuditCommitFailed("EXECUTION_LEASE_INVALID: execution lease expired")
+                if acceptance[1] not in ("running", "terminal"):
+                    raise AuditCommitFailed("EXECUTION_LEASE_INVALID: request is not running")
+
+        # 2a. 幂等判定：在 SELECT sessions ... FOR UPDATE 后立即做 recommendation_logs 信封幂等判定
         cursor.execute(
             "SELECT commit_hash, status FROM recommendation_logs "
             "WHERE request_id=%s", (request_id,))
@@ -318,38 +367,235 @@ def commit_request_result(
         if existing:
             if existing[0] == commit_hash:
                 conn.rollback()  # 幂等命中：不修改任何数据库事实
-                return {"request_id": request_id, "status": existing[1],
-                        "committed": True, "idempotent": True,
-                        "outbox_event_ids": []}
+                return {
+                    "request_id": request_id,
+                    "status": existing[1],
+                    "committed": True,
+                    "idempotent": True,
+                    "outbox_event_ids": [],
+                }
             raise AuditCommitFailed(
                 f"IDEMPOTENCY_CONFLICT: request {request_id} 已用不同提交信封提交")
+        if acceptance and acceptance[1] != "running":
+            raise AuditCommitFailed("EXECUTION_LEASE_INVALID: terminal acceptance has no result")
 
-        # 4. fencing 单调校验（completed 必须正整数；stale → 抛错 → rollback）
-        _validate_fencing_token(stored_token, fencing_token, status)
+        # 2b. fencing token 校验
+        is_v2 = (protocol_version == "v2")
+        if is_v2 and status == "needs_clarification" and not transition_dict:
+            raise AuditCommitFailed("CLARIFICATION_TRANSITION_REQUIRED: v2 追问必须携带状态转移")
+        if is_v2 and transition_dict and status in ("completed", "needs_clarification"):
+            if transition_dict.get("expected_revision") is None:
+                raise AuditCommitFailed("CLARIFICATION_REVISION_REQUIRED: v2 状态转移必须携带版本")
+        if is_v2 and status == "completed" and active_qid:
+            if not transition_dict or not (
+                transition_dict.get("expected_question_id") == active_qid
+                or transition_dict.get("supersede_current")
+            ):
+                raise AuditCommitFailed("ACTIVE_CLARIFICATION_UNRESOLVED: 完成前必须消费或替代活跃问题")
+        requires_fencing = (status == "completed") or (is_v2 and status == "needs_clarification" and transition_dict is not None)
+        if requires_fencing:
+            if not _is_posint(fencing_token):
+                raise AuditCommitFailed(
+                    f"{'v2 ' if is_v2 else ''}{status} 提交必须携带正整数 fencing token，实际 {fencing_token!r}")
+            incoming_token = int(fencing_token)
+            if is_v2:
+                # 对 v2 事务要求传入 token 等于 sessions.active_fencing_token
+                if active_fencing_token is None or incoming_token != active_fencing_token:
+                    raise AuditCommitFailed(
+                        f"FENCING_TOKEN_MISMATCH: 传入 token {incoming_token} 与活跃 token {active_fencing_token} 不一致")
+            if stored_token is not None and incoming_token <= stored_token:
+                raise AuditCommitFailed(
+                    f"stale fencing_token: {incoming_token} <= stored {stored_token}")
+        elif fencing_token is not None:
+            if not _is_posint(fencing_token):
+                raise AuditCommitFailed(f"fencing token 非法: {fencing_token!r}")
+            incoming_token = int(fencing_token)
+            if stored_token is not None and incoming_token <= stored_token:
+                raise AuditCommitFailed(f"stale fencing_token: {incoming_token} <= stored {stored_token}")
+
+        # 2c. 澄清状态转移处理（仅在 completed 或 needs_clarification 下应用，失败/中断不消费也不替代）
+        outbox_clarification_row: dict | None = None
+        next_active_qid = active_qid
+        next_clarification_rev = clarification_rev
+
+        if transition_dict and status in ("completed", "needs_clarification"):
+            exp_rev = transition_dict.get("expected_revision")
+            if exp_rev is not None and clarification_rev != int(exp_rev):
+                raise AuditCommitFailed(
+                    f"CLARIFICATION_REVISION_MISMATCH: 会话 revision 不匹配 (当前: {clarification_rev}, 预期: {exp_rev})"
+                )
+
+            exp_qid = transition_dict.get("expected_question_id")
+            selected_opt_id = transition_dict.get("selected_option_id")
+            supersede = transition_dict.get("supersede_current", False)
+            next_qid = transition_dict.get("next_question_id")
+            next_pub = transition_dict.get("next_public_payload")
+            next_priv = transition_dict.get("next_private_snapshot")
+            next_exp_at = transition_dict.get("next_expires_at")
+
+            if status == "completed" and next_qid:
+                raise AuditCommitFailed("CLARIFICATION_INVALID_TRANSITION: completed 终态不得创建新澄清问题")
+            if status == "needs_clarification" and not next_qid:
+                raise AuditCommitFailed("CLARIFICATION_INVALID_TRANSITION: needs_clarification 必须指定新澄清问题 next_question_id")
+
+            if selected_opt_id is not None and not exp_qid:
+                raise AuditCommitFailed("CLARIFICATION_INVALID_TRANSITION: selected_option_id 必须指定 expected_question_id")
+            if exp_qid and selected_opt_id is None:
+                raise AuditCommitFailed("CLARIFICATION_INVALID_TRANSITION: expected_question_id 必须指定 selected_option_id")
+            if supersede and selected_opt_id is not None:
+                raise AuditCommitFailed("CLARIFICATION_INVALID_TRANSITION: supersede_current 与 selected_option_id 互斥")
+            if supersede and exp_qid:
+                raise AuditCommitFailed("CLARIFICATION_INVALID_TRANSITION: supersede_current 与 expected_question_id 互斥")
+
+            # A. 消费指定活跃问题
+            if exp_qid:
+                if active_qid != exp_qid:
+                    raise AuditCommitFailed(
+                        f"CLARIFICATION_STALE: 活跃问题不匹配 (当前: {active_qid}, 预期: {exp_qid})"
+                    )
+                cursor.execute(
+                    "SELECT session_id, status, expires_at, private_snapshot, public_payload "
+                    "FROM clarification_questions WHERE question_id=%s FOR UPDATE",
+                    (exp_qid,)
+                )
+                q_row = cursor.fetchone()
+                if not q_row:
+                    raise AuditCommitFailed(f"CLARIFICATION_NOT_FOUND: 澄清问题不存在: {exp_qid}")
+                q_session_id, q_status, q_expires_at, q_priv, q_pub = q_row
+                if q_session_id != session_id:
+                    raise AuditCommitFailed(f"CLARIFICATION_SESSION_MISMATCH: 问题不属于该会话: {exp_qid}")
+                if q_status == "consumed":
+                    raise AuditCommitFailed(f"CLARIFICATION_ALREADY_APPLIED: 澄清问题已消费: {exp_qid}")
+                if q_status in ("superseded", "expired"):
+                    raise AuditCommitFailed(f"CLARIFICATION_STALE: 澄清问题状态为 {q_status}: {exp_qid}")
+                if q_expires_at:
+                    cursor.execute("SELECT CURRENT_TIMESTAMP > %s", (q_expires_at,))
+                    if cursor.fetchone()[0]:
+                        raise AuditCommitFailed(f"CLARIFICATION_EXPIRED: 澄清问题已过期: {exp_qid}")
+
+                # 从锁定的问题私有选项映射复核 selected_option_id
+                priv_data = json.loads(q_priv) if isinstance(q_priv, str) else (q_priv or {})
+                opt_mods = priv_data.get("option_modifications") or {}
+                valid_option_ids = set()
+                for k in opt_mods.keys():
+                    try:
+                        valid_option_ids.add(int(k))
+                    except (ValueError, TypeError):
+                        pass
+                if not valid_option_ids:
+                    pub_data = json.loads(q_pub) if isinstance(q_pub, str) else (q_pub or {})
+                    for opt in pub_data.get("options", []):
+                        if isinstance(opt, dict) and "option_id" in opt:
+                            try:
+                                valid_option_ids.add(int(opt["option_id"]))
+                            except (ValueError, TypeError):
+                                pass
+                if int(selected_opt_id) not in valid_option_ids:
+                    raise AuditCommitFailed(
+                        f"CLARIFICATION_OPTION_NOT_FOUND: 选项不存在: {selected_opt_id} (question: {exp_qid})"
+                    )
+
+                cursor.execute(
+                    "UPDATE clarification_questions SET status='consumed', "
+                    "accepted_request_id=%s, accepted_option_id=%s, updated_at=CURRENT_TIMESTAMP "
+                    "WHERE question_id=%s",
+                    (request_id, selected_opt_id, exp_qid),
+                )
+                next_active_qid = None
+                next_clarification_rev += 1
+
+            # B. 新需求替代当前活跃问题
+            elif supersede and active_qid:
+                cursor.execute(
+                    "SELECT session_id, status FROM clarification_questions "
+                    "WHERE question_id=%s FOR UPDATE",
+                    (active_qid,),
+                )
+                q_row = cursor.fetchone()
+                if q_row:
+                    cursor.execute(
+                        "UPDATE clarification_questions SET status='superseded', updated_at=CURRENT_TIMESTAMP "
+                        "WHERE question_id=%s",
+                        (active_qid,),
+                    )
+                    next_active_qid = None
+                    next_clarification_rev += 1
+
+            # C. 创建新问题（本轮再次追问或首次追问）
+            if next_qid:
+                if not next_pub or not isinstance(next_pub, dict):
+                    raise AuditCommitFailed("CLARIFICATION_INVALID_PAYLOAD: next_question_id 必须携带非空的 next_public_payload 字典")
+                q_text = next_pub.get("question_text")
+                options = next_pub.get("options")
+                if not q_text or not isinstance(q_text, str) or not q_text.strip():
+                    raise AuditCommitFailed("CLARIFICATION_INVALID_PAYLOAD: next_public_payload 必须包含非空 question_text")
+                if not isinstance(options, list) or len(options) == 0:
+                    raise AuditCommitFailed("CLARIFICATION_INVALID_PAYLOAD: next_public_payload 必须包含非空 options 列表")
+                for opt in options:
+                    if isinstance(opt, dict) and "modifications" in opt:
+                        raise AuditCommitFailed("CLARIFICATION_INVALID_PAYLOAD: next_public_payload options 不得包含内部 modifications")
+                if next_exp_at is None or float(next_exp_at) <= 0:
+                    raise AuditCommitFailed("CLARIFICATION_INVALID_PAYLOAD: next_question_id 必须携带有效的到期时间 next_expires_at")
+
+                cursor.execute(
+                    "SELECT question_id FROM clarification_questions WHERE question_id=%s FOR UPDATE",
+                    (next_qid,),
+                )
+                if cursor.fetchone():
+                    raise AuditCommitFailed(f"CLARIFICATION_DUPLICATE_QUESTION: 问题 ID 已存在: {next_qid}")
+
+                cursor.execute(
+                    """
+                    INSERT INTO clarification_questions
+                    (question_id, session_id, producer_request_id, status, public_payload, private_snapshot, expires_at)
+                    VALUES (%s, %s, %s, 'pending', %s, %s, CASE WHEN %s IS NOT NULL THEN FROM_UNIXTIME(%s) ELSE NULL END)
+                    """,
+                    (
+                        next_qid,
+                        session_id,
+                        request_id,
+                        json.dumps(next_pub, ensure_ascii=False),
+                        json.dumps(next_priv or {}, ensure_ascii=False),
+                        next_exp_at,
+                        next_exp_at,
+                    ),
+                )
+                next_active_qid = next_qid
+                next_clarification_rev += 1
+                clarification_outbox_payload = dict(next_pub)
+                clarification_outbox_payload["question_id"] = next_qid
+                if next_exp_at is not None:
+                    clarification_outbox_payload["expires_at"] = next_exp_at
+                outbox_clarification_row = {
+                    "event_id": f"ev_clarify_{request_id}",
+                    "event_type": "clarification_needed",
+                    "seq": 1,
+                    "payload": clarification_outbox_payload,
+                }
 
         # 5. 会话事实原子更新（单条条件 UPDATE）：
         #    - request_count 始终 +1；
-        #    - completed：写入 fencing_token 与 current_menu_plan_id；
-        #    - 非 completed：二者保留（绝不把 fencing token 清成 NULL）；
-        #    - 有 effective participant scope：写入 participant_refs（与本次健康审计一致）；
-        #    - 无 participant scope：保留原值（绝不把参与者清成 []）。
-        token_value = int(fencing_token) if (status == "completed"
-                                             and _is_posint(fencing_token)) else None
+        #    - completed 或 (needs_clarification 且有 transition)：更新 fencing_token；
+        #    - active_clarification_question_id 与 clarification_revision 原子更新。
+        token_value = int(fencing_token) if (fencing_token is not None and _is_posint(fencing_token)) else None
+        should_update_fencing = (status == "completed" and token_value is not None) or \
+                                (status == "needs_clarification" and transition_dict is not None and token_value is not None)
         has_participant_scope = 1 if effective_participant_refs else 0
         cursor.execute(
             "UPDATE sessions SET "
             "request_count = request_count + 1, "
-            "fencing_token = CASE WHEN %s = 'completed' THEN %s "
-            "                       ELSE fencing_token END, "
-            "current_menu_plan_id = CASE WHEN %s = 'completed' THEN %s "
-            "                             ELSE current_menu_plan_id END, "
-            "participant_refs = CASE WHEN %s THEN %s "
-            "                         ELSE participant_refs END "
+            "fencing_token = CASE WHEN %s = 1 THEN %s ELSE fencing_token END, "
+            "current_menu_plan_id = CASE WHEN %s = 'completed' THEN %s ELSE current_menu_plan_id END, "
+            "participant_refs = CASE WHEN %s THEN %s ELSE participant_refs END, "
+            "active_clarification_question_id = %s, "
+            "clarification_revision = %s "
             "WHERE session_id = %s",
-            (status, token_value,
+            (1 if should_update_fencing else 0, token_value,
              status, final_plan_id,
              has_participant_scope,
              json.dumps(effective_participant_refs, ensure_ascii=False),
+             next_active_qid,
+             next_clarification_rev,
              session_id))
 
         # 6. 不可变结果 + 强制健康审计（insert-once，不可覆盖）
@@ -378,21 +624,32 @@ def commit_request_result(
             (f"ev_{request_id}", session_id, request_id, "terminal",
              f"terminal:{status}"),
         )
-        # 9. 有序 outbox 行（仅 completed；INSERT IGNORE 不重置既有状态；
-        #    menu_hash 用 effective 值保证与 menu_versions/审计一致）
+        # 9. 有序 outbox 行（completed 写入菜单结果事件；clarification_needed 写入追问事件）
         outbox_rows: list[dict] = []
         if status == "completed":
             outbox_rows = _build_outbox_rows(
                 request_id, final_plan_id, health_evidence,
                 answer_text, effective_menu_hash, menu_ref, evidence_refs or [])
-            for row in outbox_rows:
-                cursor.execute(
-                    "INSERT IGNORE INTO outbox "
-                    "(event_id, request_id, event_type, payload, seq, status) "
-                    "VALUES (%s, %s, %s, %s, %s, 'pending')",
-                    (row["event_id"], request_id, row["event_type"],
-                     json.dumps(row["payload"], ensure_ascii=False), row["seq"]),
-                )
+        elif outbox_clarification_row is not None:
+            outbox_rows = [outbox_clarification_row]
+
+        for row in outbox_rows:
+            cursor.execute(
+                "INSERT IGNORE INTO outbox "
+                "(event_id, request_id, event_type, payload, seq, status) "
+                "VALUES (%s, %s, %s, %s, %s, 'pending')",
+                (row["event_id"], request_id, row["event_type"],
+                 json.dumps(row["payload"], ensure_ascii=False), row["seq"]),
+            )
+        if acceptance:
+            cursor.execute(
+                "UPDATE request_acceptances SET status='terminal', execution_lease_until=NULL "
+                "WHERE request_id=%s AND execution_owner=%s AND execution_generation=%s "
+                "AND status='running' AND execution_lease_until>CURRENT_TIMESTAMP",
+                (request_id, execution_owner, execution_generation),
+            )
+            if cursor.rowcount != 1:
+                raise AuditCommitFailed("EXECUTION_LEASE_INVALID: lease expired during commit")
         conn.commit()
         return {
             "request_id": request_id,

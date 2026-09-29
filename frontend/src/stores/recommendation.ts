@@ -12,10 +12,40 @@ import {
   TERMINAL_SET,
   type AnonymousParticipant,
   type ChatMessage,
+  type ClarificationOptionView,
+  type ClarificationResponse,
+  type ClarificationView,
   type PhaseEvent,
   type PublicMenuSummary,
   type RequestState,
 } from "@/types";
+
+export function parseClarificationView(data: unknown): ClarificationView | null {
+  if (!data || typeof data !== "object") return null;
+  const raw = data as Record<string, unknown>;
+  const question_id = String(raw.question_id || "");
+  if (!question_id) return null;
+  const question_text = String(raw.question_text || raw.clarification || "");
+  const rawOptions = Array.isArray(raw.options) ? raw.options : [];
+  const options: ClarificationOptionView[] = [];
+  for (const opt of rawOptions) {
+    if (opt && typeof opt === "object") {
+      const o = opt as Record<string, unknown>;
+      const option_id = Number(o.option_id);
+      const text = String(o.text || "");
+      if (Number.isInteger(option_id) && option_id > 0 && text) {
+        options.push({ option_id, text });
+      }
+    }
+  }
+  return {
+    question_id,
+    question_text,
+    options,
+    expires_at: typeof raw.expires_at === "number" ? raw.expires_at : null,
+    status: typeof raw.status === "string" ? raw.status : "pending",
+  };
+}
 
 function messageId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -148,6 +178,7 @@ export const useRecommendationStore = defineStore("recommendation", {
       answer: "" as string,
       currentMenu: null as PublicMenuSummary | null,
       clarification: "" as string,
+      activeClarification: null as ClarificationView | null,
       isStreaming: false,
       error: "" as string,
       connection: null as SSEConnection | null,
@@ -219,6 +250,7 @@ export const useRecommendationStore = defineStore("recommendation", {
       this.answer = "";
       this.currentMenu = null;
       this.clarification = "";
+      this.activeClarification = null;
       this.error = "";
     },
     closeConnection() {
@@ -231,7 +263,34 @@ export const useRecommendationStore = defineStore("recommendation", {
         this.pollTimer = null;
       }
     },
-    async send(message: string) {
+    async selectOption(optionId: number) {
+      if (!this.activeClarification || this.isStreaming) return;
+      const opt = this.activeClarification.options.find((o) => o.option_id === optionId);
+      if (!opt) return;
+      const clarificationResponse: ClarificationResponse = {
+        question_id: this.activeClarification.question_id,
+        option_id: opt.option_id,
+      };
+      await this.send(opt.text, clarificationResponse);
+    },
+    async refreshClarification() {
+      if (!this.sessionId) return;
+      try {
+        const state = await getSession(this.sessionId);
+        if (state.active_clarification) {
+          const parsed = parseClarificationView(state.active_clarification);
+          this.activeClarification = parsed;
+          this.clarification = parsed?.question_text || "";
+          this.status = "needs_clarification";
+        } else {
+          this.activeClarification = null;
+          this.clarification = "";
+        }
+      } catch {
+        /* 忽略刷新错误 */
+      }
+    },
+    async send(message: string, clarificationResponse?: ClarificationResponse) {
       const content = message.trim();
       if (!content || !this.canSend) return;
       this.error = "";
@@ -262,19 +321,40 @@ export const useRecommendationStore = defineStore("recommendation", {
           participants,
           message: content,
           session_id: sessionId,
+          clarification_response: clarificationResponse,
         });
         this.requestId = resp.request_id;
         this.status = resp.status;
         // 打开 SSE；SSE 存活期间不主动轮询
         this.openSse(resp.request_id, assistantId);
       } catch (e) {
-        this.error = errMsg(e);
+        const errText = errMsg(e);
+        this.error = errText;
         const pending = this.messages.find((m) => m.id === assistantId);
         if (pending) {
           pending.content = this.error;
           pending.status = "error";
         }
         this.isStreaming = false;
+
+        if (errText.includes("SESSION_PROTOCOL_UNSUPPORTED")) {
+          // 清除旧 session 状态，重置为新会话准备，不自动重发
+          this.sessionId = "";
+          saveSession("", []);
+          this.activeClarification = null;
+          this.clarification = "";
+          const friendlyMsg = "当前会话协议已废弃，无法继续。请直接在新会话中提出完整用餐需求。";
+          this.error = friendlyMsg;
+          if (pending) {
+            pending.content = friendlyMsg;
+          }
+        } else if (
+          errText.includes("CLARIFICATION_ALREADY_APPLIED") ||
+          errText.includes("CLARIFICATION_STALE") ||
+          errText.includes("CLARIFICATION_EXPIRED")
+        ) {
+          await this.refreshClarification();
+        }
       }
     },
     openSse(requestId: string, assistantId: string) {
@@ -315,6 +395,8 @@ export const useRecommendationStore = defineStore("recommendation", {
             (e.data as { menu_summary?: unknown }).menu_summary,
           );
           this.status = "completed";
+          this.activeClarification = null;
+          this.clarification = "";
           this.finishStreaming(assistantId, "complete");
           break;
         case "error":
@@ -331,17 +413,24 @@ export const useRecommendationStore = defineStore("recommendation", {
           // failed/interrupted 分别保持语义，立即关闭连接
           const status = String((e.data as { status?: string }).status || "failed");
           this.status = status;
+          if (status !== "needs_clarification") {
+            this.activeClarification = null;
+            this.clarification = "";
+          }
           const msg = String((e.data as { message?: string }).message || "");
           if (msg) this.error = msg;
           this.finishStreaming(assistantId, "error");
           break;
         }
-        case "clarification_needed":
+        case "clarification_needed": {
           this.status = "needs_clarification";
-          this.clarification = String(
-            (e.data as { clarification?: string }).clarification || "请补充必要信息");
+          const parsed = parseClarificationView(e.data);
+          this.activeClarification = parsed;
+          this.clarification = parsed?.question_text
+            || String((e.data as { clarification?: string }).clarification || "请补充必要信息");
           this.finishStreaming(assistantId, "complete");
           break;
+        }
         default:
           break;
       }
@@ -380,6 +469,11 @@ export const useRecommendationStore = defineStore("recommendation", {
       this.pollTimer = window.setTimeout(tick, interval);
     },
     applyResultSummary(state: RequestState, assistantId: string) {
+      if (state.active_clarification) {
+        const parsed = parseClarificationView(state.active_clarification);
+        this.activeClarification = parsed;
+        this.clarification = parsed?.question_text || "";
+      }
       const summary = state.result_summary;
       if (!summary) return;
       const menu = publicMenu(summary.menu_summary);
@@ -399,6 +493,12 @@ export const useRecommendationStore = defineStore("recommendation", {
         if (menu) {
           this.currentMenu = menu;
           this.status = "completed";
+        }
+        if (state.active_clarification) {
+          const parsed = parseClarificationView(state.active_clarification);
+          this.activeClarification = parsed;
+          this.clarification = parsed?.question_text || "";
+          this.status = "needs_clarification";
         }
       } catch {
         // 持久化 session 不存在或暂不可用时保留匿名参与者选择，允许用户继续新建会话。

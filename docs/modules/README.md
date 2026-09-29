@@ -16,7 +16,7 @@
 - [06 营养评分](06-nutrition-scoring.md)（`APPROVED`）
 - [07 混合RAG检索](07-rag-retrieval.md)（`APPROVED`）
 - [08 菜单规划](08-menu-planning.md)（`APPROVED`）
-- [09 Agent工作流与编排](09-agent-workflow.md)（`APPROVED`）
+- [09 LangGraph Agent 编排](09-langgraph-agent-orchestration-redesign.md)（`IMPLEMENTED`；旧 [工作流设计](09-agent-workflow.md)仅供历史追溯）
 - [10 上下文与记忆](10-memory-and-context.md)（`APPROVED`）
 - [11 API与SSE](11-api-and-sse.md)（`APPROVED`）
 - [12 回答与前端](12-answer-and-frontend.md)（`APPROVED`）

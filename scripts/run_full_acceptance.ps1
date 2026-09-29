@@ -1,4 +1,4 @@
-# Current H07 acceptance entrypoint. It never initializes or mutates published stores.
+# LangGraph v2 acceptance entrypoint. It never initializes or mutates published stores.
 [CmdletBinding()]
 param(
     [switch]$PreflightOnly,
@@ -61,7 +61,7 @@ try {
     }
 
     if ($IncludeModelLive) {
-        & $PythonPath -m pytest tests/test_prompts_live.py -q
+        & $PythonPath scripts/verify_v2_live_structured.py
         if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
         }

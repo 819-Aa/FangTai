@@ -352,6 +352,10 @@ class ContextService:
         # 菜单历史
         store.save_menu_history(ctx.session_id, ctx.menu_history)
 
+        # 待澄清事项
+        if hasattr(store, "save_pending_clarifications"):
+            store.save_pending_clarifications(ctx.session_id, ctx.pending_clarifications)
+
     def _restore_session(self, session_id: str) -> dict | None:
         """从 MySQL 已提交边界 + Redis 可恢复状态组合恢复（MySQL 权威）。
 
@@ -378,8 +382,19 @@ class ContextService:
         redis_state = store.load_session_state(session_id)
         redis_events = store.load_events(session_id)
         redis_constraints = store.load_constraints(session_id)
+        redis_pending = (
+            store.load_pending_clarifications(session_id)
+            if hasattr(store, "load_pending_clarifications")
+            else []
+        )
 
-        if not redis_state and not session_meta and not committed_events and not redis_events:
+        if (
+            not redis_state
+            and not session_meta
+            and not committed_events
+            and not redis_events
+            and not redis_pending
+        ):
             return None
 
         by_id: dict[str, dict] = {}
@@ -401,6 +416,7 @@ class ContextService:
                             if c.get("scope") != ConstraintScope.TURN.value],
             "events": merged_events,
             "menu_history": menu_history,
+            "pending_clarifications": redis_pending,
         }
 
     # ---- 会话管理 ----
@@ -410,11 +426,33 @@ class ContextService:
         session_id = str(uuid.uuid4())[:12]
         return session_id
 
-    def create_session_record(self, participant_refs: list[str]) -> str:
+    def create_session_record(
+        self,
+        participant_refs: list[str],
+        workflow_mode: str | None = None,
+        clarification_protocol_version: str | None = None,
+    ) -> str:
         """创建会话边界并持久化（公开接口；API /sessions 使用，不暴露存储细节）。"""
         session_id = str(uuid.uuid4())[:12]
-        self._get_memory_source().save_session(session_id, participant_refs)
+        effective_mode = workflow_mode or "langgraph"
+        effective_protocol = clarification_protocol_version or "v2"
+        self._get_memory_source().save_session(
+            session_id,
+            participant_refs,
+            workflow_mode=effective_mode,
+            clarification_protocol_version=effective_protocol,
+        )
         return session_id
+
+    def ensure_session_record(self, session_id: str, participant_refs: list[str],
+                              workflow_mode: str = "langgraph") -> None:
+        """Pin the mode of an implicitly created session before its first run."""
+        effective_mode = workflow_mode or "langgraph"
+        protocol = "v2" if effective_mode == "langgraph" else None
+        self._get_memory_source().save_session(
+            session_id, participant_refs, workflow_mode=effective_mode,
+            clarification_protocol_version=protocol,
+        )
 
     def get_session_state(self, session_id: str) -> dict | None:
         """查询会话投影（公开接口；不存在返回 None，存储异常向上抛、绝不伪装 404）。"""
@@ -464,6 +502,7 @@ class ContextService:
             "current_menu": current_menu,
             "query_plan": query_plan,
             "menu_history": menu_history,
+            "pending_clarifications": self.get_pending_clarifications(session_id),
         }
 
     def build_shared_context(
@@ -527,7 +566,7 @@ class ContextService:
                             ))
                         except ValueError:
                             continue
-                pending = []
+                pending = list(restored.get("pending_clarifications", []))
                 menu = CurrentMenu()
                 if menu_hist:
                     last = menu_hist[-1]
@@ -541,6 +580,11 @@ class ContextService:
                 events = []
                 pending = []
                 menu = CurrentMenu()
+                # 确保持久化会话边界到 MySQL 存储
+                try:
+                    self._get_memory_source().save_session(session_id, participant_refs)
+                except Exception:
+                    pass
 
         # 约束先行（T18）：默认生产实现根据 participant_user_id_mapping 从 B2 加载
         # 完整永久约束（真实调用路径），再生成 ContextManifest；可显式传入覆盖。
@@ -999,3 +1043,177 @@ class ContextService:
     ) -> bool:
         """检查是否尝试覆盖永久约束（INV-016）。"""
         return True  # 拒绝所有永久约束的覆盖请求
+
+    # ---- 待澄清管理 ----
+
+    def store_pending_clarification(
+        self, session_id: str, clarification: dict, token: str | None = None
+    ) -> str:
+        """存储待澄清事项（含 question_id、options、原需求快照等）并持久化。"""
+        qid = clarification.get("question_id") or str(uuid.uuid4())
+        item = dict(clarification)
+        item["question_id"] = qid
+        item.setdefault("created_at", time.time())
+        item.setdefault("status", "pending")
+        if "expires_at" not in item:
+            item["expires_at"] = time.time() + 3600
+
+        if session_id in self._sessions:
+            ctx = self._sessions[session_id]
+            ctx.pending_clarifications.append(item)
+            self._recompute_manifest(ctx)
+            self._persist_session(ctx, token=token)
+        else:
+            store = self._get_redis()
+            if hasattr(store, "save_pending_clarifications"):
+                current = (
+                    store.load_pending_clarifications(session_id)
+                    if hasattr(store, "load_pending_clarifications")
+                    else []
+                )
+                current.append(item)
+                store.save_pending_clarifications(session_id, current)
+        return qid
+
+    def get_pending_clarifications(self, session_id: str) -> list[dict]:
+        """获取当前会话待澄清事项。"""
+        if session_id in self._sessions:
+            return list(self._sessions[session_id].pending_clarifications)
+        store = self._get_redis()
+        if hasattr(store, "load_pending_clarifications"):
+            return store.load_pending_clarifications(session_id)
+        return []
+
+    def is_clarification_committed(self, session_id: str, question_id: str) -> bool:
+        """查询 MySQL 权威提交事实，阻断 Redis 残留问题的重复选择。"""
+        return self._get_memory_source().is_clarification_committed(session_id, question_id)
+
+    def load_active_clarification(self, session_id: str) -> dict | None:
+        """从 MySQL 权威会话边界加载当前活跃的澄清问题（未过期且 pending）。"""
+        source = self._get_memory_source()
+        if hasattr(source, "load_active_clarification"):
+            return source.load_active_clarification(session_id)
+        return None
+
+    def load_produced_active_clarification(self, request_id: str) -> dict | None:
+        """Return only the still-active question produced by this request."""
+        source = self._get_memory_source()
+        if hasattr(source, "load_produced_active_clarification"):
+            return source.load_produced_active_clarification(request_id)
+        return None
+
+    def load_clarification_state(self, session_id: str) -> dict | None:
+        """从 MySQL 加载会话的澄清协议状态、版本与 active fencing watermark。"""
+        source = self._get_memory_source()
+        if hasattr(source, "load_clarification_state"):
+            return source.load_clarification_state(session_id)
+        return None
+
+    def register_active_fencing_token(self, session_id: str, token: int) -> bool:
+        """在会话表原子比较并登记 active_fencing_token（fail-closed）。"""
+        source = self._get_memory_source()
+        if hasattr(source, "register_active_fencing_token"):
+            return source.register_active_fencing_token(session_id, token)
+        return True
+
+    def load_request_acceptance(self, idempotency_key_hash: str) -> dict | None:
+        source = self._get_memory_source()
+        if hasattr(source, "load_request_acceptance"):
+            return source.load_request_acceptance(idempotency_key_hash)
+        return None
+
+    def load_request_acceptance_by_request_id(self, request_id: str) -> dict | None:
+        source = self._get_memory_source()
+        if hasattr(source, "load_request_acceptance_by_request_id"):
+            return source.load_request_acceptance_by_request_id(request_id)
+        return None
+
+    def claim_request_acceptance(
+        self, idempotency_key_hash: str, payload_hash: str, request_id: str, session_id: str
+    ) -> tuple[str, dict | None]:
+        source = self._get_memory_source()
+        if hasattr(source, "claim_request_acceptance"):
+            return source.claim_request_acceptance(idempotency_key_hash, payload_hash, request_id, session_id)
+        return ("winner", None)
+
+    def claim_request_execution(self, request_id: str, owner: str, lease_seconds: int = 3600) -> bool:
+        return self._get_memory_source().claim_request_execution(request_id, owner, lease_seconds)
+
+    def claim_request_execution_v2(
+        self, request_id: str, owner: str, lease_seconds: int = 3600,
+    ) -> dict | None:
+        return self._get_memory_source().claim_request_execution_v2(request_id, owner, lease_seconds)
+
+    def renew_request_execution_v2(
+        self, request_id: str, owner: str, generation: int, lease_seconds: int = 3600,
+    ) -> bool:
+        return self._get_memory_source().renew_request_execution_v2(
+            request_id, owner, generation, lease_seconds,
+        )
+
+    def finish_request_execution_v2(
+        self, request_id: str, owner: str, generation: int, terminal: bool = False,
+    ) -> bool:
+        return self._get_memory_source().finish_request_execution_v2(
+            request_id, owner, generation, terminal,
+        )
+
+    def finish_request_execution(self, request_id: str, owner: str, terminal: bool) -> None:
+        self._get_memory_source().finish_request_execution(request_id, owner, terminal)
+
+    def load_recommendation_log(self, request_id: str) -> dict | None:
+        source = self._get_memory_source()
+        if hasattr(source, "load_recommendation_log"):
+            return source.load_recommendation_log(request_id)
+        return None
+
+    def load_dispatched_outbox_events(self, request_id: str) -> list[dict]:
+        source = self._get_memory_source()
+        if hasattr(source, "load_dispatched_outbox_events"):
+            return source.load_dispatched_outbox_events(request_id)
+        return []
+
+    def consume_pending_clarification(
+        self, session_id: str, question_id: str | None = None, token: str | None = None
+    ) -> dict | None:
+        """消费（解决）待澄清事项，将其移出活跃待澄清并更新清单哈希。"""
+        consumed = None
+        if session_id in self._sessions:
+            ctx = self._sessions[session_id]
+            remaining = []
+            for item in ctx.pending_clarifications:
+                if (question_id is None or item.get("question_id") == question_id) and consumed is None:
+                    consumed = dict(item)
+                    consumed["status"] = "resolved"
+                    consumed["resolved_at"] = time.time()
+                else:
+                    remaining.append(item)
+            ctx.pending_clarifications = remaining
+            self._recompute_manifest(ctx)
+            self._persist_session(ctx, token=token)
+        else:
+            store = self._get_redis()
+            if hasattr(store, "load_pending_clarifications") and hasattr(store, "save_pending_clarifications"):
+                items = store.load_pending_clarifications(session_id)
+                remaining = []
+                for item in items:
+                    if (question_id is None or item.get("question_id") == question_id) and consumed is None:
+                        consumed = dict(item)
+                        consumed["status"] = "resolved"
+                        consumed["resolved_at"] = time.time()
+                    else:
+                        remaining.append(item)
+                store.save_pending_clarifications(session_id, remaining)
+        return consumed
+
+    def clear_pending_clarifications(self, session_id: str, token: str | None = None) -> None:
+        """清空会话待澄清事项。"""
+        if session_id in self._sessions:
+            ctx = self._sessions[session_id]
+            ctx.pending_clarifications = []
+            self._recompute_manifest(ctx)
+            self._persist_session(ctx, token=token)
+        else:
+            store = self._get_redis()
+            if hasattr(store, "save_pending_clarifications"):
+                store.save_pending_clarifications(session_id, [])

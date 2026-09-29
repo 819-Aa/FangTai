@@ -5,7 +5,7 @@ import json
 import pytest
 
 from food_agent_v2.c3.fast_intent import FastIntentRouter
-from food_agent_v2.c3.orchestrator import DeterministicRecommendationOrchestrator
+from food_agent_v2.c3.graph_orchestrator import LangGraphRecommendationOrchestrator
 from food_agent_v2.c3.query_normalizer import QueryNormalizer
 
 
@@ -745,7 +745,7 @@ def test_allergy_extraction_uses_local_noun_after_sentence_prefix(message: str) 
 
 
 def test_validated_rewrite_is_the_only_query_plan_and_retrieval_source() -> None:
-    orchestrator = DeterministicRecommendationOrchestrator(llm=object())
+    orchestrator = LangGraphRecommendationOrchestrator(llm=object())
     routed = FastIntentRouter.route("给我推荐老人吃的晚餐", ("p1",))
     rewrite = QueryNormalizer(
         _FakeLLM(

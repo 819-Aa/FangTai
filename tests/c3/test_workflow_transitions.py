@@ -10,7 +10,6 @@ from uuid import UUID
 import pytest
 
 from food_agent_v2.c3 import WorkflowError
-from food_agent_v2.c3.runner import WorkflowRunner
 from food_agent_v2.c3.state import NodeType, RequestStatus, WorkflowState, reduce_workflow_state
 from food_agent_v2.contracts.receipts import ToolReceipt
 
@@ -179,25 +178,3 @@ class TestRunnerSupportActions:
         new = reduce_workflow_state(s, action="set_artifact", artifact="answer", value={"c": 1})
         assert s.answer_artifact is None  # 原 state 未修改
         assert new.answer_artifact == {"c": 1}
-
-
-class TestRunnerHelpers:
-    def test_menu_hash_deterministic_order_independent(self) -> None:
-        assert WorkflowRunner._menu_hash("p1", [3, 1, 2]) == WorkflowRunner._menu_hash("p1", [1, 2, 3])
-        assert len(WorkflowRunner._menu_hash("p1", [1, 2])) == 64
-
-    def test_menu_hash_is_c2_canonical(self) -> None:
-        from food_agent_v2.c2.schemas import menu_hash_for
-
-        assert WorkflowRunner._menu_hash("p1", [1, 2]) == menu_hash_for("p1", [1, 2])
-
-    def test_tool_budget_duplicate_detected(self) -> None:
-        dup = [{"tool_name": "retrieve_recipes", "input_hash": "a" * 64}] * 2
-        err = WorkflowRunner._validate_tool_budget(dup)
-        assert err is not None
-        assert err.error_code == "WORKFLOW_RETRY_LIMIT_EXCEEDED"
-        distinct = [
-            {"tool_name": "retrieve_recipes", "input_hash": "a" * 64},
-            {"tool_name": "get_current_menu", "input_hash": "b" * 64},
-        ]
-        assert WorkflowRunner._validate_tool_budget(distinct) is None

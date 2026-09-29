@@ -3,7 +3,7 @@
 from unittest.mock import patch
 from uuid import UUID
 
-from food_agent_v2.c3.runner import WorkflowRunner
+from food_agent_v2.c3.runtime import AgentRuntime
 from food_agent_v2.c3.state import RequestStatus, WorkflowState
 from food_agent_v2.contracts.artifacts import (
     AnswerArtifact,
@@ -112,7 +112,7 @@ def test_committed_result_survives_immediate_dispatch_failure() -> None:
     """业务事务已成功时，SSE 即时投递失败不得把 completed 反写为 failed。"""
     _seed_request()
     state = _completed_state()
-    runner = WorkflowRunner(build_id="7" * 32, llm=object(), c4=_C4())
+    runner = AgentRuntime(build_id="7" * 32, llm=object(), c4=_C4())
 
     with patch.object(d1_api, "_persist_request", lambda request_id: None), \
             patch("food_agent_v2.application.commit_request_result",
@@ -156,7 +156,7 @@ def test_commit_failure_has_no_success_projection() -> None:
     """Application 提交失败仍 fail-closed，不能留下可被轮询读取的成功菜单。"""
     _seed_request()
     state = _completed_state()
-    runner = WorkflowRunner(build_id="7" * 32, llm=object(), c4=_C4())
+    runner = AgentRuntime(build_id="7" * 32, llm=object(), c4=_C4())
 
     with patch.object(d1_api, "_persist_request", lambda request_id: None), \
             patch("food_agent_v2.application.commit_request_result",
@@ -202,7 +202,7 @@ def test_current_menu_updated_only_on_commit() -> None:
             return None
 
     c4 = _C4WithSessions()
-    runner = WorkflowRunner(build_id="7" * 32, llm=object(), c4=c4)
+    runner = AgentRuntime(build_id="7" * 32, llm=object(), c4=c4)
 
     with patch.object(d1_api, "_persist_request", lambda request_id: None), \
             patch("food_agent_v2.application.commit_request_result",
@@ -238,7 +238,7 @@ def test_completed_commit_contains_stable_semantic_query_plan_snapshot() -> None
         input_fingerprint="7" * 64,
         content_hash="8" * 64,
     )
-    runner = WorkflowRunner(build_id="7" * 32, llm=object(), c4=_C4())
+    runner = AgentRuntime(build_id="7" * 32, llm=object(), c4=_C4())
 
     with patch.object(d1_api, "_persist_request", lambda request_id: None), \
             patch("food_agent_v2.application.commit_request_result",

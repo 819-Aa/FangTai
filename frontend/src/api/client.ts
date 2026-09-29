@@ -1,5 +1,6 @@
 import type {
   AnonymousParticipant,
+  ClarificationResponse,
   PhaseEvent,
   RequestState,
   SessionState,
@@ -38,6 +39,7 @@ export function createRequest(payload: {
   participants: AnonymousParticipant[];
   message: string;
   session_id: string;
+  clarification_response?: ClarificationResponse;
 }): Promise<RequestState> {
   return request<RequestState>("/v1/recommendation-requests", {
     method: "POST",

@@ -7,7 +7,9 @@ INV-010 MySQL 原子提交。
 """
 
 import sys
+import uuid
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -190,9 +192,10 @@ class TestD1:
     def test_cancel_sets_marker(self):
         from food_agent_v2.c4.redis_store import RedisSessionStore
         from food_agent_v2.d1 import api
-        _, resp = api.create_request({"idempotency_key": "t-cancel",
-                                      "participants": [{"participant_ref": "p1"}],
-                                      "message": "测试", "config": {}})
+        with patch.object(api, "_trigger_workflow"):
+            _, resp = api.create_request({"idempotency_key": f"t-cancel-{uuid.uuid4().hex}",
+                                          "participants": [{"participant_ref": "p1"}],
+                                          "message": "测试", "config": {}})
         rid = resp["request_id"]
         code, _ = api.cancel_request(rid)
         assert code == 200
@@ -202,9 +205,10 @@ class TestD1:
 
     def test_state_persist_restore(self):
         from food_agent_v2.d1 import api
-        _, resp = api.create_request({"idempotency_key": "t-persist",
-                                      "participants": [{"participant_ref": "p1"}],
-                                      "message": "测试", "config": {}})
+        with patch.object(api, "_trigger_workflow"):
+            _, resp = api.create_request({"idempotency_key": f"t-persist-{uuid.uuid4().hex}",
+                                          "participants": [{"participant_ref": "p1"}],
+                                          "message": "测试", "config": {}})
         rid = resp["request_id"]
         api.update_status(rid, "running")
         api._requests.clear()

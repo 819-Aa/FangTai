@@ -6,6 +6,9 @@ Redis 后，跨 pytest 调用这些键会命中旧的终态请求。每个 pytes
 """
 
 import json
+import os
+
+os.environ.setdefault("NO_PROXY", "localhost,127.0.0.1")
 
 import pytest
 

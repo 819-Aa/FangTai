@@ -37,12 +37,14 @@ onMounted(() => store.restoreSession());
       :phases="store.phases"
       :answer="store.answer"
       :clarification="store.clarification"
+      :active-clarification="store.activeClarification"
       :status="store.status"
       :is-streaming="store.isStreaming"
       :can-send="store.canSend"
       :participants="store.selectedSlots"
       :current-menu="store.currentMenu"
       @send="store.send"
+      @select-option="store.selectOption"
     />
   </div>
 </template>

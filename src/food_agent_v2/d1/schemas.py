@@ -130,6 +130,21 @@ def validate_create_request(data: dict) -> dict | None:
     if not message or not isinstance(message, str):
         errors.append({"field": "message", "issue": "required"})
 
+    clar_resp = data.get("clarification_response")
+    if clar_resp is not None:
+        if not isinstance(clar_resp, dict):
+            errors.append({"field": "clarification_response", "issue": "must be an object"})
+        else:
+            qid = clar_resp.get("question_id")
+            opt_id = clar_resp.get("option_id")
+            if not qid or not isinstance(qid, str) or not qid.strip():
+                errors.append({"field": "clarification_response.question_id", "issue": "required non-empty string"})
+            if opt_id is None or not isinstance(opt_id, int) or isinstance(opt_id, bool):
+                errors.append({"field": "clarification_response.option_id", "issue": "required integer"})
+            for forbidden_subfield in ("modifications", "private_snapshot", "query_plan_snapshot"):
+                if forbidden_subfield in clar_resp:
+                    errors.append({"field": f"clarification_response.{forbidden_subfield}", "issue": "forbidden internal field"})
+
     return {"error": "VALIDATION_FAILED", "details": errors} if errors else None
 
 

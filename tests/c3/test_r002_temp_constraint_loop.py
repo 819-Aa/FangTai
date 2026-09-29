@@ -8,7 +8,7 @@
 from unittest.mock import patch
 
 from food_agent_v2.b3.repository import MySQLArtifactRecordSource
-from food_agent_v2.c3.runner import WorkflowRunner, _parse_health_exclusion
+from food_agent_v2.c3.runtime import AgentRuntime, _parse_health_exclusion
 from food_agent_v2.c3.state import RequestStatus
 from food_agent_v2.c4 import (
     ConstraintScope,
@@ -135,7 +135,7 @@ class TestRunnerNeedsClarification:
     def test_invalid_exclusion_enters_needs_clarification(self) -> None:
         """未知过敏词无法封闭映射 → HEALTH_SIGNAL_AMBIGUOUS → needs_clarification。"""
         from food_agent_v2.c3.state import WorkflowState
-        runner = WorkflowRunner()
+        runner = AgentRuntime()
         c4 = _mem_c4()
         state = WorkflowState(
             request_id=RID, build_id=_ready_build_id(), status=RequestStatus.RUNNING,
@@ -149,7 +149,7 @@ class TestRunnerNeedsClarification:
             input_fingerprint="1" * 64,
             content_hash="2" * 64,
         )
-        with patch("food_agent_v2.c3.runner._ingredient_resolver", return_value=None):
+        with patch("food_agent_v2.c3.runtime._ingredient_resolver", return_value=None):
             new_state = runner._handle_query_plan_exclusions(
                 state, artifact, SID, c4, {"p1": 1})
             assert new_state is not None
@@ -164,7 +164,7 @@ class TestRunnerNeedsClarification:
         state.is_terminal() 触发 'NoneType' has no attribute 'is_terminal'。
         """
         from food_agent_v2.c3.state import WorkflowState
-        runner = WorkflowRunner()
+        runner = AgentRuntime()
         c4 = _mem_c4()
         c4._sessions[SID] = _session()
         state = WorkflowState(

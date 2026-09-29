@@ -125,6 +125,24 @@ class RedisSessionStore:
                 return json.loads(raw)
         return []
 
+    # ---- 待澄清事项 ----
+
+    def save_pending_clarifications(self, session_id: str, clarifications: list[dict]) -> None:
+        self._connect()
+        key = self._key("session", session_id, "pending_clarifications")
+        value = json.dumps(clarifications, ensure_ascii=False)
+        if self._client:
+            self._client.setex(key, self.TTL_SECONDS, value)
+
+    def load_pending_clarifications(self, session_id: str) -> list[dict]:
+        self._connect()
+        key = self._key("session", session_id, "pending_clarifications")
+        if self._client:
+            raw = self._client.get(key)
+            if raw:
+                return json.loads(raw)
+        return []
+
     # ---- 请求状态 ----
 
     def save_request(self, request_id: str, state: dict) -> None:
@@ -133,6 +151,27 @@ class RedisSessionStore:
         value = json.dumps(state, ensure_ascii=False)
         if self._client:
             self._client.setex(key, self.TTL_SECONDS, value)
+
+    def save_request_fenced(self, request_id: str, state: dict, generation: int) -> bool:
+        """Atomically reject a request projection from an older v2 execution."""
+        self._connect()
+        if self._client is None:
+            return False
+        key = self._key("request", request_id)
+        generation_key = self._key("request", request_id, "generation")
+        value = json.dumps(state, ensure_ascii=False)
+        lua = """
+        local current = redis.call('GET', KEYS[2])
+        if current and tonumber(current) > tonumber(ARGV[1]) then
+            return 0
+        end
+        redis.call('SETEX', KEYS[1], ARGV[3], ARGV[2])
+        redis.call('SETEX', KEYS[2], ARGV[3], ARGV[1])
+        return 1
+        """
+        return bool(self._client.eval(
+            lua, 2, key, generation_key, generation, value, self.TTL_SECONDS,
+        ))
 
     def load_request(self, request_id: str) -> dict | None:
         self._connect()

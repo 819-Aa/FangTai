@@ -72,14 +72,25 @@ class LLMClient:
             raise ModelInvocationError(
                 "MODEL_NOT_CONFIGURED", "缺少 LLM API 配置（api_key/base_url）")
 
+        extra_body = self._llm_config.extra_body_for_role(role)
+        reasoning_effort = None
+        if role == "menu_decision" and model.startswith("qwen3.8-"):
+            extra_body = dict(extra_body or {})
+            reasoning_effort = extra_body.pop("reasoning_effort", None)
+            if reasoning_effort is None and not any(
+                key in extra_body for key in ("thinking_budget", "enable_thinking")
+            ):
+                reasoning_effort = "low"
+
         return self._call_openai(
             model=model,
             system_prompt=system_prompt,
             user_message=user_message,
             tools=tools,
             response_format=response_format,
-            extra_body=self._llm_config.extra_body_for_role(role),
+            extra_body=extra_body,
             timeout_seconds=timeout_seconds,
+            reasoning_effort=reasoning_effort,
         )
 
     def invoke_messages(
@@ -111,6 +122,7 @@ class LLMClient:
         extra_body: dict | None,
         messages: list[dict[str, Any]] | None = None,
         timeout_seconds: float | None = None,
+        reasoning_effort: str | None = None,
     ) -> dict:
         """通过 OpenAI 兼容 API 调用。"""
         import time as _time
@@ -146,6 +158,8 @@ class LLMClient:
             kwargs["extra_body"] = extra_body
         if timeout_seconds is not None:
             kwargs["timeout"] = timeout_seconds
+        if reasoning_effort is not None:
+            kwargs["reasoning_effort"] = reasoning_effort
 
         start = _time.perf_counter()
         response = client.chat.completions.create(**kwargs)

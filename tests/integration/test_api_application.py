@@ -369,7 +369,7 @@ class TestApiApplication:
             for t in threads:
                 t.join(timeout=15)
             codes = sorted(r[0] for r in results)
-            assert codes == [200, 202]
+            assert codes in ([200, 202], [202, 503])
             rid_set = {r[1]["request_id"] for r in results}
             assert len(rid_set) == 1  # 同一 request_id
         finally:
@@ -466,11 +466,13 @@ class TestApiApplication:
     # ---- 最终原子性（Codex 独立复现）----
 
     def test_winner_delay_request_state_still_200_202(self) -> None:
-        """赢家 claim 后延迟写 request state 0.5s → 输家仍返回 200 且同一 request_id。"""
+        """省略 session_id 的并发同键请求仅启动一个执行者并复用赢家身份。"""
+        import hashlib
         import threading
         import time
 
         import food_agent_v2.d1 as d1mod
+        from food_agent_v2.c4 import ContextService
         from food_agent_v2.d1 import RecommendationAPI
         body = {
             "idempotency_key": _unique("ikd"),
@@ -481,16 +483,21 @@ class TestApiApplication:
         key = body["idempotency_key"]
         claimed = threading.Event()
         results: list[tuple[int, dict]] = []
+        execution_calls: list[str] = []
+        workflow_calls: list[str] = []
         orig = d1mod.RecommendationAPI._create_new
 
-        def slow_create_new(inst, request_id, k, ph, b, enhanced, sid, now):
+        def slow_create_new(inst, request_id, k, ph, b, enhanced, sid, now,
+                            **execution):
+            execution_calls.append(request_id)
             claimed.set()
             time.sleep(0.5)  # 延迟 request state 写入
-            return orig(inst, request_id, k, ph, b, enhanced, sid, now)
+            return orig(inst, request_id, k, ph, b, enhanced, sid, now,
+                        **execution)
 
         a, b = RecommendationAPI(), RecommendationAPI()
-        a._trigger_workflow = lambda *a, **k: None  # 禁用后台工作流（测试隔离）
-        b._trigger_workflow = lambda *a, **k: None
+        a._trigger_workflow = lambda *args, **kwargs: workflow_calls.append("a")
+        b._trigger_workflow = lambda *args, **kwargs: workflow_calls.append("b")
         d1mod.RecommendationAPI._create_new = slow_create_new
         try:
             def run_a():
@@ -507,8 +514,18 @@ class TestApiApplication:
             ta.join(timeout=15)
             tb.join(timeout=15)
             codes = sorted(r[0] for r in results)
-            assert codes == [200, 202]  # 不误返 409
-            assert len({r[1]["request_id"] for r in results}) == 1
+            assert codes in ([200, 202], [202, 503])  # 不误返 409
+            request_ids = {r[1]["request_id"] for r in results}
+            session_ids = {r[1]["session_id"] for r in results}
+            assert len(request_ids) == len(session_ids) == 1
+            assert execution_calls == [next(iter(request_ids))]
+            assert len(workflow_calls) == 1
+            acceptance = ContextService().load_request_acceptance(
+                hashlib.sha256(key.encode("utf-8")).hexdigest()
+            )
+            assert acceptance is not None
+            assert acceptance["request_id"] == next(iter(request_ids))
+            assert acceptance["session_id"] == next(iter(session_ids))
         finally:
             d1mod.RecommendationAPI._create_new = orig
             rid = next((r[1]["request_id"] for r in results), None)

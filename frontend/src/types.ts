@@ -27,12 +27,31 @@ export interface ResultSummary {
   menu_summary?: PublicMenuSummary;
 }
 
+export interface ClarificationOptionView {
+  option_id: number;
+  text: string;
+}
+
+export interface ClarificationView {
+  question_id: string;
+  question_text: string;
+  options: ClarificationOptionView[];
+  expires_at?: number | null;
+  status?: string;
+}
+
+export interface ClarificationResponse {
+  question_id: string;
+  option_id: number;
+}
+
 export interface SessionState {
   session_id: string;
   participant_refs: string[];
   request_count: number;
   last_request_at?: string | null;
   current_menu: PublicMenuSummary | null;
+  active_clarification?: ClarificationView | null;
 }
 
 export interface RequestState {
@@ -43,6 +62,7 @@ export interface RequestState {
   updated_at?: string;
   result_summary?: ResultSummary | null;
   error?: { code?: string; message?: string } | null;
+  active_clarification?: ClarificationView | null;
 }
 
 export interface PhaseEvent {

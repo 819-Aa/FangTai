@@ -104,16 +104,25 @@ class IntentDelta:
 
 
 def _dish_count(message: str) -> int | None:
-    """从"三菜一汤/四菜一汤/N道菜"提取菜数；无法判定返回 None（C2 用默认）。"""
+    """从"三菜一汤/四菜一汤/三道菜/N道菜/三个菜/3个菜"等提取菜数；无法判定返回 None（C2 用默认）。"""
     m = re.search(r"([一二两三四五六七八九十])菜一汤", message)
     if m:
         return _CN_NUM.get(m.group(1), 0) + 1
     m = re.search(r"([一二两三四五六七八九十])\s*菜", message)
     if m and "汤" in message:
         return _CN_NUM.get(m.group(1), 0) + 1
-    m = re.search(r"(\d+)\s*道菜", message)
+    m = re.search(r"([一二两三四五六七八九十\d]+)\s*道(?:菜)?", message)
     if m:
-        return int(m.group(1))
+        val = m.group(1)
+        if val.isdigit():
+            return int(val)
+        return _cn_num_to_int(val)
+    m = re.search(r"([一二两三四五六七八九十\d]+)\s*个菜", message)
+    if m:
+        val = m.group(1)
+        if val.isdigit():
+            return int(val)
+        return _cn_num_to_int(val)
     return None
 
 

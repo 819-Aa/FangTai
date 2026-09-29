@@ -45,7 +45,6 @@ describe("reducePhases（按 event_id 去重）", () => {
     ]);
   });
 });
-
 describe("terminalLabel（终态独立展示）", () => {
   it("分别展示各终态，禁止统一成普通失败", () => {
     expect(terminalLabel("completed")).toBe("已完成");
@@ -357,5 +356,167 @@ describe("session 与参与者生命周期", () => {
     }
     store.addSlot(); // 第 51 个 → 上限
     expect(store.error).toContain("上限");
+  });
+
+  describe("结构化澄清响应与恢复（Task 6 契约）", () => {
+    it("SSE 收到 clarification_needed 能够解析并保存 activeClarification", () => {
+      const store = useRecommendationStore();
+      store.messages.push({
+        id: "m_assist", role: "assistant", content: "", createdAt: 1, status: "sending",
+      });
+
+      store.onSseEvent({
+        id: "ev_clarify_1",
+        event: "clarification_needed",
+        data: {
+          question_id: "q_sse_1",
+          clarification: "请问需要调整几个菜？",
+          options: [
+            { option_id: 1, text: "2道菜" },
+            { option_id: 2, text: "3道菜" },
+          ],
+        },
+      }, "m_assist");
+
+      expect(store.status).toBe("needs_clarification");
+      expect(store.activeClarification).toBeTruthy();
+      expect(store.activeClarification?.question_id).toBe("q_sse_1");
+      expect(store.activeClarification?.options).toHaveLength(2);
+      expect(store.activeClarification?.options[0]).toEqual({ option_id: 1, text: "2道菜" });
+    });
+
+    it("点击选项触发 selectOption 发送结构化 clarification_response", async () => {
+      const { createRequest } = await import("@/api/client");
+      const store = useRecommendationStore();
+      store.selectedRefs = ["p1"];
+      store.sessionId = "sess_clarify_test";
+      store.activeClarification = {
+        question_id: "q_click_1",
+        question_text: "请选择辣度",
+        options: [
+          { option_id: 1, text: "不辣" },
+          { option_id: 2, text: "微辣" },
+        ],
+      };
+
+      await store.selectOption(1);
+
+      expect(createRequest).toHaveBeenCalledWith(expect.objectContaining({
+        clarification_response: {
+          question_id: "q_click_1",
+          option_id: 1,
+        },
+        message: "不辣",
+      }));
+    });
+
+    it("普通文本输入“选第一个”不生成结构化 clarification_response", async () => {
+      const { createRequest } = await import("@/api/client");
+      const store = useRecommendationStore();
+      store.selectedRefs = ["p1"];
+      store.sessionId = "sess_clarify_test";
+      store.activeClarification = {
+        question_id: "q_click_1",
+        question_text: "请选择辣度",
+        options: [{ option_id: 1, text: "不辣" }],
+      };
+
+      await store.send("选第一个");
+
+      expect(createRequest).toHaveBeenCalledWith(expect.objectContaining({
+        message: "选第一个",
+        clarification_response: undefined,
+      }));
+    });
+
+    it("CLARIFICATION_ALREADY_APPLIED/STALE/EXPIRED 触发刷新最新问题且不自动重试", async () => {
+      const { createRequest, getSession } = await import("@/api/client");
+      vi.mocked(createRequest).mockRejectedValueOnce(new Error("CLARIFICATION_ALREADY_APPLIED: 该澄清选项已提交"));
+      vi.mocked(getSession).mockResolvedValueOnce({
+        session_id: "sess_refresh_test",
+        participant_refs: ["p1"],
+        request_count: 2,
+        current_menu: null,
+        active_clarification: {
+          question_id: "q_new_active",
+          question_text: "新问题：请确认餐具",
+          options: [{ option_id: 1, text: "无需餐具" }],
+        },
+      });
+
+      const store = useRecommendationStore();
+      store.selectedRefs = ["p1"];
+      store.sessionRefs = ["p1"];
+      store.sessionId = "sess_refresh_test";
+      store.activeClarification = {
+        question_id: "q_old_stale",
+        question_text: "旧问题",
+        options: [{ option_id: 1, text: "旧选项" }],
+      };
+
+      await store.selectOption(1);
+
+      // 不自动重试，createRequest 仅调用一次
+      expect(createRequest).toHaveBeenCalledTimes(1);
+      // 调用 getSession 刷新了最新问题
+      expect(getSession).toHaveBeenCalledWith("sess_refresh_test");
+      expect(store.activeClarification?.question_id).toBe("q_new_active");
+      expect(store.activeClarification?.question_text).toBe("新问题：请确认餐具");
+    });
+
+    it("restoreSession 从服务端会话恢复 activeClarification", async () => {
+      const { getSession } = await import("@/api/client");
+      vi.mocked(getSession).mockResolvedValueOnce({
+        session_id: "sess_restore_test",
+        participant_refs: ["p1"],
+        request_count: 1,
+        current_menu: null,
+        active_clarification: {
+          question_id: "q_restored",
+          question_text: "已恢复的问题",
+          options: [{ option_id: 1, text: "选项A" }],
+        },
+      });
+
+      const store = useRecommendationStore();
+      store.sessionId = "sess_restore_test";
+
+      await store.restoreSession();
+
+      expect(store.activeClarification).toBeTruthy();
+      expect(store.activeClarification?.question_id).toBe("q_restored");
+      expect(store.status).toBe("needs_clarification");
+    });
+
+    it("SESSION_PROTOCOL_UNSUPPORTED 清除旧 session 状态，提示用户在新会话提出完整需求且不自动重发", async () => {
+      const { createRequest } = await import("@/api/client");
+      vi.mocked(createRequest).mockRejectedValueOnce(new Error("409 SESSION_PROTOCOL_UNSUPPORTED: 该会话协议为旧版本，不再支持推荐生成，请创建新会话"));
+
+      const store = useRecommendationStore();
+      store.selectedRefs = ["p1"];
+      store.sessionRefs = ["p1"];
+      store.sessionId = "sess_legacy_old";
+      localStorage.setItem("v2.session_id", "sess_legacy_old");
+      localStorage.setItem("v2.session_refs", JSON.stringify(["p1"]));
+
+      await store.send("换两道不辣的菜");
+
+      // 1. 不自动重发：createRequest 仅被调用 1 次
+      expect(createRequest).toHaveBeenCalledTimes(1);
+
+      // 2. store 与 localStorage 中的旧 session 被清空
+      expect(store.sessionId).toBe("");
+      expect(localStorage.getItem("v2.session_id")).toBe("");
+
+      // 3. 用户输入的内容依然保留在消息流中
+      const userMsg = store.messages.find((m) => m.role === "user");
+      expect(userMsg?.content).toBe("换两道不辣的菜");
+
+      // 4. 给出明确的用户提示，告知旧会话无法继续、请在新会话提出完整需求
+      expect(store.error).toContain("新会话");
+      const assistantMsg = store.messages.find((m) => m.role === "assistant");
+      expect(assistantMsg?.status).toBe("error");
+      expect(assistantMsg?.content).toContain("新会话");
+    });
   });
 });

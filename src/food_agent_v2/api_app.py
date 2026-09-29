@@ -20,8 +20,14 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 
+import food_agent_v2.c4
 from food_agent_v2.core.config import AppConfig, load_config
 from food_agent_v2.d1 import api
+
+
+def ContextService(*args, **kwargs):
+    return food_agent_v2.c4.ContextService(*args, **kwargs)
+
 
 _config: AppConfig | None = None
 
@@ -146,8 +152,8 @@ async def create_recommendation(request: Request):
 @app.get("/v1/recommendation-requests/{request_id}")
 async def get_recommendation_status(request_id: str):
     code, resp = api.get_request_status(request_id)
-    if code == 404:
-        return JSONResponse(status_code=404, content=resp)
+    if code >= 400:
+        return JSONResponse(status_code=code, content=resp)
     return resp
 
 
@@ -236,11 +242,19 @@ async def create_session(request: Request):
     err = _require_object_body(body)
     if err is not None:
         return JSONResponse(status_code=422, content=err)
+    if "workflow_mode" in body or "clarification_protocol_version" in body:
+        return JSONResponse(status_code=422, content={
+            "error": "VALIDATION_FAILED",
+            "details": [{"field": "session_protocol", "issue": "server controlled"}],
+        })
     participant_refs = [p.get("participant_ref") for p in body.get("participants", [])
-                        if isinstance(p, dict) and p.get("participant_ref")]
-    from food_agent_v2.c4 import ContextService
+                         if isinstance(p, dict) and p.get("participant_ref")]
     try:
-        sid = ContextService().create_session_record(participant_refs)
+        sid = ContextService().create_session_record(
+            participant_refs,
+            workflow_mode="langgraph",
+            clarification_protocol_version="v2",
+        )
     except Exception:
         # 存储基础设施异常 → 顶层 503 固定公开文案，不透传数据库异常
         return JSONResponse(status_code=503, content={
@@ -257,8 +271,10 @@ async def create_session(request: Request):
 @app.get("/v1/sessions/{session_id}")
 async def get_session(session_id: str):
     from food_agent_v2.c4 import ContextService
+    from food_agent_v2.d1.schemas import strip_forbidden_fields
+    c4 = ContextService()
     try:
-        state = ContextService().get_session_state(session_id)
+        state = c4.get_session_state(session_id)
     except Exception as exc:
         # 基础设施异常不得伪装成 404
         return JSONResponse(status_code=503, content={
@@ -268,7 +284,35 @@ async def get_session(session_id: str):
     if state is None:
         return JSONResponse(status_code=404, content={
             "error": "NOT_FOUND", "message": "session not found"})
-    return state
+
+    # 权威 active_clarification 投影（I6/I7）
+    # MySQL 查询失败不能显示 active_clarification: null，必须明确返回 503
+    active_q = None
+    try:
+        active_q = c4.load_active_clarification(session_id)
+    except Exception as exc:
+        return JSONResponse(status_code=503, content={
+            "error": "CLARIFICATION_STORE_UNAVAILABLE",
+            "message": str(exc)[:200],
+        })
+
+    if active_q:
+        pub = active_q.get("public_payload") or {}
+        opts = pub.get("options") or []
+        state["active_clarification"] = {
+            "question_id": active_q.get("question_id"),
+            "question_text": pub.get("question_text", ""),
+            "options": [{"option_id": o["option_id"], "text": o.get("text", "")} for o in opts if isinstance(o, dict)],
+            "expires_at": active_q.get("expires_at"),
+            "status": active_q.get("status", "pending"),
+        }
+    else:
+        state["active_clarification"] = None
+
+    # 不透传旧 pending_clarifications 数组
+    state.pop("pending_clarifications", None)
+
+    return strip_forbidden_fields(state)
 
 
 # ---- 健康检查 ----

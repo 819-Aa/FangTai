@@ -29,8 +29,8 @@
 | DEC-C008 | 不计算烹饪营养损耗 | 内部营养依据批准的原始食材参考计算；来源只留在离线参考/审阅文件，运行时营养 Artifact 不含来源或置信度 |
 | DEC-C009 | 不处理分量和采购量 | 移除`per_serving`、个人摄入、人数份量、采购量和参与者营养汇总 |
 | DEC-C010 | 时间采用 source-authoritative 步骤任务图 | 区分主动操作、设备占用和被动等待；完整图由 CP-SAT 产生预计单值，详见 [ADR-0007](0007-estimated-task-graph-time-semantics.md) |
-| DEC-C011 | 系统使用五个职责模型 | 查询理解、健康与菜单规划、菜单决策、回答、统一审查分别拥有独立提示词、Schema和工具权限 |
-| DEC-C012 | 不增加管理模型 | WorkflowState和确定性工作流分配角色权限并决定节点流转 |
+| DEC-C011 | legacy 保留五角色，新模式采用受约束的行动选择角色 | legacy 维持原职责；新模式由业务 Agent 选择合法动作并通过受控步骤生成回答，详见 [ADR-0008](0008-langgraph-hybrid-agent-orchestration.md) |
+| DEC-C012 | 不增加权限管理模型 | 角色权限、工具白名单和合法转移由代码定义；Agent 可在边界内选择业务动作，不能动态分配权限 |
 | DEC-C013 | 模型在角色白名单内自主调用工具 | 模型主动决定调用时机；必需回执是角色完成条件，工作流不预调用或漏调后补调用，可选工具由模型判断，禁止工具不暴露 |
 | DEC-C014 | 模型不能直接修改WorkflowState | 模型只生成Artifact，由工作流校验后更新State |
 | DEC-C015 | 模型间使用受控共享上下文通信 | 使用`SharedWorkflowContext`、类型化Artifact和`HandoffMessage`，不共享隐藏思维过程 |
@@ -55,6 +55,7 @@
 | DEC-C034 | 软评分维度不可用时显式禁用并重归一化 | 不使用默认 0.5、零值或模型猜测伪装中性证据 |
 | DEC-C035 | 成功事件只能引用已提交结果 | 结果、强制审计和 outbox 原子提交，之后发布 `answer_ready/result_committed`；详见 [ADR-0006](0006-post-commit-event-publication.md) |
 | DEC-C036 | DeepSeek 整改采用外部阶段闸门 | 模型可选局部写法，但不能修改任务信封、锁定测试和批准契约；偏离不能进入下一阶段 |
+| DEC-C037 | C3 采用受约束的 Agent 工具编排 | LangGraph 承载行动—工具反馈循环；模型选择下一步，代码强制证据、预算与提交边界，禁止自动放宽硬约束；详见 [ADR-0008](0008-langgraph-hybrid-agent-orchestration.md) |
 
 ### 已废止的实现偏离
 

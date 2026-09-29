@@ -152,3 +152,45 @@ body {
 
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---- 澄清面板与选项按钮 ---- */
+.clarification-panel {
+  margin: 10px 16px; padding: 12px 16px;
+  background: #fefce8; border: 1px solid #fef08a; border-radius: 12px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.clarification-title {
+  display: flex; align-items: baseline; gap: 8px;
+}
+.clarification-label {
+  font-size: 11px; font-weight: 700; color: #854d0e;
+  background: #fef9c3; border: 1px solid #fef08a;
+  padding: 2px 6px; border-radius: 4px; flex-shrink: 0;
+}
+.clarification-text {
+  font-size: 13px; font-weight: 600; color: #713f12;
+}
+.clarification-options {
+  display: flex; flex-wrap: wrap; gap: 8px;
+}
+.clarification-option-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px; border-radius: 8px;
+  border: 1px solid #facc15; background: #ffffff;
+  color: #713f12; font-size: 13px; cursor: pointer;
+  transition: all 0.15s ease;
+}
+.clarification-option-btn:hover:not(:disabled) {
+  background: #fef9c3; border-color: #eab308;
+}
+.clarification-option-btn:disabled {
+  opacity: 0.5; cursor: not-allowed;
+}
+.clarification-option-btn .option-num {
+  font-weight: 700; color: #ca8a04;
+}
+.clarification-bar {
+  margin: 8px 16px; padding: 8px 12px;
+  background: #fefce8; border: 1px solid #fef08a; border-radius: 8px;
+  display: flex; align-items: center; gap: 8px;
+}

@@ -37,6 +37,16 @@ from food_agent_v2.contracts.build import (
     source_manifest_hash,
     verify_source_file,
 )
+from food_agent_v2.contracts.clarification import (
+    ClarificationOption,
+    ClarificationOptionView,
+    ClarificationPrivateSnapshot,
+    ClarificationPublicPayload,
+    ClarificationQuestionStatus,
+    ClarificationResponseInput,
+    ClarificationTransition,
+    ClarificationView,
+)
 from food_agent_v2.contracts.receipts import (
     ReceiptBindingError,
     ToolReceipt,
@@ -80,4 +90,12 @@ __all__ = [
     "validate_answer_menu_binding",
     "validate_receipt_binding",
     "verify_source_file",
+    "ClarificationQuestionStatus",
+    "ClarificationOption",
+    "ClarificationPublicPayload",
+    "ClarificationPrivateSnapshot",
+    "ClarificationOptionView",
+    "ClarificationView",
+    "ClarificationResponseInput",
+    "ClarificationTransition",
 ]
