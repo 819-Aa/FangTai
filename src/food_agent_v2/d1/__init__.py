@@ -10,8 +10,13 @@ import json
 import time
 import uuid
 from contextvars import ContextVar
+from datetime import UTC, datetime
 
 from food_agent_v2.c4 import ContextService
+from food_agent_v2.d1.progress import (
+    NODE_TITLES, STATUS_SUFFIX, STAGE_NODES, TOOL_SUMMARIES, public_node, public_tool,
+    public_refs, validate_invocation,
+)
 from food_agent_v2.d1.schemas import (
     SSEEventType,
     now_iso,
@@ -43,6 +48,7 @@ class RecommendationAPI:
         self._idempotency: dict[str, dict] = {}          # idempotency_key → {payload_hash, request_id}
         self._events: dict[str, list[dict]] = {}         # request_id → SSE events
         self._event_cursors: dict[str, int] = {}          # request_id → next event_id
+        self._progress_attempts: dict[tuple[str, int, str], tuple[str, str]] = {}
 
     # ---- Redis 持久化（API 重启后请求状态/SSE/幂等不丢；文档 §20：Redis 管运行时） ----
 
@@ -79,6 +85,10 @@ class RecommendationAPI:
             return
         if not blob:
             return
+        self._restore_request_blob(request_id, blob)
+
+    def _restore_request_blob(self, request_id: str, blob: dict) -> None:
+        """Adopt one fenced Redis snapshot, including its execution identity."""
         self._requests[request_id] = blob.get("state", {})
         self._events[request_id] = blob.get("events", [])
         self._event_cursors[request_id] = blob.get("cursor", 1)
@@ -167,7 +177,39 @@ class RecommendationAPI:
                     "message": "会话不存在，请创建新会话",
                 }
             claim_session_id = session_id
+
+            # R07: 单菜替换前置版本校验与目标归属校验
+            if body.get("action") == "replace_dish":
+                session_state = c4.get_session_state(session_id) if hasattr(c4, "get_session_state") else None
+                current_menu = (session_state or {}).get("current_menu")
+                if not current_menu or not current_menu.get("recipe_ids"):
+                    return 409, {
+                        "error": "MENU_VERSION_CONFLICT",
+                        "message": "当前会话暂无已提交菜单，无法执行单菜替换",
+                        "current_menu": None,
+                    }
+                cur_plan_id = current_menu.get("plan_id")
+                cur_menu_hash = current_menu.get("menu_hash")
+                if cur_plan_id != body.get("source_plan_id") or cur_menu_hash != body.get("source_menu_hash"):
+                    return 409, {
+                        "error": "MENU_VERSION_CONFLICT",
+                        "message": "菜单已被更新或版本不一致，请刷新后重试",
+                        "current_menu": current_menu,
+                    }
+                cur_recipe_ids = [int(r) for r in current_menu.get("recipe_ids", [])]
+                target_id = int(body["target_recipe_id"])
+                if target_id not in cur_recipe_ids:
+                    return 422, {
+                        "error": "TARGET_RECIPE_NOT_IN_MENU",
+                        "message": f"目标菜品 (ID: {target_id}) 不在当前已提交菜单中",
+                        "current_menu": current_menu,
+                    }
         else:
+            if body.get("action") == "replace_dish":
+                return 422, {
+                    "error": "SESSION_REQUIRED_FOR_REPLACE",
+                    "message": "单菜替换必须指定已存在的 session_id",
+                }
             claim_session_id = f"sess_{uuid.uuid4().hex[:8]}"
             try:
                 c4.ensure_session_record(
@@ -466,6 +508,12 @@ class RecommendationAPI:
             req_state["execution_generation"] = execution_generation
             req_state["execution_owner"] = execution_owner
 
+        if body.get("action") == "replace_dish":
+            req_state["action"] = "replace_dish"
+            req_state["target_recipe_id"] = body.get("target_recipe_id")
+            req_state["source_plan_id"] = body.get("source_plan_id")
+            req_state["source_menu_hash"] = body.get("source_menu_hash")
+
         self._requests[request_id] = req_state
         record = {
             "payload_hash": payload_hash,
@@ -573,6 +621,21 @@ class RecommendationAPI:
                     return 503, {"error": "DATABASE_ERROR", "message": str(exc)}
             return 200, resp
 
+        if (isinstance(acceptance, dict) and acceptance.get("execution_generation", 0) > 0
+                and acceptance.get("status") == "recovery_required"):
+            created = acceptance.get("created_at")
+            if isinstance(created, (int, float)):
+                created = datetime.fromtimestamp(created, UTC).isoformat()
+            created = str(created or (req.get("created_at") if req else None) or now_iso())
+            return 200, {
+                "request_id": request_id,
+                "session_id": acceptance.get("session_id") or (req.get("session_id") if req else ""),
+                "status": "recovery_required", "created_at": created,
+                "updated_at": req.get("updated_at", created) if req else created,
+                "stage_events_cursor": 0, "result_summary": None,
+                "error": {"code": "REQUEST_RECOVERY_REQUIRED", "message": "请求暂未完成，请恢复生成。"},
+            }
+
         if not req:
             # Redis 丢失且 MySQL 无终态日志：检查是否为已知已接受请求
             if c4:
@@ -587,17 +650,6 @@ class RecommendationAPI:
             return 404, {"error": "NOT_FOUND", "message": "request not found"}
 
         if isinstance(acceptance, dict) and acceptance.get("execution_generation", 0) > 0:
-            if acceptance.get("status") == "recovery_required":
-                return 200, {
-                    "request_id": request_id,
-                    "session_id": req["session_id"],
-                    "status": "recovery_required",
-                    "created_at": req["created_at"],
-                    "updated_at": req.get("updated_at", req["created_at"]),
-                    "stage_events_cursor": 0,
-                    "result_summary": None,
-                    "error": None,
-                }
             if (acceptance.get("status") != "running"
                     or (acceptance.get("execution_lease_until") is not None
                         and acceptance["execution_lease_until"] <= time.time())):
@@ -682,6 +734,26 @@ class RecommendationAPI:
                             "menu_ref": answer.get("menu_ref", ""),
                             "evidence_refs": answer.get("evidence_refs") or [],
                         }
+                    elif item.get("event_type") == "thought_node" and isinstance(payload, dict):
+                        payload = {
+                            "request_id": request_id,
+                            "node_id": payload.get("node_id", ""),
+                            "title": payload.get("title", ""),
+                            "status": payload.get("status", "done"),
+                            "summary": payload.get("summary", ""),
+                            "tool_name": payload.get("tool_name"),
+                            "duration_ms": payload.get("duration_ms"),
+                        }
+                        payload = {k: v for k, v in payload.items() if v is not None and v != ""}
+                    elif item.get("event_type") == "tool_trace" and isinstance(payload, dict):
+                        payload = {
+                            "request_id": request_id,
+                            "tool_name": payload.get("tool_name", ""),
+                            "result_summary": payload.get("result_summary", ""),
+                            "node_id": payload.get("node_id"),
+                            "duration_ms": payload.get("duration_ms"),
+                        }
+                        payload = {k: v for k, v in payload.items() if v is not None and v != ""}
                     if isinstance(payload, dict) and scan_forbidden_fields(payload):
                         continue
                     event_data = (
@@ -697,7 +769,16 @@ class RecommendationAPI:
                     seen_ids.add(eid)
             self._events[request_id] = current
 
-        all_events = self._events.get(request_id, [])
+        all_events = list(self._events.get(request_id, []))
+        if (isinstance(acceptance, dict) and acceptance.get("execution_generation", 0) > 0
+                and acceptance.get("status") == "recovery_required"):
+            # 从 MySQL 权威状态派生：Redis 丢失/跨 worker 同样可见；代次区分每次恢复。
+            all_events.append({
+                "id": f"ev_recovery_{request_id}_{acceptance['execution_generation']}",
+                "event": SSEEventType.REQUEST_RECOVERY_REQUIRED.value,
+                "data": json.dumps({"request_id": request_id, "status": "recovery_required",
+                                    "message": "请求暂未完成，请恢复生成。"}, ensure_ascii=False),
+            })
         if not last_event_id:
             return all_events
         for idx, event in enumerate(all_events):
@@ -714,6 +795,13 @@ class RecommendationAPI:
             return
         if not blob:
             return
+        cached_generation = self._requests.get(request_id, {}).get("execution_generation") or 0
+        persisted_generation = blob.get("state", {}).get("execution_generation") or 0
+        if request_id not in self._requests or persisted_generation > cached_generation:
+            # Cold SSE connections need the same owner/generation as the events.
+            # A follower of another worker must drop the previous generation's
+            # events before adopting a newer fenced snapshot.
+            self._restore_request_blob(request_id, blob)
         persisted = blob.get("events", []) or []
         current = self._events.get(request_id, [])
         seen = {e.get("id") for e in current if e.get("id")}
@@ -885,7 +973,7 @@ class RecommendationAPI:
 
     def publish_analysis_event(self, request_id: str, stage: str,
                                summary: str, evidence_refs: list[str]) -> None:
-        """C3 通过此接口发布阶段分析事件（payload 为原始 stage/summary/evidence_refs）。"""
+        """发布固定阶段投影；调用方原始文本只用于安全检查。"""
         payload = {
             "stage": stage,
             "summary": summary,
@@ -893,7 +981,26 @@ class RecommendationAPI:
         }
         if scan_forbidden_fields(payload):
             return  # 禁止字段拦截：不发布
-        self._emit_event(request_id, SSEEventType.ANALYSIS_READY, payload)
+        node = STAGE_NODES.get(stage, "processing")
+        generation = self._progress_generation(request_id)
+        invocation, status = self._progress_attempts.get(
+            (request_id, generation, node), (uuid.uuid4().hex, "done"),
+        )
+        payload.update(
+            stage=stage if stage in STAGE_NODES else "processing",
+            summary=NODE_TITLES[node] + STATUS_SUFFIX[status],
+            node_id=node, status=status,
+            evidence_refs=public_refs(evidence_refs),
+            execution_generation=generation, invocation_id=invocation,
+        )
+        self._emit_event(request_id, SSEEventType.ANALYSIS_READY, payload,
+                         event_id=f"ev_analysis_{request_id}_g{generation}_{invocation}_{status}")
+
+    def _progress_generation(self, request_id: str) -> int:
+        attempt = _active_execution.get()
+        if attempt and attempt["request_id"] == request_id:
+            return int(attempt.get("generation") or 0)
+        return int(self._requests.get(request_id, {}).get("execution_generation") or 0)
 
     def publish_answer_event(self, request_id: str, text: str,
                             menu_ref: str, evidence_refs: list[str],
@@ -952,6 +1059,136 @@ class RecommendationAPI:
                 f"SENSITIVE_DATA_EXPOSURE: {violations}")
         self._emit_event(request_id, SSEEventType.RESULT_COMMITTED, payload,
                          event_id=event_id)
+
+    def publish_thought_node(
+        self,
+        request_id: str,
+        node_id: str,
+        title: str,
+        status: str,
+        summary: str = "",
+        tool_name: str | None = None,
+        duration_ms: int = 0,
+        *,
+        event_id: str | None = None,
+        invocation_id: str | None = None,
+        **extra: Any,
+    ) -> str | None:
+        """发布经过审查的真实节点执行状态（thought_node）。
+
+        status 必须为 running / done / warning / error。
+        绝不包含未公开的私有上下文、用户真实疾病或内部病历。
+        """
+        payload: dict[str, Any] = {
+            "request_id": request_id,
+            "node_id": node_id,
+            "title": title,
+            "status": status,
+        }
+        if summary:
+            payload["summary"] = summary
+        if tool_name:
+            payload["tool_name"] = tool_name
+        if duration_ms > 0:
+            payload["duration_ms"] = duration_ms
+        ALLOWED_THOUGHT_FIELDS = {
+            "request_id", "node_id", "title", "status", "summary", "tool_name", "duration_ms",
+        }
+        if extra:
+            disallowed = set(extra.keys()) - ALLOWED_THOUGHT_FIELDS
+            if disallowed:
+                self._emit_event(request_id, SSEEventType.ERROR, {
+                    "error_code": "SENSITIVE_DATA_EXPOSURE",
+                    "message": f"Disallowed fields in thought_node: {disallowed}",
+                }, event_id=event_id)
+                raise SensitiveDataBlocked(f"Disallowed fields in thought_node: {disallowed}")
+            payload.update(extra)
+
+        violations = scan_forbidden_fields(payload)
+        if violations:
+            self._emit_event(request_id, SSEEventType.ERROR, {
+                "error_code": "SENSITIVE_DATA_EXPOSURE",
+                "message": f"Forbidden fields in thought_node: {violations}",
+            }, event_id=event_id)
+            raise SensitiveDataBlocked(f"SENSITIVE_DATA_EXPOSURE: {violations}")
+
+        if status not in STATUS_SUFFIX:
+            raise ValueError("Invalid public progress status")
+        if not self._can_project(request_id):
+            return None
+        node_id = public_node(node_id)
+        generation = self._progress_generation(request_id)
+        key = (request_id, generation, node_id)
+        current = self._progress_attempts.get(key)
+        invocation = invocation_id or (
+            current[0] if current and status != "running" else uuid.uuid4().hex
+        )
+        validate_invocation(invocation)
+        self._progress_attempts[key] = (invocation, status)
+        payload.update(node_id=node_id, title=NODE_TITLES[node_id], status=status,
+                       summary=NODE_TITLES[node_id] + STATUS_SUFFIX[status],
+                       execution_generation=generation, invocation_id=invocation)
+        if tool_name:
+            payload["tool_name"] = public_tool(tool_name)
+        eid = event_id or f"ev_thought_{request_id}_g{generation}_{invocation}_{status}"
+        self._emit_event(request_id, SSEEventType.THOUGHT_NODE, payload, event_id=eid)
+        return invocation
+
+    def publish_tool_trace(
+        self,
+        request_id: str,
+        tool_name: str,
+        result_summary: str,
+        node_id: str | None = None,
+        duration_ms: int = 0,
+        *,
+        event_id: str | None = None,
+        invocation_id: str | None = None,
+        **extra: Any,
+    ) -> None:
+        """发布经安全审查的工具执行事实（tool_trace）。"""
+        payload: dict[str, Any] = {
+            "request_id": request_id,
+            "tool_name": tool_name,
+            "result_summary": result_summary,
+        }
+        if node_id:
+            payload["node_id"] = node_id
+        if duration_ms > 0:
+            payload["duration_ms"] = duration_ms
+
+        ALLOWED_TOOL_FIELDS = {
+            "request_id", "tool_name", "result_summary", "node_id", "duration_ms",
+        }
+        if extra:
+            disallowed = set(extra.keys()) - ALLOWED_TOOL_FIELDS
+            if disallowed:
+                self._emit_event(request_id, SSEEventType.ERROR, {
+                    "error_code": "SENSITIVE_DATA_EXPOSURE",
+                    "message": f"Disallowed fields in tool_trace: {disallowed}",
+                }, event_id=event_id)
+                raise SensitiveDataBlocked(f"Disallowed fields in tool_trace: {disallowed}")
+            payload.update(extra)
+
+        violations = scan_forbidden_fields(payload)
+        if violations:
+            self._emit_event(request_id, SSEEventType.ERROR, {
+                "error_code": "SENSITIVE_DATA_EXPOSURE",
+                "message": f"Forbidden fields in tool_trace: {violations}",
+            }, event_id=event_id)
+            raise SensitiveDataBlocked(f"SENSITIVE_DATA_EXPOSURE: {violations}")
+
+        generation = self._progress_generation(request_id)
+        tool_name = public_tool(tool_name)
+        node_id = public_node(node_id or "processing")
+        payload.update(tool_name=tool_name, node_id=node_id,
+                       result_summary=TOOL_SUMMARIES[tool_name],
+                       execution_generation=generation)
+        invocation = invocation_id or uuid.uuid4().hex
+        validate_invocation(invocation)
+        payload["invocation_id"] = invocation
+        eid = event_id or f"ev_tool_{request_id}_g{generation}_{invocation}"
+        self._emit_event(request_id, SSEEventType.TOOL_TRACE, payload, event_id=eid)
 
     def update_status(self, request_id: str, status: str,
                       result_summary: dict | None = None,
@@ -1057,6 +1294,10 @@ class RecommendationAPI:
                     participants=req.get("participants", []),
                     config=body.get("config"),
                     clarification_response=req.get("clarification_response"),
+                    action=req.get("action"),
+                    target_recipe_id=req.get("target_recipe_id"),
+                    source_plan_id=req.get("source_plan_id"),
+                    source_menu_hash=req.get("source_menu_hash"),
                     **({
                         "execution_owner": execution_owner,
                         "execution_generation": execution_generation,

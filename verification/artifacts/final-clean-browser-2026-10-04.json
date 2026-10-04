@@ -1,0 +1,564 @@
+{
+  "config": {
+    "argv": [
+      "D:\\App\\nodejs\\node.exe",
+      "C:\\Users\\zhiyo\\Desktop\\竞赛\\program_v2\\frontend\\node_modules\\@playwright\\test\\cli.js",
+      "test"
+    ],
+    "configFile": "C:\\Users\\zhiyo\\Desktop\\竞赛\\program_v2\\frontend\\playwright.config.ts",
+    "rootDir": "C:/Users/zhiyo/Desktop/竞赛/program_v2/frontend/e2e",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "C:/Users/zhiyo/Desktop/竞赛/program_v2/verification/artifacts/final-clean-browser-2026-10-04",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "",
+        "name": "",
+        "testDir": "C:/Users/zhiyo/Desktop/竞赛/program_v2/frontend/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 300000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "line",
+        null
+      ],
+      [
+        "json",
+        {
+          "outputFile": "C:\\Users\\zhiyo\\Desktop\\竞赛\\program_v2\\verification\\artifacts\\final-clean-browser-2026-10-04.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.62.1",
+    "workers": 1,
+    "webServer": {
+      "command": "npm run dev -- --port 5176 --strictPort",
+      "url": "http://127.0.0.1:5176",
+      "reuseExistingServer": false,
+      "env": {
+        "VITE_API_BASE_URL": "/api"
+      }
+    }
+  },
+  "suites": [
+    {
+      "title": "browser.spec.ts",
+      "file": "browser.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "首次进入为空白新对话且可选择成员",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 300000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 269,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-04T05:46:36.053Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "fbeac1b2decfba2c3acd-a537f6c8eefa0df4bf63",
+          "file": "browser.spec.ts",
+          "line": 57,
+          "column": 1
+        },
+        {
+          "title": "成功路径：仅接受 completed / result_committed，并归档至侧边栏",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 300000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 29435,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-04T05:46:36.448Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "fbeac1b2decfba2c3acd-a1edd61f114351c2a1be",
+          "file": "browser.spec.ts",
+          "line": 69,
+          "column": 1
+        },
+        {
+          "title": "页面刷新默认进入空白对话，可从侧边栏恢复历史会话与已提交菜单",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 300000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 37718,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-04T05:47:05.894Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "fbeac1b2decfba2c3acd-b7b20fcbb6fd71b764d1",
+          "file": "browser.spec.ts",
+          "line": 81,
+          "column": 1
+        },
+        {
+          "title": "多轮对话会话内成员固定：首轮发送后禁用参与者切换",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 300000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 300013,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 300000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 300000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 300000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "C:\\Users\\zhiyo\\Desktop\\竞赛\\program_v2\\frontend\\e2e\\browser.spec.ts",
+                        "column": 47,
+                        "line": 54
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: locator('.terminal-bar')\nExpected: visible\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 300000ms\u001b[22m\n\u001b[2m  - waiting for locator('.terminal-bar')\u001b[22m\n\u001b[2m  - Test timeout of 300000ms exceeded.\u001b[22m\n\n\n  52 |   await page.locator(\".composer textarea\").fill(text);\n  53 |   await page.locator(\".send-button\").click();\n> 54 |   await expect(page.locator(\".terminal-bar\")).toBeVisible({ timeout: 300000 });\n     |                                               ^\n  55 | }\n  56 |\n  57 | test(\"首次进入为空白新对话且可选择成员\", async ({ page }) => {\n    at submitRecommendation (C:\\Users\\zhiyo\\Desktop\\竞赛\\program_v2\\frontend\\e2e\\browser.spec.ts:54:47)\n    at C:\\Users\\zhiyo\\Desktop\\竞赛\\program_v2\\frontend\\e2e\\browser.spec.ts:100:3"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-04T05:47:43.626Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "C:\\Users\\zhiyo\\Desktop\\竞赛\\program_v2\\verification\\artifacts\\final-clean-browser-2026-10-04\\browser-多轮对话会话内成员固定：首轮发送后禁用参与者切换\\error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "fbeac1b2decfba2c3acd-6bde105ce53c7871dd4f",
+          "file": "browser.spec.ts",
+          "line": 99,
+          "column": 1
+        },
+        {
+          "title": "生成中点击停止生成能够可靠取消且不展示完成徽标",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 300000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 729,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-04T05:52:44.086Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "fbeac1b2decfba2c3acd-465fd0f856b4844464f6",
+          "file": "browser.spec.ts",
+          "line": 108,
+          "column": 1
+        },
+        {
+          "title": "SSE 中断连接后自动恢复并最终 completed",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 300000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 19184,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m\"已完成\"\u001b[39m\nReceived: \u001b[31m\"处理失败\"\u001b[39m",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m\"已完成\"\u001b[39m\nReceived: \u001b[31m\"处理失败\"\u001b[39m\n    at C:\\Users\\zhiyo\\Desktop\\竞赛\\program_v2\\frontend\\e2e\\browser.spec.ts:143:18",
+                    "location": {
+                      "file": "C:\\Users\\zhiyo\\Desktop\\竞赛\\program_v2\\frontend\\e2e\\browser.spec.ts",
+                      "column": 18,
+                      "line": 143
+                    },
+                    "snippet": "  141 |   await submitRecommendation(page, \"今晚晚餐，请推荐三道清淡家常菜，45分钟内完成\");\n  142 |   const status = (await page.locator(\".terminal-bar\").textContent())?.trim();\n> 143 |   expect(status).toBe(terminalLabel(\"completed\"));\n      |                  ^\n  144 |   await expect(page.locator(\".answer-badge\")).toHaveCount(1, { timeout: 60000 });\n  145 | });\n  146 |"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "C:\\Users\\zhiyo\\Desktop\\竞赛\\program_v2\\frontend\\e2e\\browser.spec.ts",
+                        "column": 18,
+                        "line": 143
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m\"已完成\"\u001b[39m\nReceived: \u001b[31m\"处理失败\"\u001b[39m\n\n  141 |   await submitRecommendation(page, \"今晚晚餐，请推荐三道清淡家常菜，45分钟内完成\");\n  142 |   const status = (await page.locator(\".terminal-bar\").textContent())?.trim();\n> 143 |   expect(status).toBe(terminalLabel(\"completed\"));\n      |                  ^\n  144 |   await expect(page.locator(\".answer-badge\")).toHaveCount(1, { timeout: 60000 });\n  145 | });\n  146 |\n    at C:\\Users\\zhiyo\\Desktop\\竞赛\\program_v2\\frontend\\e2e\\browser.spec.ts:143:18"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-04T05:52:44.932Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "C:\\Users\\zhiyo\\Desktop\\竞赛\\program_v2\\verification\\artifacts\\final-clean-browser-2026-10-04\\browser-SSE-中断连接后自动恢复并最终-completed\\error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "C:\\Users\\zhiyo\\Desktop\\竞赛\\program_v2\\frontend\\e2e\\browser.spec.ts",
+                    "column": 18,
+                    "line": 143
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "fbeac1b2decfba2c3acd-2781e6e89e7d5d218546",
+          "file": "browser.spec.ts",
+          "line": 129,
+          "column": 1
+        },
+        {
+          "title": "浏览器最终菜单展示（真实可用）：正文与结构化菜单均可见",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 300000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 32433,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-04T05:53:04.551Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "fbeac1b2decfba2c3acd-e8c29033e7f2867b36e1",
+          "file": "browser.spec.ts",
+          "line": 147,
+          "column": 1
+        },
+        {
+          "title": "真实锁竞争：刷新后点击恢复生成，用原请求成单并与数据库一致",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 300000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 48083,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-04T05:53:37.097Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "fbeac1b2decfba2c3acd-0b40554f9d1ca5ddf626",
+          "file": "browser.spec.ts",
+          "line": 160,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "clarification.spec.ts",
+      "file": "clarification.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "真实 SSE 连续失败降级轮询：待澄清停止轮询，选项续接后成单",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 300000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 296327,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeEnabled\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: locator('.message-clarification-card.is-active .clarification-option-btn').first()\nExpected: enabled\nTimeout: 180000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeEnabled\" with timeout 180000ms\u001b[22m\n\u001b[2m  - waiting for locator('.message-clarification-card.is-active .clarification-option-btn').first()\u001b[22m\n",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeEnabled\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: locator('.message-clarification-card.is-active .clarification-option-btn').first()\nExpected: enabled\nTimeout: 180000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeEnabled\" with timeout 180000ms\u001b[22m\n\u001b[2m  - waiting for locator('.message-clarification-card.is-active .clarification-option-btn').first()\u001b[22m\n\n    at C:\\Users\\zhiyo\\Desktop\\竞赛\\program_v2\\frontend\\e2e\\clarification.spec.ts:50:26",
+                    "location": {
+                      "file": "C:\\Users\\zhiyo\\Desktop\\竞赛\\program_v2\\frontend\\e2e\\clarification.spec.ts",
+                      "column": 26,
+                      "line": 50
+                    },
+                    "snippet": "  48 |     const choice = attempt > 0 && (await unrestrictedTime.count()) ? unrestrictedTime\n  49 |       : (await timeOption.count()) ? timeOption : options.first();\n> 50 |     await expect(choice).toBeEnabled();\n     |                          ^\n  51 |     const accepted = page.waitForResponse((response) => response.request().method() === \"POST\"\n  52 |       && new URL(response.url()).pathname.endsWith(\"/recommendation-requests\"));\n  53 |     await choice.click();"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "C:\\Users\\zhiyo\\Desktop\\竞赛\\program_v2\\frontend\\e2e\\clarification.spec.ts",
+                        "column": 26,
+                        "line": 50
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeEnabled\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: locator('.message-clarification-card.is-active .clarification-option-btn').first()\nExpected: enabled\nTimeout: 180000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeEnabled\" with timeout 180000ms\u001b[22m\n\u001b[2m  - waiting for locator('.message-clarification-card.is-active .clarification-option-btn').first()\u001b[22m\n\n\n  48 |     const choice = attempt > 0 && (await unrestrictedTime.count()) ? unrestrictedTime\n  49 |       : (await timeOption.count()) ? timeOption : options.first();\n> 50 |     await expect(choice).toBeEnabled();\n     |                          ^\n  51 |     const accepted = page.waitForResponse((response) => response.request().method() === \"POST\"\n  52 |       && new URL(response.url()).pathname.endsWith(\"/recommendation-requests\"));\n  53 |     await choice.click();\n    at C:\\Users\\zhiyo\\Desktop\\竞赛\\program_v2\\frontend\\e2e\\clarification.spec.ts:50:26"
+                    }
+                  ],
+                  "stdout": [
+                    {
+                      "text": "SSE_DIAG {\"readyState\":0}\n"
+                    },
+                    {
+                      "text": "SSE_DIAG {\"readyState\":0}\n"
+                    },
+                    {
+                      "text": "SSE_DIAG {\"readyState\":0}\n"
+                    },
+                    {
+                      "text": "SSE_DIAG {\"readyState\":0}\n"
+                    },
+                    {
+                      "text": "SSE_DIAG {\"readyState\":0}\n"
+                    },
+                    {
+                      "text": "SSE_DIAG {\"readyState\":0}\n"
+                    },
+                    {
+                      "text": "SSE_DIAG {\"readyState\":0}\n"
+                    },
+                    {
+                      "text": "SSE_DIAG {\"readyState\":0}\n"
+                    },
+                    {
+                      "text": "SSE_DIAG {\"readyState\":0}\n"
+                    }
+                  ],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-04T05:54:25.208Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "C:\\Users\\zhiyo\\Desktop\\竞赛\\program_v2\\verification\\artifacts\\final-clean-browser-2026-10-04\\clarification-真实-SSE-连续失败降级轮询：待澄清停止轮询，选项续接后成单\\error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "C:\\Users\\zhiyo\\Desktop\\竞赛\\program_v2\\frontend\\e2e\\clarification.spec.ts",
+                    "column": 26,
+                    "line": 50
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "95576b76c291c9797d67-a491a19d85a263d0df74",
+          "file": "clarification.spec.ts",
+          "line": 5,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "structure.spec.ts",
+      "file": "structure.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "四菜一汤：真实五道菜、汤槽位、执行身份与刷新恢复",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 300000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 36340,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-04T05:59:22.042Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "real-menu-and-progress",
+                      "contentType": "application/json",
+                      "body": "eyJyZXF1ZXN0X2lkIjoiNjhlNWQ4ZTQtNWZjOS00ODc2LWFmMmQtMzMyMWU2MGVjMjBlIiwiaXRlbXMiOlt7InJlY2lwZV9pZCI6ODMsIm5hbWUiOiLopb/nuqLmn7/osYbohZDnvrkifSx7InJlY2lwZV9pZCI6MTQ3MSwibmFtZSI6IuS4iuaxpOiPoOiPnCJ9LHsicmVjaXBlX2lkIjoxNDM2LCJuYW1lIjoi5LiK5rGk5aiD5aiD6I+cIn0seyJyZWNpcGVfaWQiOjM4NSwibmFtZSI6IuWutuW4uOiCieacq+amqOiPnOiSuOixhuiFkCJ9LHsicmVjaXBlX2lkIjoxMDAxLCJuYW1lIjoi6JuL6buE6JK46IKJIn1dLCJkaXNoX2tpbmRzIjpbInNvdXAiLCJtYWluIiwibWFpbiIsIm1haW4iLCJtYWluIl0sImludm9jYXRpb25fY291bnQiOjd9"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "15cbc0a9e470f55a69d6-7772b7abc07ddd8b6bbf",
+          "file": "structure.spec.ts",
+          "line": 5,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-04T05:46:34.685Z",
+    "duration": 804107.6,
+    "expected": 7,
+    "skipped": 0,
+    "unexpected": 3,
+    "flaky": 0
+  }
+}

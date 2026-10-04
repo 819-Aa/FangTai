@@ -1,0 +1,33 @@
+{
+  "request_id": "0e69f27b-54df-4060-bb4c-6099f9a21385",
+  "items": [
+    {
+      "recipe_id": 83,
+      "name": "西红柿豆腐羹"
+    },
+    {
+      "recipe_id": 385,
+      "name": "家常肉末榨菜蒸豆腐"
+    },
+    {
+      "recipe_id": 889,
+      "name": "农家小炒肉"
+    },
+    {
+      "recipe_id": 1643,
+      "name": "西红柿烧芦子"
+    },
+    {
+      "recipe_id": 1531,
+      "name": "家常烤时蔬"
+    }
+  ],
+  "dish_kinds": [
+    "soup",
+    "main",
+    "main",
+    "main",
+    "main"
+  ],
+  "invocation_count": 7
+}

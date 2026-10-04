@@ -1,0 +1,113 @@
+{
+  "date": "2026-10-04",
+  "implementation_completed": [
+    "fixed_public_progress",
+    "generation_and_invocation_identity",
+    "frontend_identity_binding",
+    "mixed_menu_soup_requirement",
+    "stock_dish_classification",
+    "cold_sse_execution_restore"
+  ],
+  "backend": {
+    "passed": 1581,
+    "skipped": 3,
+    "deselected": 5,
+    "log": "completion-post-cold-backend-2026-10-04.log"
+  },
+  "frontend": {
+    "passed": 80,
+    "log": "completion-frontend-2026-10-04.log",
+    "build_passed": true,
+    "build_log": "completion-build-2026-10-04.log"
+  },
+  "http_commit_fault": {
+    "request_id": "161c4b86-c3d4-492b-bb12-7c94242e53b8",
+    "checks": 17,
+    "passed": 17,
+    "original_report": "http-commit-fault-2026-10-04.json",
+    "reconciled_report": "http-commit-fault-reconciled-2026-10-04.json",
+    "initial_assertion_errors_preserved": true
+  },
+  "restart": {
+    "api_pid": 13116,
+    "direct_sse_without_prior_status_get_passed": true,
+    "stored_result_checks_passed": 12
+  },
+  "browser": {
+    "planned": 10,
+    "completed_without_logged_failure": 8,
+    "failed_clarification": 1,
+    "interrupted_structure": 1,
+    "final_playwright_json_produced": false
+  },
+  "provider_block": {
+    "provider": "DashScope",
+    "error": "Arrearage",
+    "http_status": 400,
+    "model_tests_stopped": true,
+    "historical": true
+  },
+  "four_dishes_soup": {
+    "old_completion_invalidated": "stock-prepared vegetable was wrongly classified as soup",
+    "classification_fixed": true,
+    "latest_real_completion_verified": true,
+    "blocking_error": null,
+    "latest_report": "official-deepseek-pro-reconciled-2026-10-04.json"
+  },
+  "whole_optimization_acceptance_complete": false,
+  "services": {
+    "api": 8003,
+    "user_frontend": 5174,
+    "fault_test_server_stopped": true,
+    "browser_test_server_stopped": true
+  },
+  "free_model_switch": {
+    "provider": "SiliconFlow China",
+    "model": "Qwen/Qwen3-8B",
+    "base_url": "https://api.siliconflow.cn/v1",
+    "enable_thinking": false,
+    "config_changed": true,
+    "api_restarted": true,
+    "prompt_audit_prerequisite_added": true,
+    "regression_passed": 94,
+    "real_http_checks_passed": 8,
+    "report": "free-qwen-explicit-audit-soup-2026-10-04.json",
+    "browser_pending": false,
+    "browser_result": {
+      "first_run": {
+        "passed": 1,
+        "failed": 1,
+        "failure": "minimum-time options remained infeasible",
+        "report": "free-model-live-browser-2026-10-04.json"
+      },
+      "clarification_recheck": {
+        "passed": 1,
+        "failed": 0,
+        "report": "free-model-clarification-browser-2026-10-04.json"
+      },
+      "covered_remaining_scenarios": 2,
+      "single_run_all_green": false
+    }
+  },
+  "subsequent_provider_switch": {
+    "provider": "DeepSeek official",
+    "model": "deepseek-v4-pro",
+    "base_url": "https://api.deepseek.com",
+    "thinking_effort": "low",
+    "real_http_pending": false,
+    "browser_passed": 2,
+    "browser_report": "official-deepseek-browser-2026-10-04.json",
+    "cross_layer_checks_passed": 8,
+    "cross_layer_report": "official-deepseek-pro-reconciled-2026-10-04.json",
+    "regression_passed": 35,
+    "regression_log": "official-deepseek-final-regression-2026-10-04.log",
+    "initial_full_backend": {
+      "passed": 1583,
+      "failed": 2,
+      "cause": "preflight restricted to Qwen; now fixed and targeted rechecked"
+    },
+    "empty_model_output_observed": 1,
+    "full_ten_browser_tests_rerun": false
+  },
+  "current_acceptance_limitation": "Current DeepSeek profile verified on two representative browser scenarios; full ten-case suite not rerun."
+}

@@ -1,0 +1,26 @@
+{
+  "model": "Qwen/Qwen3-8B",
+  "base_url": "https://api.siliconflow.cn/v1",
+  "enable_thinking": false,
+  "ok": true,
+  "usage": {
+    "completion_tokens": 5,
+    "prompt_tokens": 29,
+    "total_tokens": 34,
+    "completion_tokens_details": {
+      "accepted_prediction_tokens": null,
+      "audio_tokens": null,
+      "reasoning_tokens": 0,
+      "rejected_prediction_tokens": null
+    },
+    "prompt_tokens_details": {
+      "audio_tokens": null,
+      "cache_write_tokens": null,
+      "cached_tokens": 0
+    },
+    "prompt_cache_hit_tokens": 0,
+    "prompt_cache_miss_tokens": 29
+  },
+  "response_model": "Qwen/Qwen3-8B",
+  "elapsed_seconds": 1.35
+}

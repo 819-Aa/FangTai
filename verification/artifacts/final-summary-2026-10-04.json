@@ -1,0 +1,38 @@
+{
+  "date": "2026-10-04",
+  "scope": "Core interaction flows; not a full sign-off of every optimization item",
+  "backend": {
+    "passed": 1568,
+    "skipped": 3,
+    "deselected": 5
+  },
+  "frontend": {
+    "passed": 77
+  },
+  "live_browser": {
+    "whole_suite_before_sse_fix": 8,
+    "post_fix_poll_clarification": 1,
+    "post_fix_affected_cases": 2,
+    "batches_must_not_be_described_as_one_run": true
+  },
+  "core_http_flows_verified": true,
+  "restart": {
+    "passed_checks": 24,
+    "requests": 4,
+    "complete": true
+  },
+  "rollback_mysql_component_tests_passed": 2,
+  "remaining": [
+    "Fixed public text templates and full generation/call ID binding",
+    "Four dishes and one soup completion",
+    "HTTP workflow storage fault injection"
+  ],
+  "evidence": [
+    "live-chain-summary-2026-10-04.json",
+    "live-recovery-reconciled-2026-10-04.json",
+    "live-browser-2026-10-04.json",
+    "browser-poll-clarification-2026-10-04.json",
+    "restart-after-2026-10-04.json"
+  ],
+  "production_fix": "Native network error events no longer reset SSE failure counts; business SSE error is not a transport failure"
+}

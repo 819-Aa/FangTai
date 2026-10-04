@@ -110,3 +110,65 @@ class TestSseReplay:
         assert len([e for e in events if e["id"] == f"ev_answer_{rid}"]) == 1
         assert [e["event"] for e in events] == ["answer_ready"]
         _cleanup(rid)
+
+    def test_thought_node_and_tool_trace_replay(self) -> None:
+        """R05: thought_node 与 tool_trace 可按稳定 ID 续传与解析。"""
+        rid = _unique("r")
+        _ready_request(rid)
+        api.publish_thought_node(
+            rid, "candidate_search", "菜品候选检索", "running",
+            tool_name="search_candidates", event_id=f"ev_thought_{rid}_1"
+        )
+        api.publish_tool_trace(
+            rid, "search_candidates", "检索完成，获取 20 道候选菜品",
+            node_id="candidate_search", duration_ms=120, event_id=f"ev_tool_{rid}_1"
+        )
+        api.publish_thought_node(
+            rid, "candidate_search", "菜品候选检索", "done",
+            summary="检索完成，获取 20 道候选菜品", tool_name="search_candidates",
+            duration_ms=120, event_id=f"ev_thought_{rid}_2"
+        )
+
+        all_events = api.subscribe_events(rid)
+        assert len(all_events) == 3
+        assert [e["event"] for e in all_events] == ["thought_node", "tool_trace", "thought_node"]
+
+        # 断线续传：Last-Event-ID=ev_thought_xxx_1 → 只返回其后的 tool_trace 和 thought_node
+        tail = api.subscribe_events(rid, f"ev_thought_{rid}_1")
+        assert len(tail) == 2
+        assert [e["id"] for e in tail] == [f"ev_tool_{rid}_1", f"ev_thought_{rid}_2"]
+
+        tool_data = json.loads(tail[0]["data"])
+        assert tool_data["tool_name"] == "search_candidates"
+        assert tool_data["duration_ms"] == 120
+
+        node_data = json.loads(tail[1]["data"])
+        assert node_data["node_id"] == "candidate_search"
+        assert node_data["status"] == "done"
+        assert node_data["duration_ms"] == 120
+        _cleanup(rid)
+
+    def test_thought_node_and_tool_trace_privacy_blocked(self) -> None:
+        """R05 隐私防御：thought_node 与 tool_trace 包含禁止敏感字段时 fail-closed。"""
+        import pytest
+        from food_agent_v2.d1 import SensitiveDataBlocked
+
+        rid = _unique("r")
+        _ready_request(rid)
+
+        # 尝试在 thought_node 中泄漏 user_id
+        with pytest.raises(SensitiveDataBlocked):
+            api.publish_thought_node(
+                rid, "test_node", "测试", "done",
+                summary="用户数据", event_id=f"ev_leak_{rid}",
+                user_id=123,
+            )
+
+        # 尝试在 tool_trace 中泄漏 disease_name
+        with pytest.raises(SensitiveDataBlocked):
+            api.publish_tool_trace(
+                rid, "search_candidates", "结果",
+                disease_name="diabetes",
+            )
+
+        _cleanup(rid)

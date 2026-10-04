@@ -204,14 +204,14 @@ class TestApiApplication:
         assert "detail" not in body
 
     def test_analysis_event_payload_is_real_data(self) -> None:
-        """analysis_ready 的 data 为原始 stage/summary/evidence_refs（非 violations 列表）。"""
+        """analysis_ready 保留阶段与证据引用，摘要来自固定公开模板。"""
         rid = _unique("r")
         api._requests[rid] = {"request_id": rid, "status": "running"}
         api.publish_analysis_event(rid, "health", "分析了 10 道菜", ["ev:1"])
         ev = next(e for e in api.subscribe_events(rid) if e["event"] == "analysis_ready")
         data = json.loads(ev["data"])
         assert data["stage"] == "health"
-        assert data["summary"] == "分析了 10 道菜"
+        assert data["summary"] == "健康合规审查已完成"
         assert data["evidence_refs"] == ["ev:1"]
         assert isinstance(data, dict)
 

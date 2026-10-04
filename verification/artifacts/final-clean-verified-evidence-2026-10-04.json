@@ -1,0 +1,76 @@
+[
+  {
+    "name": "real-poll-clarification",
+    "data": {
+      "request_ids": [
+        "853cd05c-5cde-409f-b6ce-df885cd94be4",
+        "958f9faa-0825-468c-8f77-a1242b7035e1",
+        "8044d130-91a1-4e99-b0f2-c3fff8262795"
+      ],
+      "polls_before_clarification": 3,
+      "poll_stopped": true,
+      "final_status": "completed",
+      "session_id": "134ff010-63e",
+      "menu": {
+        "build_id": "98f7cf59-29b2-4c0c-b933-5a8f6ed0e669",
+        "plan_id": "f500fe3370c79182c9caafad4c9212aed194b6586223ef5286520aab6dddc8df",
+        "menu_hash": "34fdf9f933965844c49dd725c0c27602a821d3a544d4f1d6bc81183da6c660ea",
+        "recipe_ids": [
+          1720,
+          320,
+          228
+        ],
+        "items": [
+          {
+            "recipe_id": 1720,
+            "name": "五谷丰登"
+          },
+          {
+            "recipe_id": 320,
+            "name": "冬瓜双豆"
+          },
+          {
+            "recipe_id": 228,
+            "name": "滋补养生梨"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "real-menu-and-progress",
+    "data": {
+      "request_id": "a14aa131-479f-467d-8667-97ed43f20945",
+      "items": [
+        {
+          "recipe_id": 83,
+          "name": "西红柿豆腐羹"
+        },
+        {
+          "recipe_id": 1471,
+          "name": "上汤菠菜"
+        },
+        {
+          "recipe_id": 1436,
+          "name": "上汤娃娃菜"
+        },
+        {
+          "recipe_id": 385,
+          "name": "家常肉末榨菜蒸豆腐"
+        },
+        {
+          "recipe_id": 1001,
+          "name": "蛋黄蒸肉"
+        }
+      ],
+      "dish_kinds": [
+        "soup",
+        "main",
+        "main",
+        "main",
+        "main"
+      ],
+      "invocation_count": 7
+    }
+  }
+]

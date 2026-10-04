@@ -1,0 +1,16 @@
+{
+  "model": "deepseek-v4-pro",
+  "ok": true,
+  "usage": {
+    "prompt_tokens": 35,
+    "completion_tokens": 51,
+    "elapsed_ms": 1903,
+    "model": "deepseek-v4-pro"
+  },
+  "reasoning_extra_body": {
+    "thinking": {
+      "type": "enabled"
+    },
+    "reasoning_effort": "low"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "date": "2026-10-04",
+  "original_report": "live-chain-2026-10-04.json",
+  "original_exit_code": 1,
+  "initial_checks": 43,
+  "initial_passed": 42,
+  "original_failures": [
+    "replacement_committed_menu"
+  ],
+  "outbox_timing_revalidation": "outbox-reconciled-2026-10-04.json",
+  "timing_failure_resolved": true,
+  "concurrent_failure_preserved_winner_menu": true,
+  "no_network_block": true,
+  "limitations": [
+    "HTTP workflow storage failure injection not performed; transaction rollback is verified separately by component tests"
+  ],
+  "all_original_failures_resolved": true
+}

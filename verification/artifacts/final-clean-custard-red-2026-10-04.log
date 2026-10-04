@@ -1,0 +1,85 @@
+....FFF..                                                                [100%]
+================================== FAILURES ===================================
+_ test_stock_preparation_does_not_replace_a_soup_slot[\u9ebb\u5a46\u86cb\u7fb9-main] _
+
+name = '���ŵ���', expected = 'main'
+
+    @pytest.mark.parametrize(
+        "name,expected",
+        [
+            ("�������޲�", "main"),
+            ("�����˶���", "main"),
+            ("����������", "soup"),
+            ("������������", "soup"),
+            ("���ŵ���", "main"),
+            ("Ϻ��������", "main"),
+            ("������", "main"),
+            ("������������", "soup"),
+            ("������������", "soup"),
+        ],
+    )
+    def test_stock_preparation_does_not_replace_a_soup_slot(name, expected):
+>       assert MenuPlanner._classify_dish_type(name) == expected
+E       AssertionError: assert 'soup' == 'main'
+E         
+E         - main
+E         + soup
+
+tests\c2\test_soup_classification.py:21: AssertionError
+_ test_stock_preparation_does_not_replace_a_soup_slot[\u867e\u4ec1\u84b8\u86cb\u7fb9-main] _
+
+name = 'Ϻ��������', expected = 'main'
+
+    @pytest.mark.parametrize(
+        "name,expected",
+        [
+            ("�������޲�", "main"),
+            ("�����˶���", "main"),
+            ("����������", "soup"),
+            ("������������", "soup"),
+            ("���ŵ���", "main"),
+            ("Ϻ��������", "main"),
+            ("������", "main"),
+            ("������������", "soup"),
+            ("������������", "soup"),
+        ],
+    )
+    def test_stock_preparation_does_not_replace_a_soup_slot(name, expected):
+>       assert MenuPlanner._classify_dish_type(name) == expected
+E       AssertionError: assert 'soup' == 'main'
+E         
+E         - main
+E         + soup
+
+tests\c2\test_soup_classification.py:21: AssertionError
+_ test_stock_preparation_does_not_replace_a_soup_slot[\u9e21\u86cb\u7fb9-main] _
+
+name = '������', expected = 'main'
+
+    @pytest.mark.parametrize(
+        "name,expected",
+        [
+            ("�������޲�", "main"),
+            ("�����˶���", "main"),
+            ("����������", "soup"),
+            ("������������", "soup"),
+            ("���ŵ���", "main"),
+            ("Ϻ��������", "main"),
+            ("������", "main"),
+            ("������������", "soup"),
+            ("������������", "soup"),
+        ],
+    )
+    def test_stock_preparation_does_not_replace_a_soup_slot(name, expected):
+>       assert MenuPlanner._classify_dish_type(name) == expected
+E       AssertionError: assert 'soup' == 'main'
+E         
+E         - main
+E         + soup
+
+tests\c2\test_soup_classification.py:21: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/c2/test_soup_classification.py::test_stock_preparation_does_not_replace_a_soup_slot[\u9ebb\u5a46\u86cb\u7fb9-main]
+FAILED tests/c2/test_soup_classification.py::test_stock_preparation_does_not_replace_a_soup_slot[\u867e\u4ec1\u84b8\u86cb\u7fb9-main]
+FAILED tests/c2/test_soup_classification.py::test_stock_preparation_does_not_replace_a_soup_slot[\u9e21\u86cb\u7fb9-main]
+3 failed, 6 passed in 1.01s

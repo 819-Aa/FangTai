@@ -1,0 +1,32 @@
+.........................F................                               [100%]
+================================== FAILURES ===================================
+___________ test_model_name_does_not_inject_old_provider_reasoning ____________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x0000022C9F08DC50>
+
+    def test_model_name_does_not_inject_old_provider_reasoning(monkeypatch):
+        """��ȥ�����ṩ����ʽ������ģ�������ܸ�����ʽ������Դ��"""
+        from food_agent_v2.c3.llm_client import LLMClient
+        from food_agent_v2.core.config import LLMConfig
+    
+        cfg = LLMConfig(
+            api_key="test", base_url="https://example.invalid",
+            model_reasoning="qwen3.8-max",
+        )
+        monkeypatch.setattr(
+            "food_agent_v2.c3.llm_client.load_config", lambda: SimpleNamespace(llm=cfg)
+        )
+        client = LLMClient()
+        calls = []
+        monkeypatch.setattr(client, "_call_openai", lambda **kw: calls.append(kw) or {"content": "{}"})
+    
+        client.invoke("menu_decision", "system", "next action")
+        client.invoke("answer_generation", "system", "answer")
+    
+>       assert calls[0]["extra_body"] is None
+E       assert {} is None
+
+tests\c3\test_agent_validation_regressions.py:460: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/c3/test_agent_validation_regressions.py::test_model_name_does_not_inject_old_provider_reasoning
+1 failed, 41 passed in 4.36s

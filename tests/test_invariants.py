@@ -93,7 +93,8 @@ class TestC2:
     def test_classify_dish_type(self):
         from food_agent_v2.c2 import MenuPlanner
         assert MenuPlanner._classify_dish_type("紫菜蛋花汤") == "soup"
-        assert MenuPlanner._classify_dish_type("番茄蛋羹") == "soup"
+        assert MenuPlanner._classify_dish_type("番茄蛋羹") == "main"
+        assert MenuPlanner._classify_dish_type("西红柿豆腐羹") == "soup"
         assert MenuPlanner._classify_dish_type("扬州炒饭") == "staple"
         assert MenuPlanner._classify_dish_type("红糖姜枣茶") == "drink"
         assert MenuPlanner._classify_dish_type("红烧肉") == "main"

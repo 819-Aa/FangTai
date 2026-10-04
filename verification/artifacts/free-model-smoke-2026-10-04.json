@@ -1,0 +1,15 @@
+{
+  "model": "deepseek-v4-pro-0813",
+  "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+  "enable_thinking": false,
+  "quota_evidence": "user screenshot: 1M tokens, expiry 2026-11-13",
+  "ok": false,
+  "status": 400,
+  "body": {
+    "message": "Access denied, please make sure your account is in good standing. For details, see: https://help.aliyun.com/zh/model-studio/error-code#overdue-payment",
+    "type": "Arrearage",
+    "param": null,
+    "code": "Arrearage"
+  },
+  "elapsed_seconds": 1.34
+}

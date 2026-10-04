@@ -1,0 +1,559 @@
+{
+  "date": "2026-10-04",
+  "transport": "real HTTP",
+  "mock": false,
+  "scenarios": [
+    {
+      "name": "recommendation",
+      "request_id": "8b0fb677-7b98-4d99-9975-353ecc1b665f",
+      "session_id": "a6de5b36-b97",
+      "status": "completed",
+      "error_code": null,
+      "outbox_wait_seconds": 4.3,
+      "mysql_log_status": "completed",
+      "outbox_types": [
+        "answer_ready",
+        "result_committed"
+      ],
+      "sse_types": [
+        "request_accepted",
+        "thought_node",
+        "thought_node",
+        "analysis_ready",
+        "answer_started",
+        "thought_node",
+        "thought_node",
+        "analysis_ready",
+        "thought_node",
+        "tool_trace",
+        "thought_node",
+        "analysis_ready",
+        "thought_node",
+        "tool_trace",
+        "thought_node",
+        "analysis_ready",
+        "thought_node",
+        "tool_trace",
+        "thought_node",
+        "analysis_ready",
+        "thought_node",
+        "tool_trace",
+        "thought_node",
+        "thought_node",
+        "answer_ready",
+        "result_committed"
+      ],
+      "sse_ids_unique": true,
+      "resume_exact_suffix": true,
+      "public_forbidden_field_count": 0
+    },
+    {
+      "name": "replacement",
+      "request_id": "cb816167-c227-4f81-96b4-81b147558efa",
+      "session_id": "a6de5b36-b97",
+      "status": "completed",
+      "error_code": null,
+      "outbox_wait_seconds": 4.25,
+      "mysql_log_status": "completed",
+      "outbox_types": [
+        "answer_ready",
+        "result_committed"
+      ],
+      "sse_types": [
+        "request_accepted",
+        "thought_node",
+        "thought_node",
+        "analysis_ready",
+        "answer_started",
+        "thought_node",
+        "thought_node",
+        "analysis_ready",
+        "thought_node",
+        "tool_trace",
+        "thought_node",
+        "analysis_ready",
+        "thought_node",
+        "tool_trace",
+        "thought_node",
+        "analysis_ready",
+        "thought_node",
+        "tool_trace",
+        "thought_node",
+        "analysis_ready",
+        "thought_node",
+        "tool_trace",
+        "thought_node",
+        "thought_node",
+        "answer_ready",
+        "result_committed"
+      ],
+      "sse_ids_unique": true,
+      "resume_exact_suffix": true,
+      "public_forbidden_field_count": 0
+    },
+    {
+      "name": "concurrent_replacement_1",
+      "request_id": "c7e408de-bba3-4bdb-928a-5e5540d0b3cd",
+      "session_id": "a6de5b36-b97",
+      "status": "completed",
+      "error_code": null,
+      "outbox_wait_seconds": 4.72,
+      "mysql_log_status": "completed",
+      "outbox_types": [
+        "answer_ready",
+        "result_committed"
+      ],
+      "sse_types": [
+        "request_accepted",
+        "thought_node",
+        "thought_node",
+        "analysis_ready",
+        "answer_started",
+        "thought_node",
+        "thought_node",
+        "analysis_ready",
+        "thought_node",
+        "tool_trace",
+        "thought_node",
+        "analysis_ready",
+        "thought_node",
+        "tool_trace",
+        "thought_node",
+        "analysis_ready",
+        "thought_node",
+        "tool_trace",
+        "thought_node",
+        "analysis_ready",
+        "thought_node",
+        "tool_trace",
+        "thought_node",
+        "thought_node",
+        "answer_ready",
+        "result_committed"
+      ],
+      "sse_ids_unique": true,
+      "resume_exact_suffix": true,
+      "public_forbidden_field_count": 0
+    },
+    {
+      "name": "concurrent_replacement_2",
+      "request_id": "e9d6e3a4-1cce-45da-805c-00f520fbea31",
+      "session_id": "a6de5b36-b97",
+      "status": "failed",
+      "error_code": "MENU_VERSION_CONFLICT",
+      "outbox_wait_seconds": 4.22,
+      "mysql_log_status": "failed",
+      "outbox_types": [],
+      "sse_types": [
+        "request_accepted",
+        "thought_node",
+        "thought_node",
+        "analysis_ready",
+        "answer_started",
+        "request_terminal"
+      ],
+      "sse_ids_unique": true,
+      "resume_exact_suffix": true,
+      "public_forbidden_field_count": 0
+    },
+    {
+      "name": "clarification",
+      "request_id": "91e1045e-b160-4670-88fe-41b37e337672",
+      "session_id": "716dc768-93d",
+      "status": "needs_clarification",
+      "error_code": "TIME_LIMIT_EXCEEDED",
+      "outbox_wait_seconds": 4.23,
+      "mysql_log_status": "needs_clarification",
+      "outbox_types": [
+        "clarification_needed"
+      ],
+      "sse_types": [
+        "request_accepted",
+        "thought_node",
+        "thought_node",
+        "analysis_ready",
+        "answer_started",
+        "thought_node",
+        "thought_node",
+        "analysis_ready",
+        "thought_node",
+        "tool_trace",
+        "thought_node",
+        "analysis_ready",
+        "thought_node",
+        "tool_trace",
+        "thought_node",
+        "analysis_ready",
+        "thought_node",
+        "tool_trace",
+        "thought_node",
+        "analysis_ready",
+        "thought_node",
+        "analysis_ready",
+        "thought_node",
+        "clarification_needed"
+      ],
+      "sse_ids_unique": true,
+      "resume_exact_suffix": true,
+      "public_forbidden_field_count": 0
+    },
+    {
+      "name": "clarification_reply_1",
+      "request_id": "1466ac5b-2689-43ae-b44a-65622c8c1a25",
+      "session_id": "716dc768-93d",
+      "status": "needs_clarification",
+      "error_code": "TIME_LIMIT_EXCEEDED",
+      "outbox_wait_seconds": 4.23,
+      "mysql_log_status": "needs_clarification",
+      "outbox_types": [
+        "clarification_needed"
+      ],
+      "sse_types": [
+        "request_accepted",
+        "thought_node",
+        "thought_node",
+        "analysis_ready",
+        "answer_started",
+        "thought_node",
+        "thought_node",
+        "analysis_ready",
+        "thought_node",
+        "tool_trace",
+        "thought_node",
+        "analysis_ready",
+        "thought_node",
+        "tool_trace",
+        "thought_node",
+        "analysis_ready",
+        "thought_node",
+        "tool_trace",
+        "thought_node",
+        "analysis_ready",
+        "thought_node",
+        "analysis_ready",
+        "thought_node",
+        "clarification_needed"
+      ],
+      "sse_ids_unique": true,
+      "resume_exact_suffix": true,
+      "public_forbidden_field_count": 0
+    },
+    {
+      "name": "clarification_reply_2",
+      "request_id": "8d9f1453-d679-47c2-91be-71719d2a97ed",
+      "session_id": "716dc768-93d",
+      "status": "completed",
+      "error_code": null,
+      "outbox_wait_seconds": 4.26,
+      "mysql_log_status": "completed",
+      "outbox_types": [
+        "answer_ready",
+        "result_committed"
+      ],
+      "sse_types": [
+        "request_accepted",
+        "thought_node",
+        "thought_node",
+        "analysis_ready",
+        "answer_started",
+        "thought_node",
+        "thought_node",
+        "analysis_ready",
+        "thought_node",
+        "tool_trace",
+        "thought_node",
+        "analysis_ready",
+        "thought_node",
+        "tool_trace",
+        "thought_node",
+        "analysis_ready",
+        "thought_node",
+        "tool_trace",
+        "thought_node",
+        "analysis_ready",
+        "thought_node",
+        "tool_trace",
+        "thought_node",
+        "thought_node",
+        "answer_ready",
+        "result_committed"
+      ],
+      "sse_ids_unique": true,
+      "resume_exact_suffix": true,
+      "public_forbidden_field_count": 0
+    },
+    {
+      "name": "cancellation",
+      "request_id": "2dd025e8-1937-4411-a0a3-ffc9565e2cea",
+      "session_id": "17e8ad10-67d",
+      "status": "cancelled",
+      "error_code": null,
+      "outbox_wait_seconds": 4.26,
+      "mysql_log_status": "cancelled",
+      "outbox_types": [],
+      "sse_types": [
+        "request_accepted",
+        "request_cancelled"
+      ],
+      "sse_ids_unique": true,
+      "resume_exact_suffix": true,
+      "public_forbidden_field_count": 0
+    }
+  ],
+  "blocked": [],
+  "checks": [
+    {
+      "name": "recommendation_sse_suffix",
+      "passed": true
+    },
+    {
+      "name": "recommendation_public_payload",
+      "passed": true
+    },
+    {
+      "name": "recommendation_mysql_terminal",
+      "passed": true,
+      "http_status": "completed",
+      "mysql_status": "completed"
+    },
+    {
+      "name": "recommendation_committed_menu",
+      "passed": true
+    },
+    {
+      "name": "recommendation_completed",
+      "passed": true
+    },
+    {
+      "name": "idempotent_replay",
+      "passed": true
+    },
+    {
+      "name": "idempotent_conflict",
+      "passed": true
+    },
+    {
+      "name": "replacement_accepted",
+      "passed": true,
+      "http_code": 200
+    },
+    {
+      "name": "replacement_sse_suffix",
+      "passed": true
+    },
+    {
+      "name": "replacement_public_payload",
+      "passed": true
+    },
+    {
+      "name": "replacement_mysql_terminal",
+      "passed": true,
+      "http_status": "completed",
+      "mysql_status": "completed"
+    },
+    {
+      "name": "replacement_committed_menu",
+      "passed": true
+    },
+    {
+      "name": "replacement_only_target_changed",
+      "passed": true
+    },
+    {
+      "name": "stale_menu_conflict",
+      "passed": true
+    },
+    {
+      "name": "concurrent_replacement_1_sse_suffix",
+      "passed": true
+    },
+    {
+      "name": "concurrent_replacement_1_public_payload",
+      "passed": true
+    },
+    {
+      "name": "concurrent_replacement_1_mysql_terminal",
+      "passed": true,
+      "http_status": "completed",
+      "mysql_status": "completed"
+    },
+    {
+      "name": "concurrent_replacement_1_committed_menu",
+      "passed": true
+    },
+    {
+      "name": "concurrent_recovery_same_request",
+      "passed": true
+    },
+    {
+      "name": "concurrent_recovery_new_generation",
+      "passed": true
+    },
+    {
+      "name": "concurrent_replacement_2_sse_suffix",
+      "passed": true
+    },
+    {
+      "name": "concurrent_replacement_2_public_payload",
+      "passed": true
+    },
+    {
+      "name": "concurrent_replacement_2_mysql_terminal",
+      "passed": true,
+      "http_status": "failed",
+      "mysql_status": "failed"
+    },
+    {
+      "name": "concurrent_same_version_not_double_committed",
+      "passed": true
+    },
+    {
+      "name": "concurrent_same_version_one_winner",
+      "passed": true
+    },
+    {
+      "name": "concurrent_requests_reached_terminal",
+      "passed": true
+    },
+    {
+      "name": "target_not_in_menu_rejected",
+      "passed": true
+    },
+    {
+      "name": "clarification_sse_suffix",
+      "passed": true
+    },
+    {
+      "name": "clarification_public_payload",
+      "passed": true
+    },
+    {
+      "name": "clarification_mysql_terminal",
+      "passed": true,
+      "http_status": "needs_clarification",
+      "mysql_status": "needs_clarification"
+    },
+    {
+      "name": "real_clarification_produced",
+      "passed": true
+    },
+    {
+      "name": "clarification_reply_1_sse_suffix",
+      "passed": true
+    },
+    {
+      "name": "clarification_reply_1_public_payload",
+      "passed": true
+    },
+    {
+      "name": "clarification_reply_1_mysql_terminal",
+      "passed": true,
+      "http_status": "needs_clarification",
+      "mysql_status": "needs_clarification"
+    },
+    {
+      "name": "clarification_reply_2_sse_suffix",
+      "passed": true
+    },
+    {
+      "name": "clarification_reply_2_public_payload",
+      "passed": true
+    },
+    {
+      "name": "clarification_reply_2_mysql_terminal",
+      "passed": true,
+      "http_status": "completed",
+      "mysql_status": "completed"
+    },
+    {
+      "name": "clarification_reply_2_committed_menu",
+      "passed": true
+    },
+    {
+      "name": "clarification_reply_completed",
+      "passed": true
+    },
+    {
+      "name": "cancellation_sse_suffix",
+      "passed": true
+    },
+    {
+      "name": "cancellation_public_payload",
+      "passed": true
+    },
+    {
+      "name": "cancellation_mysql_terminal",
+      "passed": true,
+      "http_status": "cancelled",
+      "mysql_status": "cancelled"
+    },
+    {
+      "name": "cancelled_without_menu",
+      "passed": true
+    }
+  ],
+  "readiness": {
+    "http_status": 200,
+    "body": {
+      "status": "ready",
+      "build_id": "98f7cf59-29b2-4c0c-b933-5a8f6ed0e669",
+      "checks": {
+        "mysql": {
+          "status": "ready",
+          "artifact_count": 20,
+          "recipe_count": 1932,
+          "runtime_schema_versions": {
+            "rag_documents": "2.0.0",
+            "nutrition_features": "2.0.0",
+            "step_tasks": "2.0.0"
+          }
+        },
+        "redis": {
+          "status": "ready"
+        },
+        "qdrant": {
+          "status": "ready",
+          "point_count": 1932
+        },
+        "siliconflow": {
+          "status": "ready",
+          "models": {
+            "embedding": "BAAI/bge-m3",
+            "rerank": "BAAI/bge-reranker-v2-m3"
+          }
+        }
+      }
+    }
+  },
+  "idempotent_replay": {
+    "http_status": 200,
+    "same_request_id": true
+  },
+  "idempotent_conflict": {
+    "http_status": 409,
+    "error": "IDEMPOTENCY_KEY_REUSED"
+  },
+  "concurrent_replacement": [
+    {
+      "http_code": 200,
+      "request_id": "c7e408de-bba3-4bdb-928a-5e5540d0b3cd",
+      "status": "completed",
+      "error_code": null
+    },
+    {
+      "http_code": 200,
+      "request_id": "e9d6e3a4-1cce-45da-805c-00f520fbea31",
+      "status": "failed",
+      "error_code": "MENU_VERSION_CONFLICT"
+    }
+  ],
+  "limitations": [
+    "HTTP workflow storage failure injection not performed; transaction rollback is verified separately by component tests"
+  ],
+  "cancel_response": {
+    "http_status": 200,
+    "status": "cancelled",
+    "error": null
+  },
+  "cancelled_without_menu": true
+}

@@ -176,3 +176,89 @@ class TestParticipantMapping:
         assert len(captured) == 1
         mapping = {p["participant_ref"]: int(p["user_id"]) for p in captured[0]}
         assert mapping == {"p3": 3, "p1": 1}
+
+
+class TestReplaceDishValidation:
+    """R07 单菜替换 Schema 校验与版本冲突保护测试。"""
+
+    def test_replace_dish_schema_validation(self) -> None:
+        body = _valid_body()
+        body["action"] = "replace_dish"
+        err = validate_create_request(body)
+        assert err and err["error"] == "VALIDATION_FAILED"
+        fields = [d["field"] for d in err["details"]]
+        assert "target_recipe_id" in fields
+        assert "source_plan_id" in fields
+        assert "source_menu_hash" in fields
+
+    def test_replace_dish_hash_length_validation(self) -> None:
+        body = _valid_body()
+        body["action"] = "replace_dish"
+        body["target_recipe_id"] = 101
+        body["source_plan_id"] = "plan-1"
+        body["source_menu_hash"] = "short_hash"  # not 64 chars
+        err = validate_create_request(body)
+        assert err and any(d["field"] == "source_menu_hash" for d in err["details"])
+
+    def test_replace_dish_requires_existing_session(self) -> None:
+        body = _valid_body()
+        body["action"] = "replace_dish"
+        body["target_recipe_id"] = 101
+        body["source_plan_id"] = "plan-1"
+        body["source_menu_hash"] = "a" * 64
+        code, resp = api.create_request(body)
+        assert code == 422
+        assert resp["error"] == "SESSION_REQUIRED_FOR_REPLACE"
+
+    def test_replace_dish_version_conflict_when_no_menu_or_hash_mismatch(self, monkeypatch) -> None:
+        from unittest.mock import MagicMock
+        mock_c4 = MagicMock()
+        mock_c4.load_clarification_state.return_value = {"protocol_version": "v2", "workflow_mode": "langgraph"}
+        mock_c4.load_request_acceptance.return_value = None
+        mock_c4.load_active_clarification.return_value = None
+        mock_c4.get_session_state.return_value = {
+            "current_menu": {
+                "plan_id": "plan-1",
+                "menu_hash": "a" * 64,
+                "recipe_ids": [101, 102],
+            }
+        }
+        monkeypatch.setattr("food_agent_v2.d1.ContextService", lambda: mock_c4)
+
+        body = _valid_body()
+        body["session_id"] = "sess-1"
+        body["action"] = "replace_dish"
+        body["target_recipe_id"] = 101
+        body["source_plan_id"] = "plan-1"
+        body["source_menu_hash"] = "b" * 64  # Hash mismatch!
+
+        code, resp = api.create_request(body)
+        assert code == 409
+        assert resp["error"] == "MENU_VERSION_CONFLICT"
+        assert resp["current_menu"]["menu_hash"] == "a" * 64
+
+    def test_replace_dish_target_not_in_menu(self, monkeypatch) -> None:
+        from unittest.mock import MagicMock
+        mock_c4 = MagicMock()
+        mock_c4.load_clarification_state.return_value = {"protocol_version": "v2", "workflow_mode": "langgraph"}
+        mock_c4.load_request_acceptance.return_value = None
+        mock_c4.load_active_clarification.return_value = None
+        mock_c4.get_session_state.return_value = {
+            "current_menu": {
+                "plan_id": "plan-1",
+                "menu_hash": "a" * 64,
+                "recipe_ids": [101, 102],
+            }
+        }
+        monkeypatch.setattr("food_agent_v2.d1.ContextService", lambda: mock_c4)
+
+        body = _valid_body()
+        body["session_id"] = "sess-1"
+        body["action"] = "replace_dish"
+        body["target_recipe_id"] = 999  # Not in menu!
+        body["source_plan_id"] = "plan-1"
+        body["source_menu_hash"] = "a" * 64
+
+        code, resp = api.create_request(body)
+        assert code == 422
+        assert resp["error"] == "TARGET_RECIPE_NOT_IN_MENU"

@@ -4,7 +4,7 @@
   .\\.venv\\Scripts\\python.exe scripts/verify_v2_live_samples.py
 
 目标：
-在独立新会话、WORKFLOW_MODE=langgraph、持久化 v2 协议下，用真实在线模型 (qwen3.8-max)
+在独立新会话、LangGraph 和持久化 v2 协议下，使用当前 LLM_* 配置的真实在线模型
 执行端到端场景，采集：
 1. request_id, session_id, question_id
 2. 模型调用次数与耗时
@@ -21,7 +21,6 @@ import uuid
 
 # 确保本地 127.0.0.1 不被系统代理拦截
 os.environ["NO_PROXY"] = "localhost,127.0.0.1"
-os.environ["WORKFLOW_MODE"] = "langgraph"
 
 sys.path.insert(0, os.path.abspath("src"))
 

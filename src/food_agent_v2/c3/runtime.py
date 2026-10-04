@@ -279,7 +279,8 @@ class AgentRuntime:
             config: dict | None = None,
             clarification_response: dict | None = None,
             execution_owner: str | None = None,
-            execution_generation: int | None = None) -> None:
+            execution_generation: int | None = None,
+            **extra_kwargs: Any) -> None:
         """执行完整有界状态机（会话锁覆盖同一 session 的读取/运行/提交）。"""
         self._trace = PerfTrace(request_id=request_id)
         self._session_id = session_id
@@ -321,7 +322,8 @@ class AgentRuntime:
         try:
             self._run_locked(request_id, session_id, message, participants,
                              config, c4, lock_token, lost,
-                             clarification_response=clarification_response)
+                             clarification_response=clarification_response,
+                             **extra_kwargs)
         finally:
             # 先停并 join heartbeat，再原子释放（避免续租与释放竞态）
             self._stop_heartbeat(heartbeat, stop)

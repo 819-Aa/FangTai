@@ -1,0 +1,121 @@
+{
+  "date": "2026-10-03",
+  "transport": "real HTTP",
+  "mock": false,
+  "scenarios": [
+    {
+      "name": "recommendation",
+      "request_id": "2376fdab-0f15-42c6-928b-6a3b3c2090bf",
+      "session_id": "c3f6658c-6e6",
+      "status": "failed",
+      "error_code": "MODEL_INVOCATION_FAILED",
+      "mysql_log_status": "failed",
+      "outbox_types": [],
+      "sse_types": [
+        "request_accepted",
+        "thought_node",
+        "thought_node",
+        "analysis_ready",
+        "answer_started",
+        "thought_node",
+        "thought_node",
+        "analysis_ready",
+        "request_terminal"
+      ],
+      "sse_ids_unique": true,
+      "resume_exact_suffix": true,
+      "public_forbidden_field_count": 0
+    },
+    {
+      "name": "clarification",
+      "request_id": "b91cfda7-48e5-4b82-939d-0e38a23d991c",
+      "session_id": "ca613e94-d6e",
+      "status": "failed",
+      "error_code": "MODEL_INVOCATION_FAILED",
+      "mysql_log_status": "failed",
+      "outbox_types": [],
+      "sse_types": [
+        "request_accepted",
+        "thought_node",
+        "thought_node",
+        "analysis_ready",
+        "answer_started",
+        "thought_node",
+        "thought_node",
+        "analysis_ready",
+        "request_terminal"
+      ],
+      "sse_ids_unique": true,
+      "resume_exact_suffix": true,
+      "public_forbidden_field_count": 0
+    },
+    {
+      "name": "cancellation",
+      "request_id": "ea305659-1fac-4f9a-a071-708d96de8df8",
+      "session_id": "06c013c3-56a",
+      "status": "cancelled",
+      "error_code": null,
+      "mysql_log_status": "failed",
+      "outbox_types": [],
+      "sse_types": [
+        "request_accepted",
+        "request_cancelled",
+        "request_terminal"
+      ],
+      "sse_ids_unique": true,
+      "resume_exact_suffix": true,
+      "public_forbidden_field_count": 0
+    }
+  ],
+  "blocked": [
+    "Real replacement/concurrent replacement/commit rollback require a committed menu; recommendation did not complete",
+    "Structured clarification reply requires a real active question; clarification request did not produce one"
+  ],
+  "readiness": {
+    "http_status": 200,
+    "body": {
+      "status": "ready",
+      "build_id": "98f7cf59-29b2-4c0c-b933-5a8f6ed0e669",
+      "checks": {
+        "mysql": {
+          "status": "ready",
+          "artifact_count": 20,
+          "recipe_count": 1932,
+          "runtime_schema_versions": {
+            "rag_documents": "2.0.0",
+            "nutrition_features": "2.0.0",
+            "step_tasks": "2.0.0"
+          }
+        },
+        "redis": {
+          "status": "ready"
+        },
+        "qdrant": {
+          "status": "ready",
+          "point_count": 1932
+        },
+        "siliconflow": {
+          "status": "ready",
+          "models": {
+            "embedding": "BAAI/bge-m3",
+            "rerank": "BAAI/bge-reranker-v2-m3"
+          }
+        }
+      }
+    }
+  },
+  "idempotent_replay": {
+    "http_status": 200,
+    "same_request_id": true
+  },
+  "idempotent_conflict": {
+    "http_status": 409,
+    "error": "IDEMPOTENCY_KEY_REUSED"
+  },
+  "cancel_response": {
+    "http_status": 200,
+    "status": "cancelled",
+    "error": null
+  },
+  "cancelled_without_menu": true
+}

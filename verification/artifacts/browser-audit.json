@@ -1,0 +1,230 @@
+{
+  "config": {
+    "argv": [
+      "D:\\App\\nodejs\\node.exe",
+      "C:\\Users\\zhiyo\\Desktop\\竞赛\\program_v2\\frontend\\node_modules\\@playwright\\test\\cli.js",
+      "test",
+      "--config",
+      "verification/playwright.audit.config.ts"
+    ],
+    "configFile": "C:\\Users\\zhiyo\\Desktop\\竞赛\\program_v2\\frontend\\verification\\playwright.audit.config.ts",
+    "rootDir": "C:/Users/zhiyo/Desktop/竞赛/program_v2/frontend/verification",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "C:/Users/zhiyo/Desktop/竞赛/program_v2/verification/artifacts/browser-audit",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "",
+        "name": "",
+        "testDir": "C:/Users/zhiyo/Desktop/竞赛/program_v2/frontend/verification",
+        "testIgnore": [],
+        "testMatch": [
+          "browser-audit.ts"
+        ],
+        "timeout": 15000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "line",
+        null
+      ],
+      [
+        "json",
+        {
+          "outputFile": "C:\\Users\\zhiyo\\Desktop\\竞赛\\program_v2\\verification\\artifacts\\browser-audit.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.62.1",
+    "workers": 1,
+    "webServer": {
+      "command": "npm run dev -- --port 5175 --strictPort",
+      "url": "http://127.0.0.1:5175",
+      "reuseExistingServer": false,
+      "env": {
+        "VITE_API_BASE_URL": "/api"
+      }
+    }
+  },
+  "suites": [
+    {
+      "title": "browser-audit.ts",
+      "file": "browser-audit.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "B01: real member picker selects a member and enables send",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 15000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 763,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-04T02:18:47.412Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c1c8022d82f93051f58b-8f17ed77f7478178a887",
+          "file": "browser-audit.ts",
+          "line": 65,
+          "column": 1
+        },
+        {
+          "title": "B02: mocked commit locks members; reload starts blank; sidebar restores menu",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 15000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 613,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-04T02:18:49.192Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c1c8022d82f93051f58b-ff73ab2d5e72ee60b487",
+          "file": "browser-audit.ts",
+          "line": 75,
+          "column": 1
+        },
+        {
+          "title": "B03: structured replacement sends source version and refreshes mocked conflict",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 15000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 677,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-04T02:18:49.814Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c1c8022d82f93051f58b-a36dff35d250c5b88056",
+          "file": "browser-audit.ts",
+          "line": 88,
+          "column": 1
+        },
+        {
+          "title": "B04: recovery button survives reload and resends the exact original request",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 15000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 724,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-04T02:18:50.509Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c1c8022d82f93051f58b-93af4cfded70a179780e",
+          "file": "browser-audit.ts",
+          "line": 102,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-04T02:18:41.929Z",
+    "duration": 9707.143,
+    "expected": 4,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

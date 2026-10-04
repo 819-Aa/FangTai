@@ -33,6 +33,13 @@ class SSEEventType(StrEnum):
     ERROR = "error"
     REQUEST_CANCELLED = "request_cancelled"
     REQUEST_TERMINAL = "request_terminal"
+    REQUEST_RECOVERY_REQUIRED = "request_recovery_required"
+    # 流式与现代 Agent 交互扩展事件（RFC 2026-09-30）
+    TEXT_DELTA = "text_delta"
+    THOUGHT_NODE = "thought_node"
+    TOOL_TRACE = "tool_trace"
+    MENU_ARTIFACT = "menu_artifact"
+
 
 
 # 禁止字段列表（D1 §7.1）
@@ -47,8 +54,18 @@ FORBIDDEN_RESPONSE_FIELDS = {
     "qdrant_collection", "mysql_connection_string", "redis_key",
 }
 
+# 自由文本敏感关键词（D1 §7.1，R05/C03 规范）：涵盖英文禁止字段与中文临床体征、疾病名称、过敏史
+FORBIDDEN_TEXT_KEYWORDS = set(FORBIDDEN_RESPONSE_FIELDS) | {
+    "血压", "血糖", "尿酸", "血脂", "胆固醇",
+    "高血压", "低血压", "高血糖", "低血糖", "高尿酸", "高血脂",
+    "糖尿病", "痛风", "冠心病", "心绞痛", "心肌梗塞", "脂肪肝", "肾病", "哮喘",
+    "过敏史", "过敏原详情", "花生过敏", "海鲜过敏", "芒果过敏", "虾过敏", "蟹过敏",
+    "病历", "病史", "患病",
+}
+
 
 PARTICIPANT_REF_RE = re.compile(r"^p([1-9]|[1-4][0-9]|50)$")
+HEX_64_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 MAX_ANONYMOUS_PARTICIPANTS = 50
 
 
@@ -145,11 +162,27 @@ def validate_create_request(data: dict) -> dict | None:
                 if forbidden_subfield in clar_resp:
                     errors.append({"field": f"clarification_response.{forbidden_subfield}", "issue": "forbidden internal field"})
 
+    # R07: 单菜替换动作与结构化版本标识校验
+    action = data.get("action")
+    if action is not None:
+        if action not in ("recommend", "replace_dish"):
+            errors.append({"field": "action", "issue": "must be 'recommend' or 'replace_dish'"})
+        elif action == "replace_dish":
+            target_id = data.get("target_recipe_id")
+            if target_id is None or not isinstance(target_id, int) or isinstance(target_id, bool) or target_id <= 0:
+                errors.append({"field": "target_recipe_id", "issue": "required positive integer for replace_dish"})
+            plan_id = data.get("source_plan_id")
+            if not plan_id or not isinstance(plan_id, str) or not plan_id.strip():
+                errors.append({"field": "source_plan_id", "issue": "required non-empty string for replace_dish"})
+            mhash = data.get("source_menu_hash")
+            if not mhash or not isinstance(mhash, str) or not HEX_64_RE.match(mhash):
+                errors.append({"field": "source_menu_hash", "issue": "required 64-char hexadecimal hash for replace_dish"})
+
     return {"error": "VALIDATION_FAILED", "details": errors} if errors else None
 
 
 def scan_forbidden_fields(obj: Any, path: str = "") -> list[str]:
-    """递归扫描禁止字段（D1 §7.1）。"""
+    """递归扫描禁止字段与敏感自由文本（D1 §7.1，Section 3 规范）。"""
     violations = []
     if isinstance(obj, dict):
         for key, val in obj.items():
@@ -159,6 +192,11 @@ def scan_forbidden_fields(obj: Any, path: str = "") -> list[str]:
     elif isinstance(obj, list):
         for i, item in enumerate(obj):
             violations.extend(scan_forbidden_fields(item, f"{path}[{i}]"))
+    elif isinstance(obj, str):
+        lower_val = obj.lower()
+        for forbidden in FORBIDDEN_TEXT_KEYWORDS:
+            if forbidden in lower_val:
+                violations.append(f"{path} contains sensitive keyword '{forbidden}'")
     return violations
 
 

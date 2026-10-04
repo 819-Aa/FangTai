@@ -1,0 +1,36 @@
+{
+  "request_ids": [
+    "480970bb-8c4e-4b5a-9c02-bc733960689e",
+    "b1d9e402-43d5-49cc-9f2a-9e52616eb597",
+    "b2bdd990-f66f-4819-b2f3-2395ecc4af89",
+    "a0a5424d-7e5c-432e-b732-356f2ff898e5"
+  ],
+  "polls_before_clarification": 4,
+  "poll_stopped": true,
+  "final_status": "completed",
+  "session_id": "9cd3965d-2db",
+  "menu": {
+    "build_id": "98f7cf59-29b2-4c0c-b933-5a8f6ed0e669",
+    "plan_id": "b0391059eec00739ee0ed301080ce4b2f9981ef1e192ab485b7d855e083a1d10",
+    "menu_hash": "9b386f4e407f195714989ec1652ef3227912688ea2f37a794d4b2beb70033dcb",
+    "recipe_ids": [
+      1643,
+      1304,
+      320
+    ],
+    "items": [
+      {
+        "recipe_id": 1643,
+        "name": "西红柿烧芦子"
+      },
+      {
+        "recipe_id": 1304,
+        "name": "春笋三杯鸡"
+      },
+      {
+        "recipe_id": 320,
+        "name": "冬瓜双豆"
+      }
+    ]
+  }
+}

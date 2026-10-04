@@ -1,0 +1,79 @@
+{
+  "mock": false,
+  "checks": [
+    {
+      "name": "cancel_http_confirmed",
+      "passed": true
+    },
+    {
+      "name": "cancel_get_mysql_consistent",
+      "passed": true,
+      "get_status": "cancelled",
+      "mysql_status": "cancelled"
+    },
+    {
+      "name": "cancel_sse_without_failed",
+      "passed": true
+    },
+    {
+      "name": "cancel_no_menu",
+      "passed": true
+    },
+    {
+      "name": "recovery_get_reason",
+      "passed": true
+    },
+    {
+      "name": "recovery_sse_visible",
+      "passed": true,
+      "event_types": [
+        "request_recovery_required"
+      ]
+    },
+    {
+      "name": "recovery_sse_resume",
+      "passed": true
+    },
+    {
+      "name": "recovery_not_false_terminal",
+      "passed": true
+    },
+    {
+      "name": "recovery_same_request_id",
+      "passed": true
+    },
+    {
+      "name": "recovery_new_generation",
+      "passed": true,
+      "before": 1,
+      "after": 2
+    },
+    {
+      "name": "recovery_real_menu_completed",
+      "passed": true,
+      "status": "completed",
+      "error": null
+    },
+    {
+      "name": "recovery_terminal_consistent",
+      "passed": true
+    },
+    {
+      "name": "recovery_get_mysql_session_consistent",
+      "passed": false
+    }
+  ],
+  "requests": [
+    {
+      "scenario": "early_cancel",
+      "request_id": "693f70c4-9a3c-48e4-ad4b-f059803343d3",
+      "session_id": "9dcbbd51-91c"
+    },
+    {
+      "scenario": "lock_recovery",
+      "request_id": "443fe42c-0fed-4308-9389-7b3077c0a73e",
+      "session_id": "b4ba9663-497"
+    }
+  ],
+  "complete": false
+}

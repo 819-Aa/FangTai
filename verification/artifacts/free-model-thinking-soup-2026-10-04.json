@@ -1,0 +1,144 @@
+{
+  "mock": false,
+  "request": {
+    "session_id": "3160c366-99f",
+    "participants": [
+      {
+        "participant_ref": "p1"
+      }
+    ],
+    "idempotency_key": "soup-audit-80f24f2ff4b346f1b588f1b0ed8087e9",
+    "message": "今晚晚餐请安排四菜一汤，家常口味，180分钟内完成"
+  },
+  "state": {
+    "request_id": "83abdb39-23aa-44a4-bf4a-00a8c9e736fb",
+    "session_id": "3160c366-99f",
+    "status": "failed",
+    "created_at": "1791089163.0",
+    "updated_at": "1791089163.0",
+    "stage_events_cursor": 9,
+    "result_summary": {
+      "status": "failed"
+    },
+    "error": {
+      "code": "MODEL_ACTION_SCHEMA_INVALID",
+      "message": "Agent 决策模型行动 Schema 校验失败: 1 validation error for AgentAction\naction\n  Field required [type=missing, input_value={}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing"
+    }
+  },
+  "events": [
+    {
+      "id": "1",
+      "event": "request_accepted",
+      "data": {
+        "request_id": "83abdb39-23aa-44a4-bf4a-00a8c9e736fb",
+        "session_id": "3160c366-99f"
+      }
+    },
+    {
+      "id": "ev_thought_83abdb39-23aa-44a4-bf4a-00a8c9e736fb_g1_2a816f6e74e34389a0b09337749bb566_running",
+      "event": "thought_node",
+      "data": {
+        "request_id": "83abdb39-23aa-44a4-bf4a-00a8c9e736fb",
+        "node_id": "context_building",
+        "title": "上下文解析与需求对齐",
+        "status": "running",
+        "summary": "上下文解析与需求对齐进行中",
+        "execution_generation": 1,
+        "invocation_id": "2a816f6e74e34389a0b09337749bb566"
+      }
+    },
+    {
+      "id": "ev_thought_83abdb39-23aa-44a4-bf4a-00a8c9e736fb_g1_2a816f6e74e34389a0b09337749bb566_done",
+      "event": "thought_node",
+      "data": {
+        "request_id": "83abdb39-23aa-44a4-bf4a-00a8c9e736fb",
+        "node_id": "context_building",
+        "title": "上下文解析与需求对齐",
+        "status": "done",
+        "summary": "上下文解析与需求对齐已完成",
+        "execution_generation": 1,
+        "invocation_id": "2a816f6e74e34389a0b09337749bb566"
+      }
+    },
+    {
+      "id": "ev_analysis_83abdb39-23aa-44a4-bf4a-00a8c9e736fb_g1_2a816f6e74e34389a0b09337749bb566_done",
+      "event": "analysis_ready",
+      "data": {
+        "stage": "context_ready",
+        "summary": "上下文解析与需求对齐已完成",
+        "evidence_refs": [],
+        "node_id": "context_building",
+        "status": "done",
+        "execution_generation": 1,
+        "invocation_id": "2a816f6e74e34389a0b09337749bb566"
+      }
+    },
+    {
+      "id": "5",
+      "event": "answer_started",
+      "data": {
+        "request_id": "83abdb39-23aa-44a4-bf4a-00a8c9e736fb"
+      }
+    },
+    {
+      "id": "ev_thought_83abdb39-23aa-44a4-bf4a-00a8c9e736fb_g1_143c4ac89276419b815ec152ad2c89e8_running",
+      "event": "thought_node",
+      "data": {
+        "request_id": "83abdb39-23aa-44a4-bf4a-00a8c9e736fb",
+        "node_id": "query_understanding",
+        "title": "意图分析与查询计划",
+        "status": "running",
+        "summary": "意图分析与查询计划进行中",
+        "execution_generation": 1,
+        "invocation_id": "143c4ac89276419b815ec152ad2c89e8"
+      }
+    },
+    {
+      "id": "ev_thought_83abdb39-23aa-44a4-bf4a-00a8c9e736fb_g1_143c4ac89276419b815ec152ad2c89e8_done",
+      "event": "thought_node",
+      "data": {
+        "request_id": "83abdb39-23aa-44a4-bf4a-00a8c9e736fb",
+        "node_id": "query_understanding",
+        "title": "意图分析与查询计划",
+        "status": "done",
+        "summary": "意图分析与查询计划已完成",
+        "execution_generation": 1,
+        "invocation_id": "143c4ac89276419b815ec152ad2c89e8"
+      }
+    },
+    {
+      "id": "ev_analysis_83abdb39-23aa-44a4-bf4a-00a8c9e736fb_g1_143c4ac89276419b815ec152ad2c89e8_done",
+      "event": "analysis_ready",
+      "data": {
+        "stage": "query_understanding",
+        "summary": "意图分析与查询计划已完成",
+        "evidence_refs": [],
+        "node_id": "query_understanding",
+        "status": "done",
+        "execution_generation": 1,
+        "invocation_id": "143c4ac89276419b815ec152ad2c89e8"
+      }
+    },
+    {
+      "id": "9",
+      "event": "request_terminal",
+      "data": {
+        "request_id": "83abdb39-23aa-44a4-bf4a-00a8c9e736fb",
+        "status": "failed",
+        "message": "Agent 决策模型行动 Schema 校验失败: 1 validation error for AgentAction\naction\n  Field required [type=missing, input_value={}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing"
+      }
+    }
+  ],
+  "dish_kinds": [],
+  "checks": {
+    "completed": false,
+    "exact_five": false,
+    "one_soup": false,
+    "four_main_dishes": false,
+    "mysql_status": false,
+    "menu_consistent": false,
+    "committed_event": false,
+    "fixed_templates": true
+  },
+  "complete": false
+}

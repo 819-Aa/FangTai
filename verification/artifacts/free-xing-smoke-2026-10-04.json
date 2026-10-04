@@ -1,0 +1,6 @@
+{
+  "model": "XingChenAGI/Xing4.0-29B",
+  "listed": true,
+  "ok": false,
+  "error_type": "APITimeoutError"
+}

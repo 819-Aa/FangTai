@@ -438,8 +438,8 @@ def test_commit_failure_keeps_pending_clarification_for_retry(execution, monkeyp
     assert consumed == []
 
 
-def test_qwen_agent_decision_uses_bounded_reasoning_without_changing_other_roles(monkeypatch):
-    """行动选择使用低推理档，避免 Qwen3.8 默认 xhigh 耗尽单次时限。"""
+def test_model_name_does_not_inject_old_provider_reasoning(monkeypatch):
+    """已去除旧提供商隐式参数；模型名不能覆盖显式配置来源。"""
     from food_agent_v2.c3.llm_client import LLMClient
     from food_agent_v2.core.config import LLMConfig
 
@@ -457,23 +457,24 @@ def test_qwen_agent_decision_uses_bounded_reasoning_without_changing_other_roles
     client.invoke("menu_decision", "system", "next action")
     client.invoke("answer_generation", "system", "answer")
 
-    assert calls[0]["reasoning_effort"] == "low"
-    assert calls[1]["reasoning_effort"] is None
+    assert calls[0]["extra_body"] is None
+    assert calls[1]["extra_body"] is None
+    assert not any(call.get("reasoning_effort") for call in calls)
 
 
 @pytest.mark.parametrize(
-    ("extra_body", "expected_effort"),
-    [({"reasoning_effort": "medium"}, "medium"), ({"thinking_budget": 2048}, None)],
+    "extra_body",
+    [{"thinking": {"type": "enabled"}, "reasoning_effort": "low"},
+     {"thinking": {"type": "disabled"}}],
 )
-def test_qwen_agent_decision_respects_explicit_reasoning_config(
-    monkeypatch, extra_body, expected_effort
-):
+def test_deepseek_roles_pass_explicit_config_without_mutation(monkeypatch, extra_body):
     from food_agent_v2.c3.llm_client import LLMClient
     from food_agent_v2.core.config import LLMConfig
 
     cfg = LLMConfig(
         api_key="test", base_url="https://example.invalid",
-        model_reasoning="qwen3.8-max", reasoning_extra_body=extra_body,
+        model_reasoning="deepseek-v4-pro", reasoning_extra_body=extra_body,
+        answer_extra_body={"thinking": {"type": "disabled"}},
     )
     monkeypatch.setattr(
         "food_agent_v2.c3.llm_client.load_config", lambda: SimpleNamespace(llm=cfg)
@@ -483,11 +484,10 @@ def test_qwen_agent_decision_respects_explicit_reasoning_config(
     monkeypatch.setattr(client, "_call_openai", lambda **kw: calls.append(kw) or {"content": "{}"})
 
     client.invoke("menu_decision", "system", "next action")
-
-    assert calls[0]["reasoning_effort"] == expected_effort
-    assert calls[0]["extra_body"] == (
-        {} if expected_effort == "medium" else {"thinking_budget": 2048}
-    )
+    client.invoke("answer_generation", "system", "answer")
+    assert calls[0]["extra_body"] == extra_body
+    assert calls[1]["extra_body"] == {"thinking": {"type": "disabled"}}
+    assert cfg.reasoning_extra_body == extra_body
 
 
 def test_application_commit_error_does_not_consume_pending_selection(execution, monkeypatch):

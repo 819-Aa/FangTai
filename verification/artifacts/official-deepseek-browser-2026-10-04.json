@@ -1,0 +1,203 @@
+{
+  "config": {
+    "argv": [
+      "D:\\App\\nodejs\\node.exe",
+      "C:\\Users\\zhiyo\\Desktop\\竞赛\\program_v2\\frontend\\node_modules\\@playwright\\test\\cli.js",
+      "test",
+      "--config",
+      "verification/playwright.deepseek.config.ts",
+      "clarification.spec.ts",
+      "structure.spec.ts"
+    ],
+    "configFile": "C:\\Users\\zhiyo\\Desktop\\竞赛\\program_v2\\frontend\\verification\\playwright.deepseek.config.ts",
+    "rootDir": "C:/Users/zhiyo/Desktop/竞赛/program_v2/frontend/e2e",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "C:/Users/zhiyo/Desktop/竞赛/program_v2/verification/artifacts/official-deepseek-browser-2026-10-04",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "",
+        "name": "",
+        "testDir": "C:/Users/zhiyo/Desktop/竞赛/program_v2/frontend/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 300000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "line",
+        null
+      ],
+      [
+        "json",
+        {
+          "outputFile": "C:\\Users\\zhiyo\\Desktop\\竞赛\\program_v2\\verification\\artifacts\\official-deepseek-browser-2026-10-04.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.62.1",
+    "workers": 1,
+    "webServer": {
+      "command": "npm run dev -- --port 5176 --strictPort",
+      "url": "http://127.0.0.1:5176",
+      "reuseExistingServer": false,
+      "env": {
+        "VITE_API_BASE_URL": "/api"
+      }
+    }
+  },
+  "suites": [
+    {
+      "title": "clarification.spec.ts",
+      "file": "clarification.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "真实 SSE 连续失败降级轮询：待澄清停止轮询，选项续接后成单",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 300000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 75240,
+                  "errors": [],
+                  "stdout": [
+                    {
+                      "text": "SSE_DIAG {\"readyState\":0}\n"
+                    },
+                    {
+                      "text": "SSE_DIAG {\"readyState\":0}\n"
+                    },
+                    {
+                      "text": "SSE_DIAG {\"readyState\":0}\n"
+                    },
+                    {
+                      "text": "SSE_DIAG {\"readyState\":0}\n"
+                    },
+                    {
+                      "text": "SSE_DIAG {\"readyState\":0}\n"
+                    },
+                    {
+                      "text": "SSE_DIAG {\"readyState\":0}\n"
+                    }
+                  ],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-04T05:15:15.980Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "real-poll-clarification",
+                      "contentType": "application/json",
+                      "body": "ewogICJyZXF1ZXN0X2lkcyI6IFsKICAgICIzMmY3NDIzNi0zN2NkLTQ1MzgtYTFlZC0zYzEzMTYwZmMwZjkiLAogICAgIjQ2YWYwZTM0LWI1ZDUtNGIxNi04ZWQ5LTZmOGFmZWYxOTM2MyIKICBdLAogICJwb2xsc19iZWZvcmVfY2xhcmlmaWNhdGlvbiI6IDUsCiAgInBvbGxfc3RvcHBlZCI6IHRydWUsCiAgImZpbmFsX3N0YXR1cyI6ICJjb21wbGV0ZWQiLAogICJzZXNzaW9uX2lkIjogIjUxYTE3NmFkLTY1YyIsCiAgIm1lbnUiOiB7CiAgICAiYnVpbGRfaWQiOiAiOThmN2NmNTktMjliMi00YzBjLWI5MzMtNWE4ZjZlZDBlNjY5IiwKICAgICJwbGFuX2lkIjogIjYxZDI5ZDNlYzQ5YTg3MTZhMzU3MjJkNTMyNzBkZjA4OTU3YmVmMWUwZjJlZDc1MGMyYmI3ODkxNzQyMTFiMzAiLAogICAgIm1lbnVfaGFzaCI6ICJlYTFkM2EzZTcyMjJiNjZmNzk3ZTg0MmFmNzYzZjBlN2ViYzQ5NjI2MjEzNjJiOTlkMDQ5NzE5ZThmNzIwZWExIiwKICAgICJyZWNpcGVfaWRzIjogWwogICAgICA1MTksCiAgICAgIDMzNSwKICAgICAgMTQ5OAogICAgXSwKICAgICJpdGVtcyI6IFsKICAgICAgewogICAgICAgICJyZWNpcGVfaWQiOiA1MTksCiAgICAgICAgIm5hbWUiOiAi6I6056yL5pyo6ICz6IKJ54mHIgogICAgICB9LAogICAgICB7CiAgICAgICAgInJlY2lwZV9pZCI6IDMzNSwKICAgICAgICAibmFtZSI6ICLogonkuLgiCiAgICAgIH0sCiAgICAgIHsKICAgICAgICAicmVjaXBlX2lkIjogMTQ5OCwKICAgICAgICAibmFtZSI6ICLng6TlhqznrIsiCiAgICAgIH0KICAgIF0KICB9Cn0="
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "95576b76c291c9797d67-a491a19d85a263d0df74",
+          "file": "clarification.spec.ts",
+          "line": 5,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "structure.spec.ts",
+      "file": "structure.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "四菜一汤：真实五道菜、汤槽位、执行身份与刷新恢复",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 300000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 33404,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-04T05:16:31.361Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "real-menu-and-progress",
+                      "contentType": "application/json",
+                      "body": "eyJyZXF1ZXN0X2lkIjoiMGU2OWYyN2ItNTRkZi00MDYwLWJiNGMtNjA5OWY5YTIxMzg1IiwiaXRlbXMiOlt7InJlY2lwZV9pZCI6ODMsIm5hbWUiOiLopb/nuqLmn7/osYbohZDnvrkifSx7InJlY2lwZV9pZCI6Mzg1LCJuYW1lIjoi5a625bi46IKJ5pyr5qao6I+c6JK46LGG6IWQIn0seyJyZWNpcGVfaWQiOjg4OSwibmFtZSI6IuWGnOWutuWwj+eCkuiCiSJ9LHsicmVjaXBlX2lkIjoxNjQzLCJuYW1lIjoi6KW/57qi5p+/54On6Iqm5a2QIn0seyJyZWNpcGVfaWQiOjE1MzEsIm5hbWUiOiLlrrbluLjng6Tml7bolKwifV0sImRpc2hfa2luZHMiOlsic291cCIsIm1haW4iLCJtYWluIiwibWFpbiIsIm1haW4iXSwiaW52b2NhdGlvbl9jb3VudCI6N30="
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "15cbc0a9e470f55a69d6-7772b7abc07ddd8b6bbf",
+          "file": "structure.spec.ts",
+          "line": 5,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-04T05:15:14.573Z",
+    "duration": 110474.548,
+    "expected": 2,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

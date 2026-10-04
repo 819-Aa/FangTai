@@ -45,6 +45,25 @@ export interface ClarificationResponse {
   option_id: number;
 }
 
+export interface ReplaceDishTarget {
+  target_recipe_id: number;
+  dish_name: string;
+  source_plan_id: string;
+  source_menu_hash: string;
+}
+
+export interface CreateRequestPayload {
+  idempotency_key: string;
+  participants: AnonymousParticipant[];
+  message: string;
+  session_id: string;
+  clarification_response?: ClarificationResponse;
+  action?: "recommend" | "replace_dish";
+  target_recipe_id?: number;
+  source_plan_id?: string;
+  source_menu_hash?: string;
+}
+
 export interface SessionState {
   session_id: string;
   participant_refs: string[];
@@ -71,12 +90,29 @@ export interface PhaseEvent {
   data: Record<string, unknown>;
 }
 
+export interface ThoughtStep {
+  node_id: string;
+  execution_generation?: number;
+  invocation_id?: string;
+  title: string;
+  status: "running" | "done" | "warning" | "error";
+  summary?: string;
+  tool_name?: string;
+  duration_ms?: number;
+}
+
 export interface ChatMessage {
   id: string;
+  requestId?: string;
   role: "user" | "assistant";
   content: string;
   createdAt: number;
-  status: "sending" | "complete" | "error";
+  status: "sending" | "complete" | "error" | "cancelled";
+  isCommitted?: boolean;
+  isAnswered?: boolean;
+  thoughts?: ThoughtStep[];
+  clarification?: ClarificationView;
+  selectedOptionId?: number;
 }
 
 // 终态独立展示（禁止统一成普通失败）

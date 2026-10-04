@@ -23,6 +23,7 @@ from food_agent_v2.b4.schemas import HealthEvaluationReceipt, HealthIngredientOc
 from food_agent_v2.c1 import get_retrieval_service
 from food_agent_v2.c1.filters import RetrievalFilters
 from food_agent_v2.c2 import MenuHardConstraints, MenuPlanner
+from food_agent_v2.c3.fast_intent import retrieval_dish_types
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +63,7 @@ def _retrieval_filters_from_query_plan(query_plan: Any) -> RetrievalFilters:
     return RetrievalFilters(
         meal_tags=tuple(getattr(query_plan, "meal_types", ()) or ()),
         population_tags=tuple(getattr(query_plan, "population_tags", ()) or ()),
-        dish_type_tags=tuple(getattr(query_plan, "dish_types", ()) or ()),
+        dish_type_tags=retrieval_dish_types(query_plan),
         taste_tags=tuple(getattr(query_plan, "taste_tags", ()) or ()),
         cuisine_tags=tuple(getattr(query_plan, "cuisine_tags", ()) or ()),
         scenario_tags=tuple(getattr(query_plan, "scenario_tags", ()) or ()),

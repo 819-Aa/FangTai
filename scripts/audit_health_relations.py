@@ -271,7 +271,7 @@ def main() -> int:
     )
     parser.add_argument("--user", default=os.getenv("FOOD_AGENT_DB_USER", "foodagent"))
     parser.add_argument(
-        "--password", default=os.getenv("FOOD_AGENT_DB_PASSWORD", "foodagent_v2")
+        "--password", default=os.getenv("FOOD_AGENT_DB_PASSWORD", "")
     )
     parser.add_argument("--database", default=os.getenv("FOOD_AGENT_DB_NAME", "food_agent_v2"))
     args = parser.parse_args()

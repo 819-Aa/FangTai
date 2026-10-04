@@ -3,54 +3,39 @@ import { describe, expect, it } from "vitest";
 
 import ParticipantContext from "./ParticipantContext.vue";
 
-describe("ParticipantContext（匿名参与者）", () => {
-  it("只渲染匿名槽位，不含真实 user_id/健康详情", () => {
+const members = [
+  { participant_ref: "p1", label: "参与者 1" },
+  { participant_ref: "p2", label: "参与者 2" },
+];
+
+describe("ParticipantContext（本次对话成员选择）", () => {
+  it("从已有成员列表选择，而不是逐个创建成员", async () => {
     const wrapper = mount(ParticipantContext, {
-      props: {
-        slots: [{ participant_ref: "p1", label: "参与者 1" }],
-        selectedRefs: ["p1"],
-        disabled: false,
-      },
+      props: { slots: members, selectedRefs: [], disabled: false },
     });
-    expect(wrapper.text()).toContain("参与者 1");
-    expect(wrapper.text()).toContain("匿名");
-    expect(wrapper.text()).not.toContain("user_id");
-    expect(wrapper.text()).not.toContain("过敏");
-    expect(wrapper.text()).not.toContain("疾病");
-    expect(wrapper.text()).not.toContain("年龄");
+    expect(wrapper.text()).toContain("选择参与成员");
+    expect(wrapper.text()).not.toContain("添加匿名成员");
+    await wrapper.find(".picker-trigger").trigger("click");
+    expect(wrapper.findAll(".picker-item")).toHaveLength(2);
+    await wrapper.findAll(".picker-item")[1].trigger("click");
+    expect(wrapper.emitted("toggle")?.[0]).toEqual(["p2"]);
   });
 
-  it("点击添加按钮触发 add 事件", async () => {
+  it("只展示本次选中的成员，并允许取消选择", async () => {
     const wrapper = mount(ParticipantContext, {
-      props: { slots: [], selectedRefs: [], disabled: false },
+      props: { slots: members, selectedRefs: ["p2"], disabled: false },
     });
-    await wrapper.find(".add-slot").trigger("click");
-    expect(wrapper.emitted("add")).toHaveLength(1);
-  });
-
-  it("点击成员移除按钮触发 remove(ref) 事件", async () => {
-    const wrapper = mount(ParticipantContext, {
-      props: {
-        slots: [{ participant_ref: "p1", label: "参与者 1" }],
-        selectedRefs: ["p1"],
-        disabled: false,
-      },
-    });
+    expect(wrapper.findAll(".chip")).toHaveLength(1);
+    expect(wrapper.find(".chip").text()).toContain("参与者 2");
     await wrapper.find(".chip-x").trigger("click");
-    expect(wrapper.emitted("remove")?.[0]).toEqual(["p1"]);
+    expect(wrapper.emitted("toggle")?.[0]).toEqual(["p2"]);
   });
 
-  it("disabled 时按钮不可交互", async () => {
+  it("已开始的对话不能更改参与成员", () => {
     const wrapper = mount(ParticipantContext, {
-      props: {
-        slots: [{ participant_ref: "p1", label: "参与者 1" }],
-        selectedRefs: ["p1"],
-        disabled: true,
-      },
+      props: { slots: members, selectedRefs: ["p1"], disabled: true },
     });
-    const addBtn = wrapper.find(".add-slot").element as HTMLButtonElement;
-    const xBtn = wrapper.find(".chip-x").element as HTMLButtonElement;
-    expect(addBtn.disabled).toBe(true);
-    expect(xBtn.disabled).toBe(true);
+    expect((wrapper.find(".picker-trigger").element as HTMLButtonElement).disabled).toBe(true);
+    expect((wrapper.find(".chip-x").element as HTMLButtonElement).disabled).toBe(true);
   });
 });

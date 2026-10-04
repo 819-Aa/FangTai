@@ -1,0 +1,10 @@
+{
+  "request_id": "ef34a2f7-a383-4fd6-9c42-deefeedfc08a",
+  "session_id": "de9af486-3b1",
+  "status": "completed",
+  "error_code": null,
+  "mysql_status": "completed",
+  "menu_count": 3,
+  "menu_matches_session": true,
+  "old_question_active": false
+}

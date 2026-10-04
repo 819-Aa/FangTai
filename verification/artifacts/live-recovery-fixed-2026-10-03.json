@@ -1,0 +1,99 @@
+{
+  "mock": false,
+  "checks": [
+    {
+      "name": "cancel_http_confirmed",
+      "passed": true
+    },
+    {
+      "name": "cancel_get_mysql_consistent",
+      "passed": true,
+      "get_status": "cancelled",
+      "mysql_status": "cancelled"
+    },
+    {
+      "name": "cancel_sse_without_failed",
+      "passed": true
+    },
+    {
+      "name": "cancel_no_menu",
+      "passed": true
+    },
+    {
+      "name": "recovery_get_reason",
+      "passed": true
+    },
+    {
+      "name": "recovery_sse_visible",
+      "passed": true,
+      "event_types": [
+        "request_recovery_required"
+      ]
+    },
+    {
+      "name": "recovery_sse_resume",
+      "passed": true
+    },
+    {
+      "name": "recovery_not_false_terminal",
+      "passed": true
+    },
+    {
+      "name": "recovery_same_request_id",
+      "passed": true
+    },
+    {
+      "name": "recovery_new_generation",
+      "passed": true,
+      "before": 1,
+      "after": 2
+    },
+    {
+      "name": "recovery_real_menu_completed",
+      "passed": false,
+      "status": "failed",
+      "error": {
+        "code": "RETRIEVAL_FAILED",
+        "message": "检索服务调用失败: SiliconFlow API /embeddings 连接失败: ConnectError"
+      }
+    },
+    {
+      "name": "recovery_network_failure_terminal_consistent",
+      "passed": true,
+      "get_status": "failed",
+      "mysql_status": "failed",
+      "acceptance_status": "terminal"
+    },
+    {
+      "name": "recovery_failure_no_phantom_menu",
+      "passed": true
+    },
+    {
+      "name": "recovery_failed_terminal_sse",
+      "passed": true
+    },
+    {
+      "name": "recovery_terminal_replay_idempotent",
+      "passed": true
+    },
+    {
+      "name": "recovery_payload_conflict",
+      "passed": true
+    }
+  ],
+  "requests": [
+    {
+      "scenario": "early_cancel",
+      "request_id": "39c69d68-2c90-4723-89e1-58f9748d0403",
+      "session_id": "741440f6-88e"
+    },
+    {
+      "scenario": "lock_recovery",
+      "request_id": "8a2ece4a-530e-4a20-8efa-799514b84c43",
+      "session_id": "38e01f3c-780"
+    }
+  ],
+  "complete": false,
+  "network_blocked": "SiliconFlow /embeddings ConnectError",
+  "result": "recovery protocol and consistent failure verified; completed menu blocked by network"
+}

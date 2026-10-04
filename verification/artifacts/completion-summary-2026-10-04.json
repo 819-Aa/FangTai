@@ -1,0 +1,102 @@
+{
+  "date": "2026-10-04",
+  "current_provider": {
+    "provider": "DeepSeek official",
+    "model": "deepseek-v4-pro",
+    "base_url": "https://api.deepseek.com",
+    "reasoning": {
+      "thinking": {
+        "type": "enabled"
+      },
+      "reasoning_effort": "low"
+    },
+    "query_answer_thinking": "disabled"
+  },
+  "cleanup_report": "final-clean-config-2026-10-04.json",
+  "backend": {
+    "passed": 1596,
+    "failed": 0,
+    "skipped": 3,
+    "skip_reason": "Windows symlink privilege unavailable",
+    "deselected": 5,
+    "warnings": 1,
+    "log": "final-clean-exclusive-backend-2026-10-04.log"
+  },
+  "frontend": {
+    "passed": 80,
+    "log": "final-clean-final-frontend-2026-10-04.log",
+    "build_passed": true,
+    "build_ms": 310,
+    "build_log": "final-clean-verified-browser-2026-10-04.log"
+  },
+  "browser_first_run": {
+    "passed": 7,
+    "failed": 3,
+    "report": "final-clean-browser-2026-10-04.json",
+    "failures": [
+      "page unexpectedly returned to blank chat during documentation edits; reload cause not captured",
+      "provider returned empty JSON content",
+      "model attempted duplicate combine_nutritional_menu; correctly rejected"
+    ]
+  },
+  "changes_after_first_run": [
+    "stable build preview replaces dev server in browser acceptance",
+    "explicit valid JSON example and nonempty final-body instruction",
+    "explicit duplicate planning prohibition and next-step guidance"
+  ],
+  "browser": {
+    "passed": 10,
+    "failed": 0,
+    "skipped": 0,
+    "flaky": 0,
+    "duration_ms": 357567.476,
+    "report": "final-clean-verified-browser-2026-10-04.json",
+    "evidence": "final-clean-verified-evidence-2026-10-04.json",
+    "strict_structure_source": "final-clean-actual-soup-source-2026-10-04.json",
+    "superseded_source_error": "final-clean-custard-source-2026-10-04.json"
+  },
+  "http": {
+    "checks": 43,
+    "passed": 43,
+    "report": "final-clean-http-2026-10-04.json",
+    "soup_requirement_not_used": true
+  },
+  "restart": {
+    "passed": 16,
+    "cold_sse_first": true,
+    "no_reexecution": true,
+    "report": "final-clean-restart-after-2026-10-04.json"
+  },
+  "whole_optimization_acceptance_complete": true,
+  "services": {
+    "api": 8003,
+    "api_pid": 5804,
+    "user_frontend": 5174,
+    "user_frontend_pid": 16580,
+    "ready_http_status": 200,
+    "temporary_test_servers_stopped": true
+  },
+  "historical_summary": "completion-summary-before-cleanup-2026-10-04.json",
+  "known_external_limit": "DeepSeek JSON mode can occasionally return empty content; prompt mitigation does not remove the fail-closed gate.",
+  "backend_prior_runs": [
+    {
+      "log": "final-clean-custard-backend-2026-10-04.log",
+      "passed": 1595,
+      "failed": 1,
+      "cause": "old invariant expected tomato egg custard to be soup; corrected"
+    },
+    {
+      "log": "final-clean-verified-backend-2026-10-04.log",
+      "passed": 1595,
+      "failed": 1,
+      "cause": "MySQL Outbox deadlock while API background dispatcher and integration tests overlapped; final suite run with API stopped"
+    }
+  ],
+  "four_dishes_soup": {
+    "request_id": "a14aa131-479f-467d-8667-97ed43f20945",
+    "actual_soup_recipe_id": 83,
+    "actual_soup_name": "西红柿豆腐羹",
+    "main_count": 4,
+    "source_steps_checked": true
+  }
+}

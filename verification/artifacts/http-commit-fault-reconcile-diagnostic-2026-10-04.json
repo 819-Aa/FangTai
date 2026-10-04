@@ -1,0 +1,501 @@
+{
+  "mock": false,
+  "transport": "real HTTP",
+  "checks": [
+    {
+      "name": "initial_real_menu",
+      "passed": true
+    },
+    {
+      "name": "fault_was_injected_after_real_write",
+      "passed": true
+    },
+    {
+      "name": "http_reports_recovery_required",
+      "passed": true
+    },
+    {
+      "name": "transaction_rolled_back_all_facts",
+      "passed": true
+    },
+    {
+      "name": "old_menu_preserved",
+      "passed": true
+    },
+    {
+      "name": "no_false_completion",
+      "passed": true
+    },
+    {
+      "name": "recovery_keeps_request_id",
+      "passed": true
+    },
+    {
+      "name": "same_payload_generation_two_completed",
+      "passed": true
+    },
+    {
+      "name": "replacement_preserves_other_dishes",
+      "passed": true
+    },
+    {
+      "name": "mysql_http_menu_consistent",
+      "passed": true
+    },
+    {
+      "name": "committed_result_delivered",
+      "passed": true
+    },
+    {
+      "name": "public_invocations_match_persisted_tool_receipts",
+      "passed": true
+    },
+    {
+      "name": "all_tool_invocations_match_actual_node_attempts",
+      "passed": true
+    },
+    {
+      "name": "both_generations_have_distinct_events",
+      "passed": false
+    }
+  ],
+  "session_id": "8ab5d773-3a4",
+  "initial_request_id": "dca20fa3-8647-42d9-893c-ae60a45cf903",
+  "request_id": "161c4b86-c3d4-492b-bb12-7c94242e53b8",
+  "before": {
+    "session": [
+      "7e8fd9301b7846ab86f631b419b1d8e27a3514fe958a9daa82dc0d71033fa2ef",
+      1,
+      1043,
+      null,
+      0
+    ],
+    "version_count": 1,
+    "recommendation_logs": 0,
+    "outbox": 0,
+    "conversation_events": 0
+  },
+  "after_rollback": {
+    "session": [
+      "7e8fd9301b7846ab86f631b419b1d8e27a3514fe958a9daa82dc0d71033fa2ef",
+      1,
+      1043,
+      null,
+      0
+    ],
+    "version_count": 1,
+    "recommendation_logs": 0,
+    "outbox": 0,
+    "conversation_events": 0
+  },
+  "fault_state": {
+    "request_id": "161c4b86-c3d4-492b-bb12-7c94242e53b8",
+    "session_id": "8ab5d773-3a4",
+    "status": "recovery_required",
+    "created_at": "2026-10-04T03:35:32+00:00",
+    "updated_at": "2026-10-04T03:36:59.415193+00:00",
+    "stage_events_cursor": 0,
+    "result_summary": null,
+    "error": {
+      "code": "REQUEST_RECOVERY_REQUIRED",
+      "message": "请求暂未完成，请恢复生成。"
+    }
+  },
+  "injection": {
+    "request_id": "161c4b86-c3d4-492b-bb12-7c94242e53b8",
+    "injected": true,
+    "after_real_outbox_insert": true,
+    "rollback_seen": true
+  },
+  "recovered_state": {
+    "request_id": "161c4b86-c3d4-492b-bb12-7c94242e53b8",
+    "session_id": "8ab5d773-3a4",
+    "status": "completed",
+    "created_at": "1791085103.0",
+    "updated_at": "1791085103.0",
+    "stage_events_cursor": 26,
+    "result_summary": {
+      "status": "completed",
+      "answer": {
+        "text": "为您推荐以下 3 道菜：清炒苕尖、清蒸茄子、粉蒸藕夹。\n清炒苕尖、清蒸茄子、粉蒸藕夹\n菜品已结合当前参与者的饮食约束与健康审查结果筛选，并兼顾口味与菜式多样化。\n按当前步骤估算，预计需要 41 分钟。",
+        "menu_ref": "f140e9e7-1b3a-467e-8132-95355caa1ec6",
+        "evidence_refs": [
+          "0d702fb3-ebff-4426-afd1-755690e67237"
+        ]
+      },
+      "menu_summary": {
+        "build_id": "98f7cf59-29b2-4c0c-b933-5a8f6ed0e669",
+        "plan_id": "fced17a18bf9bb0c5276b984e4880e99dbde7359fcea18c86067b43cc54e9a60",
+        "menu_hash": "8cea0846403497eb50c492080b59b9695ae952ebce95bc46940a8783763acf17",
+        "recipe_ids": [
+          778,
+          1789,
+          747
+        ],
+        "items": [
+          {
+            "recipe_id": 778,
+            "name": "清炒苕尖"
+          },
+          {
+            "recipe_id": 1789,
+            "name": "清蒸茄子"
+          },
+          {
+            "recipe_id": 747,
+            "name": "粉蒸藕夹"
+          }
+        ]
+      }
+    },
+    "error": null
+  },
+  "events": [
+    {
+      "id": "1",
+      "event": "request_accepted",
+      "data": {
+        "request_id": "161c4b86-c3d4-492b-bb12-7c94242e53b8",
+        "session_id": "8ab5d773-3a4"
+      }
+    },
+    {
+      "id": "ev_thought_161c4b86-c3d4-492b-bb12-7c94242e53b8_g2_c794a03108364182bb5b99968a283571_running",
+      "event": "thought_node",
+      "data": {
+        "request_id": "161c4b86-c3d4-492b-bb12-7c94242e53b8",
+        "node_id": "context_building",
+        "title": "上下文解析与需求对齐",
+        "status": "running",
+        "summary": "上下文解析与需求对齐进行中",
+        "execution_generation": 2,
+        "invocation_id": "c794a03108364182bb5b99968a283571"
+      }
+    },
+    {
+      "id": "ev_thought_161c4b86-c3d4-492b-bb12-7c94242e53b8_g2_c794a03108364182bb5b99968a283571_done",
+      "event": "thought_node",
+      "data": {
+        "request_id": "161c4b86-c3d4-492b-bb12-7c94242e53b8",
+        "node_id": "context_building",
+        "title": "上下文解析与需求对齐",
+        "status": "done",
+        "summary": "上下文解析与需求对齐已完成",
+        "execution_generation": 2,
+        "invocation_id": "c794a03108364182bb5b99968a283571"
+      }
+    },
+    {
+      "id": "ev_analysis_161c4b86-c3d4-492b-bb12-7c94242e53b8_g2_c794a03108364182bb5b99968a283571_done",
+      "event": "analysis_ready",
+      "data": {
+        "stage": "context_ready",
+        "summary": "上下文解析与需求对齐已完成",
+        "evidence_refs": [],
+        "execution_generation": 2,
+        "invocation_id": "c794a03108364182bb5b99968a283571"
+      }
+    },
+    {
+      "id": "5",
+      "event": "answer_started",
+      "data": {
+        "request_id": "161c4b86-c3d4-492b-bb12-7c94242e53b8"
+      }
+    },
+    {
+      "id": "ev_thought_161c4b86-c3d4-492b-bb12-7c94242e53b8_g2_c4e657bd9d6b444bbe7e0a7b6ba4785d_running",
+      "event": "thought_node",
+      "data": {
+        "request_id": "161c4b86-c3d4-492b-bb12-7c94242e53b8",
+        "node_id": "query_understanding",
+        "title": "意图分析与查询计划",
+        "status": "running",
+        "summary": "意图分析与查询计划进行中",
+        "execution_generation": 2,
+        "invocation_id": "c4e657bd9d6b444bbe7e0a7b6ba4785d"
+      }
+    },
+    {
+      "id": "ev_thought_161c4b86-c3d4-492b-bb12-7c94242e53b8_g2_c4e657bd9d6b444bbe7e0a7b6ba4785d_done",
+      "event": "thought_node",
+      "data": {
+        "request_id": "161c4b86-c3d4-492b-bb12-7c94242e53b8",
+        "node_id": "query_understanding",
+        "title": "意图分析与查询计划",
+        "status": "done",
+        "summary": "意图分析与查询计划已完成",
+        "execution_generation": 2,
+        "invocation_id": "c4e657bd9d6b444bbe7e0a7b6ba4785d"
+      }
+    },
+    {
+      "id": "ev_analysis_161c4b86-c3d4-492b-bb12-7c94242e53b8_g2_c4e657bd9d6b444bbe7e0a7b6ba4785d_done",
+      "event": "analysis_ready",
+      "data": {
+        "stage": "query_understanding",
+        "summary": "意图分析与查询计划已完成",
+        "evidence_refs": [],
+        "execution_generation": 2,
+        "invocation_id": "c4e657bd9d6b444bbe7e0a7b6ba4785d"
+      }
+    },
+    {
+      "id": "ev_thought_161c4b86-c3d4-492b-bb12-7c94242e53b8_g2_baecea4b24004ac2bce1b3ee6f8e01f1_running",
+      "event": "thought_node",
+      "data": {
+        "request_id": "161c4b86-c3d4-492b-bb12-7c94242e53b8",
+        "node_id": "candidate_search",
+        "title": "菜品候选检索",
+        "status": "running",
+        "tool_name": "search_candidates",
+        "summary": "菜品候选检索进行中",
+        "execution_generation": 2,
+        "invocation_id": "baecea4b24004ac2bce1b3ee6f8e01f1"
+      }
+    },
+    {
+      "id": "ev_tool_161c4b86-c3d4-492b-bb12-7c94242e53b8_g2_baecea4b24004ac2bce1b3ee6f8e01f1",
+      "event": "tool_trace",
+      "data": {
+        "request_id": "161c4b86-c3d4-492b-bb12-7c94242e53b8",
+        "tool_name": "search_candidates",
+        "result_summary": "候选检索已完成",
+        "node_id": "candidate_search",
+        "duration_ms": 1312,
+        "execution_generation": 2,
+        "invocation_id": "baecea4b24004ac2bce1b3ee6f8e01f1"
+      }
+    },
+    {
+      "id": "ev_thought_161c4b86-c3d4-492b-bb12-7c94242e53b8_g2_baecea4b24004ac2bce1b3ee6f8e01f1_done",
+      "event": "thought_node",
+      "data": {
+        "request_id": "161c4b86-c3d4-492b-bb12-7c94242e53b8",
+        "node_id": "candidate_search",
+        "title": "菜品候选检索",
+        "status": "done",
+        "summary": "菜品候选检索已完成",
+        "tool_name": "search_candidates",
+        "duration_ms": 1312,
+        "execution_generation": 2,
+        "invocation_id": "baecea4b24004ac2bce1b3ee6f8e01f1"
+      }
+    },
+    {
+      "id": "ev_analysis_161c4b86-c3d4-492b-bb12-7c94242e53b8_g2_baecea4b24004ac2bce1b3ee6f8e01f1_done",
+      "event": "analysis_ready",
+      "data": {
+        "stage": "retrieval",
+        "summary": "菜品候选检索已完成",
+        "evidence_refs": [],
+        "execution_generation": 2,
+        "invocation_id": "baecea4b24004ac2bce1b3ee6f8e01f1"
+      }
+    },
+    {
+      "id": "ev_thought_161c4b86-c3d4-492b-bb12-7c94242e53b8_g2_19ebb28fcc1c45d5bdf5dc0f6ac2e725_running",
+      "event": "thought_node",
+      "data": {
+        "request_id": "161c4b86-c3d4-492b-bb12-7c94242e53b8",
+        "node_id": "recipe_audit",
+        "title": "健康合规审查",
+        "status": "running",
+        "tool_name": "audit_recipe_health",
+        "summary": "健康合规审查进行中",
+        "execution_generation": 2,
+        "invocation_id": "19ebb28fcc1c45d5bdf5dc0f6ac2e725"
+      }
+    },
+    {
+      "id": "ev_tool_161c4b86-c3d4-492b-bb12-7c94242e53b8_g2_19ebb28fcc1c45d5bdf5dc0f6ac2e725",
+      "event": "tool_trace",
+      "data": {
+        "request_id": "161c4b86-c3d4-492b-bb12-7c94242e53b8",
+        "tool_name": "audit_recipe_health",
+        "result_summary": "健康审查已完成",
+        "node_id": "recipe_audit",
+        "duration_ms": 1411,
+        "execution_generation": 2,
+        "invocation_id": "19ebb28fcc1c45d5bdf5dc0f6ac2e725"
+      }
+    },
+    {
+      "id": "ev_thought_161c4b86-c3d4-492b-bb12-7c94242e53b8_g2_19ebb28fcc1c45d5bdf5dc0f6ac2e725_done",
+      "event": "thought_node",
+      "data": {
+        "request_id": "161c4b86-c3d4-492b-bb12-7c94242e53b8",
+        "node_id": "recipe_audit",
+        "title": "健康合规审查",
+        "status": "done",
+        "summary": "健康合规审查已完成",
+        "tool_name": "audit_recipe_health",
+        "duration_ms": 1411,
+        "execution_generation": 2,
+        "invocation_id": "19ebb28fcc1c45d5bdf5dc0f6ac2e725"
+      }
+    },
+    {
+      "id": "ev_analysis_161c4b86-c3d4-492b-bb12-7c94242e53b8_g2_19ebb28fcc1c45d5bdf5dc0f6ac2e725_done",
+      "event": "analysis_ready",
+      "data": {
+        "stage": "health_evaluation",
+        "summary": "健康合规审查已完成",
+        "evidence_refs": [],
+        "execution_generation": 2,
+        "invocation_id": "19ebb28fcc1c45d5bdf5dc0f6ac2e725"
+      }
+    },
+    {
+      "id": "ev_thought_161c4b86-c3d4-492b-bb12-7c94242e53b8_g2_0ce04b0600264e05a6ed27d8b8affed9_running",
+      "event": "thought_node",
+      "data": {
+        "request_id": "161c4b86-c3d4-492b-bb12-7c94242e53b8",
+        "node_id": "menu_combination",
+        "title": "营养与偏好组合",
+        "status": "running",
+        "tool_name": "combine_nutritional_menu",
+        "summary": "营养与偏好组合进行中",
+        "execution_generation": 2,
+        "invocation_id": "0ce04b0600264e05a6ed27d8b8affed9"
+      }
+    },
+    {
+      "id": "ev_tool_161c4b86-c3d4-492b-bb12-7c94242e53b8_g2_0ce04b0600264e05a6ed27d8b8affed9",
+      "event": "tool_trace",
+      "data": {
+        "request_id": "161c4b86-c3d4-492b-bb12-7c94242e53b8",
+        "tool_name": "combine_nutritional_menu",
+        "result_summary": "菜单规划已结束",
+        "node_id": "menu_combination",
+        "duration_ms": 149,
+        "execution_generation": 2,
+        "invocation_id": "0ce04b0600264e05a6ed27d8b8affed9"
+      }
+    },
+    {
+      "id": "ev_thought_161c4b86-c3d4-492b-bb12-7c94242e53b8_g2_0ce04b0600264e05a6ed27d8b8affed9_done",
+      "event": "thought_node",
+      "data": {
+        "request_id": "161c4b86-c3d4-492b-bb12-7c94242e53b8",
+        "node_id": "menu_combination",
+        "title": "营养与偏好组合",
+        "status": "done",
+        "summary": "营养与偏好组合已完成",
+        "tool_name": "combine_nutritional_menu",
+        "duration_ms": 149,
+        "execution_generation": 2,
+        "invocation_id": "0ce04b0600264e05a6ed27d8b8affed9"
+      }
+    },
+    {
+      "id": "ev_analysis_161c4b86-c3d4-492b-bb12-7c94242e53b8_g2_0ce04b0600264e05a6ed27d8b8affed9_done",
+      "event": "analysis_ready",
+      "data": {
+        "stage": "menu_planning",
+        "summary": "营养与偏好组合已完成",
+        "evidence_refs": [],
+        "execution_generation": 2,
+        "invocation_id": "0ce04b0600264e05a6ed27d8b8affed9"
+      }
+    },
+    {
+      "id": "ev_thought_161c4b86-c3d4-492b-bb12-7c94242e53b8_g2_f9be81b5564143b3b4c3e7177fffbc74_running",
+      "event": "thought_node",
+      "data": {
+        "request_id": "161c4b86-c3d4-492b-bb12-7c94242e53b8",
+        "node_id": "final_validation",
+        "title": "全流程合规复核",
+        "status": "running",
+        "tool_name": "validate_selected_menu_health",
+        "summary": "全流程合规复核进行中",
+        "execution_generation": 2,
+        "invocation_id": "f9be81b5564143b3b4c3e7177fffbc74"
+      }
+    },
+    {
+      "id": "ev_tool_161c4b86-c3d4-492b-bb12-7c94242e53b8_g2_f9be81b5564143b3b4c3e7177fffbc74",
+      "event": "tool_trace",
+      "data": {
+        "request_id": "161c4b86-c3d4-492b-bb12-7c94242e53b8",
+        "tool_name": "validate_selected_menu_health",
+        "result_summary": "菜单复核已完成",
+        "node_id": "final_validation",
+        "duration_ms": 1403,
+        "execution_generation": 2,
+        "invocation_id": "f9be81b5564143b3b4c3e7177fffbc74"
+      }
+    },
+    {
+      "id": "ev_thought_161c4b86-c3d4-492b-bb12-7c94242e53b8_g2_f9be81b5564143b3b4c3e7177fffbc74_done",
+      "event": "thought_node",
+      "data": {
+        "request_id": "161c4b86-c3d4-492b-bb12-7c94242e53b8",
+        "node_id": "final_validation",
+        "title": "全流程合规复核",
+        "status": "done",
+        "summary": "全流程合规复核已完成",
+        "tool_name": "validate_selected_menu_health",
+        "duration_ms": 1403,
+        "execution_generation": 2,
+        "invocation_id": "f9be81b5564143b3b4c3e7177fffbc74"
+      }
+    },
+    {
+      "id": "ev_thought_161c4b86-c3d4-492b-bb12-7c94242e53b8_g2_f4f08f0da0a74ea3b3b51d59d5a1f380_done",
+      "event": "thought_node",
+      "data": {
+        "request_id": "161c4b86-c3d4-492b-bb12-7c94242e53b8",
+        "node_id": "commit",
+        "title": "结果持久化",
+        "status": "done",
+        "summary": "结果持久化已完成",
+        "execution_generation": 2,
+        "invocation_id": "f4f08f0da0a74ea3b3b51d59d5a1f380"
+      }
+    },
+    {
+      "id": "ev_answer_161c4b86-c3d4-492b-bb12-7c94242e53b8",
+      "event": "answer_ready",
+      "data": {
+        "text": "为您推荐以下 3 道菜：清炒苕尖、清蒸茄子、粉蒸藕夹。\n清炒苕尖、清蒸茄子、粉蒸藕夹\n菜品已结合当前参与者的饮食约束与健康审查结果筛选，并兼顾口味与菜式多样化。\n按当前步骤估算，预计需要 41 分钟。",
+        "menu_ref": "f140e9e7-1b3a-467e-8132-95355caa1ec6",
+        "evidence_refs": [
+          "0d702fb3-ebff-4426-afd1-755690e67237"
+        ]
+      }
+    },
+    {
+      "id": "ev_result_161c4b86-c3d4-492b-bb12-7c94242e53b8",
+      "event": "result_committed",
+      "data": {
+        "request_id": "161c4b86-c3d4-492b-bb12-7c94242e53b8",
+        "menu_summary": {
+          "items": [
+            {
+              "name": "清炒苕尖",
+              "recipe_id": 778
+            },
+            {
+              "name": "清蒸茄子",
+              "recipe_id": 1789
+            },
+            {
+              "name": "粉蒸藕夹",
+              "recipe_id": 747
+            }
+          ],
+          "plan_id": "fced17a18bf9bb0c5276b984e4880e99dbde7359fcea18c86067b43cc54e9a60",
+          "build_id": "98f7cf59-29b2-4c0c-b933-5a8f6ed0e669",
+          "menu_hash": "8cea0846403497eb50c492080b59b9695ae952ebce95bc46940a8783763acf17",
+          "recipe_ids": [
+            778,
+            1789,
+            747
+          ]
+        }
+      }
+    }
+  ],
+  "original_report": "verification\\artifacts\\http-commit-fault-2026-10-04.json"
+}

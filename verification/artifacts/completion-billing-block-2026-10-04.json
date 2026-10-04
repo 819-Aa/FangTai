@@ -1,0 +1,35 @@
+{
+  "provider": "DashScope",
+  "provider_error": "Arrearage",
+  "http_status": 400,
+  "requests": [
+    {
+      "request_id": "888654ae-2a1d-47e8-97ae-ea7f61c4e7e9",
+      "status": "failed",
+      "error": {
+        "code": "MODEL_INVOCATION_FAILED",
+        "message": "Agent 决策模型调用失败 (BadRequestError): Error code: 400 - {'error': {'message': 'Access denied, please make sure your account is in good standing. For details, see: https://help.aliyun.com/zh/model-studio/error-code#overdue-payment', 'type': 'Arrearage', 'param': None, 'code': 'Arrearage'}, 'id': 'chatcmpl-255f749e-18a2-9f42-9169-e321aebbd198', 'request_id': '255f749e-18a2-9f42-9169-e321aebbd198'}"
+      },
+      "no_menu": true,
+      "has_terminal_failure": true
+    },
+    {
+      "request_id": "90d73f8b-0d57-4a99-aae2-e5ee5922b7b5",
+      "status": "failed",
+      "error": {
+        "code": "MODEL_INVOCATION_FAILED",
+        "message": "Agent 决策模型调用失败 (BadRequestError): Error code: 400 - {'error': {'message': 'Access denied, please make sure your account is in good standing. For details, see: https://help.aliyun.com/zh/model-studio/error-code#overdue-payment', 'type': 'Arrearage', 'param': None, 'code': 'Arrearage'}, 'id': 'chatcmpl-ddcdc466-e792-9bef-8025-17009648ec76', 'request_id': 'ddcdc466-e792-9bef-8025-17009648ec76'}"
+      },
+      "no_menu": true,
+      "has_terminal_failure": true
+    }
+  ],
+  "browser_suite": {
+    "planned": 10,
+    "completed_without_logged_failure": 8,
+    "failed_clarification": 1,
+    "interrupted_structure": 1,
+    "final_playwright_json_produced": false
+  },
+  "model_testing_stopped": true
+}

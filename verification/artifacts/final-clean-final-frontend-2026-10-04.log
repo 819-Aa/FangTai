@@ -1,0 +1,13 @@
+
+> food-agent-v2-frontend@0.1.0 test
+> vitest --run
+
+
+ RUN  v4.1.10 C:/Users/zhiyo/Desktop/竞赛/program_v2/frontend
+
+
+ Test Files  7 passed (7)
+      Tests  80 passed (80)
+   Start at  14:05:00
+   Duration  3.49s (transform 1.70s, setup 0ms, import 3.69s, tests 584ms, environment 14.94s)
+

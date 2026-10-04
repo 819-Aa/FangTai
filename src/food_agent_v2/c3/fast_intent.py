@@ -232,10 +232,21 @@ def _flavor_preferences(message: str) -> tuple[str, ...]:
 
 
 def _dish_types(message: str) -> tuple[str, ...]:
-    """明确结构需求。只提取"想吃面"类主食，不提取"汤"（"四菜一汤"是菜数）。"""
+    """明确结构需求交给菜单槽位校验，保留复合菜单的汤要求。"""
+    if re.search(r"[一二两三四五六七八九十\d]+菜一汤", message):
+        return ("汤",)
     if any(k in message for k in ("想吃面", "面条", "面食", "煮面")):
         return ("主食",)
     return ()
+
+
+def retrieval_dish_types(query_plan) -> tuple[str, ...]:
+    """A soup slot in a mixed menu must not filter every candidate to soup."""
+    types = tuple(getattr(query_plan, "dish_types", ()) or ())
+    count = getattr(query_plan, "dish_count_requested", None)
+    if count and count > 1 and any(t in ("汤", "汤品", "汤羹", "soup") for t in types):
+        return ()
+    return types
 
 
 def _is_open_query(message: str) -> bool:

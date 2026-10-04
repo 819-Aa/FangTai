@@ -32,6 +32,7 @@ class ToolContext:
     max_estimated_time_seconds: int | None = None  # QueryPlan 提取的预计时间硬上限
     session_id: str = ""                    # 用于工具回写 C4 会话上下文
     context_service: Any | None = None      # C4 ContextService（工具可回写约束）
+    progress_invocation_id: str | None = None  # allocated before the real tool call
 
 
 class ToolHandler:
@@ -51,7 +52,7 @@ class ToolHandler:
         if binding_error is not None:
             self._record_receipt({
                 "tool_name": tool_name,
-                "tool_call_id": uuid.uuid4().hex,
+                "tool_call_id": self._take_invocation_id(),
                 "request_id": self._ctx.request_id,
                 "node_id": self._ctx.node_id,
                 "input_hash": "",
@@ -93,7 +94,7 @@ class ToolHandler:
         """产生绑定 request/node/input/build 的回执并校验契约边界（文档 §11.3）。"""
         receipt = {
             "tool_name": tool_name,
-            "tool_call_id": uuid.uuid4().hex,
+            "tool_call_id": self._take_invocation_id(),
             "request_id": self._ctx.request_id,
             "node_id": self._ctx.node_id,
             "input_hash": _sha256(arguments),
@@ -130,6 +131,11 @@ class ToolHandler:
         # 同时写入请求级上下文（runner 从 ToolContext 提取节点回执）
         self._ctx.tool_receipts.append(receipt)
 
+    def _take_invocation_id(self) -> str:
+        invocation = self._ctx.progress_invocation_id
+        self._ctx.progress_invocation_id = None
+        return invocation or uuid.uuid4().hex
+
     @property
     def receipts(self) -> list[dict]:
         return self._receipts
@@ -159,11 +165,12 @@ def _coerce_uuid(value: Any) -> UUID | None:
 
 def _retrieval_filters_from_query_plan(query_plan):
     from food_agent_v2.c1.filters import RetrievalFilters
+    from food_agent_v2.c3.fast_intent import retrieval_dish_types
 
     return RetrievalFilters(
         meal_tags=tuple(getattr(query_plan, "meal_types", ()) or ()),
         population_tags=tuple(getattr(query_plan, "population_tags", ()) or ()),
-        dish_type_tags=tuple(getattr(query_plan, "dish_types", ()) or ()),
+        dish_type_tags=retrieval_dish_types(query_plan),
         taste_tags=tuple(getattr(query_plan, "taste_tags", ()) or ()),
         cuisine_tags=tuple(getattr(query_plan, "cuisine_tags", ()) or ()),
         scenario_tags=tuple(getattr(query_plan, "scenario_tags", ()) or ()),

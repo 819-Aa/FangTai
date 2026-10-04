@@ -164,6 +164,12 @@ class DietAgentState(TypedDict, total=False):
     clarification_revision: int | None
     is_v2: bool
 
+    # R07: 单菜替换扩展字段
+    action: str | None
+    target_recipe_id: int | None
+    source_plan_id: str | None
+    source_menu_hash: str | None
+
 
 _UNSET = object()
 
@@ -618,10 +624,16 @@ class LangGraphRecommendationOrchestrator(AgentRuntime):
 
         wf_state = self._enter_node(wf_state, tool_ctx, NodeType.CONTEXT_BUILDING)
         self._trace_start(NodeType.CONTEXT_BUILDING.value)
+        d1_api.publish_thought_node(
+            request_id, "context_building", "上下文解析与需求对齐", "running"
+        )
 
         # 1. 注入检查
         _injection = detect_untrusted_instruction(message)
         if _injection:
+            d1_api.publish_thought_node(
+                request_id, "context_building", "上下文解析与需求对齐", "error", summary=f"检测到指令注入"
+            )
             wf_state = self._fail(
                 wf_state,
                 "UNTRUSTED_INSTRUCTION_DETECTED",
@@ -640,11 +652,17 @@ class LangGraphRecommendationOrchestrator(AgentRuntime):
                 build_id=build_id,
             )
         except PermanentConstraintLoadFailed as exc:
+            d1_api.publish_thought_node(
+                request_id, "context_building", "上下文解析与需求对齐", "error", summary="永久约束加载失败"
+            )
             wf_state = self._fail(
                 wf_state, "PERMANENT_CONSTRAINT_LOAD_FAILED", str(exc)
             )
             return {"workflow_state": wf_state, "is_terminal": True}
         except ContextBudgetExceeded as exc:
+            d1_api.publish_thought_node(
+                request_id, "context_building", "上下文解析与需求对齐", "error", summary="上下文超出预算"
+            )
             wf_state = self._fail(wf_state, "CONTEXT_BUDGET_EXCEEDED", str(exc))
             return {"workflow_state": wf_state, "is_terminal": True}
 
@@ -653,6 +671,9 @@ class LangGraphRecommendationOrchestrator(AgentRuntime):
         )
         integrity = c4.validate_context_integrity(wf_state.shared_context_ref)
         if not integrity.get("valid", False):
+            d1_api.publish_thought_node(
+                request_id, "context_building", "上下文解析与需求对齐", "error", summary="上下文完整性校验失败"
+            )
             wf_state = self._fail(
                 wf_state,
                 "CONTEXT_INTEGRITY_FAILED",
@@ -660,6 +681,13 @@ class LangGraphRecommendationOrchestrator(AgentRuntime):
             )
             return {"workflow_state": wf_state, "is_terminal": True}
 
+        d1_api.publish_thought_node(
+            request_id,
+            "context_building",
+            "上下文解析与需求对齐",
+            "done",
+            summary=f"已理解 {len(participant_refs)} 位参与者的用餐需求",
+        )
         d1_api.publish_analysis_event(
             request_id,
             "context_ready",
@@ -904,6 +932,9 @@ class LangGraphRecommendationOrchestrator(AgentRuntime):
                     supersede_clarification = True
 
         if match_status == "matched" and selected_option:
+            d1_api.publish_thought_node(
+                request_id, "query_understanding", "意图分析与查询规划", "running"
+            )
             from food_agent_v2.contracts.clarification import ClarificationTransition
             clarification_transition = ClarificationTransition(
                 expected_question_id=pending_qid_to_consume,
@@ -962,6 +993,13 @@ class LangGraphRecommendationOrchestrator(AgentRuntime):
                 wf_state, action="set_artifact", artifact="query_plan", value=qp
             )
 
+            d1_api.publish_thought_node(
+                request_id,
+                "query_understanding",
+                "意图分析与查询规划",
+                "done",
+                summary="已确认需求调整方案",
+            )
             d1_api.publish_analysis_event(
                 request_id,
                 "query_understanding",
@@ -1016,8 +1054,13 @@ class LangGraphRecommendationOrchestrator(AgentRuntime):
                 "is_v2": is_v2,
             }
 
-        # R3 & R4: 处理多轮 replace 与 restore
-        if intent.intent in ("replace", "restore"):
+        # R3, R4 & R07: 处理单菜替换 (replace) 与恢复 (restore)
+        is_replace_action = (
+            state.get("action") == "replace_dish"
+            or state.get("target_recipe_id") is not None
+            or intent.intent == "replace"
+        )
+        if is_replace_action or intent.intent == "restore":
             session_state = c4.get_session_state(session_id) or {}
             current_menu = session_state.get("current_menu") or {}
             if not current_menu or not current_menu.get("recipe_ids"):
@@ -1051,6 +1094,9 @@ class LangGraphRecommendationOrchestrator(AgentRuntime):
                 intent = self._restore_intent(snapshot, message, len(recipe_ids))
 
                 self._trace_start(NodeType.QUERY_UNDERSTANDING.value)
+                d1_api.publish_thought_node(
+                    request_id, "query_understanding", "意图分析与查询规划", "running"
+                )
                 qp = self._build_query_plan(intent, request_id, participant_refs)
                 wf_state = reduce_workflow_state(
                     wf_state, action="set_artifact", artifact="query_plan", value=qp
@@ -1086,6 +1132,13 @@ class LangGraphRecommendationOrchestrator(AgentRuntime):
                         "error_message": "上一版菜单在当前构建中不可用",
                     }
 
+                d1_api.publish_thought_node(
+                    request_id,
+                    "query_understanding",
+                    "意图分析与查询规划",
+                    "done",
+                    summary="理解需求完成（恢复历史菜单）",
+                )
                 d1_api.publish_analysis_event(
                     request_id, "query_understanding", "理解需求完成（恢复历史菜单）", []
                 )
@@ -1106,8 +1159,33 @@ class LangGraphRecommendationOrchestrator(AgentRuntime):
                     "execution_context": execution_context,
                 }
 
-            # replace 意图：解析替换目标
-            target_recipe_id = self._resolve_replace_target(message, current_menu)
+            # is_replace_action: 单菜替换
+            # 1. 检查版本哈希冲突 (R07)
+            src_plan_id = state.get("source_plan_id")
+            src_menu_hash = state.get("source_menu_hash")
+            cur_plan_id = current_menu.get("plan_id")
+            cur_menu_hash = current_menu.get("menu_hash")
+            if (src_plan_id and src_plan_id != cur_plan_id) or (src_menu_hash and src_menu_hash != cur_menu_hash):
+                wf_state = self._fail(
+                    wf_state,
+                    "MENU_VERSION_CONFLICT",
+                    "菜单已被更新或版本不一致，请刷新后重试",
+                    node=NodeType.QUERY_UNDERSTANDING,
+                )
+                return {
+                    "workflow_state": wf_state,
+                    "is_terminal": True,
+                    "error_code": "MENU_VERSION_CONFLICT",
+                    "error_message": "菜单已被更新或版本不一致，请刷新后重试",
+                }
+
+            # 2. 目标菜品解析与归属验证
+            target_recipe_id = state.get("target_recipe_id")
+            if target_recipe_id is not None:
+                target_recipe_id = int(target_recipe_id)
+            else:
+                target_recipe_id = self._resolve_replace_target(message, current_menu)
+
             if target_recipe_id is None:
                 current_items = current_menu.get("items", [])
                 item_names = [str(it.get("name")) for it in current_items if it.get("name")]
@@ -1123,7 +1201,22 @@ class LangGraphRecommendationOrchestrator(AgentRuntime):
                     ],
                 }
 
-            # 继承上一轮硬约束
+            current_ids = [int(r) for r in current_menu.get("recipe_ids", [])]
+            if target_recipe_id not in current_ids:
+                wf_state = self._fail(
+                    wf_state,
+                    "TARGET_RECIPE_NOT_IN_MENU",
+                    f"目标菜品 (ID: {target_recipe_id}) 不在当前已提交菜单中",
+                    node=NodeType.QUERY_UNDERSTANDING,
+                )
+                return {
+                    "workflow_state": wf_state,
+                    "is_terminal": True,
+                    "error_code": "TARGET_RECIPE_NOT_IN_MENU",
+                    "error_message": f"目标菜品 (ID: {target_recipe_id}) 不在当前已提交菜单中",
+                }
+
+            # 3. 继承上一轮硬约束
             previous_plan_dict = self._replace_previous_plan(session_state.get("query_plan"))
             rewrite = QueryNormalizer(self._llm).normalize(
                 message,
@@ -1131,16 +1224,18 @@ class LangGraphRecommendationOrchestrator(AgentRuntime):
                 previous_query_plan=previous_plan_dict,
             )
             intent = self._apply_semantic_rewrite(
-                replace(intent, target_recipe_id=target_recipe_id),
+                IntentDelta(intent="replace", target_recipe_id=target_recipe_id),
                 rewrite,
                 tuple(participant_refs),
                 has_current_menu=True,
             )
 
             self._trace_start(NodeType.QUERY_UNDERSTANDING.value)
+            d1_api.publish_thought_node(
+                request_id, "query_understanding", "意图分析与查询规划", "running"
+            )
             qp = self._build_query_plan(intent, request_id, participant_refs)
             # 替换保持原菜单菜数
-            current_ids = list(current_menu.get("recipe_ids", []))
             qp = qp.model_copy(update={"dish_count_requested": len(current_ids)})
             wf_state = reduce_workflow_state(
                 wf_state, action="set_artifact", artifact="query_plan", value=qp
@@ -1155,8 +1250,16 @@ class LangGraphRecommendationOrchestrator(AgentRuntime):
             if qp.time_constraint_policy == "hard" and qp.time_constraint_seconds:
                 tool_ctx.max_estimated_time_seconds = qp.time_constraint_seconds
 
+            expected_locked = [rid for rid in current_ids if rid != target_recipe_id]
+            d1_api.publish_thought_node(
+                request_id,
+                "query_understanding",
+                "意图分析与查询规划",
+                "done",
+                summary=f"理解需求完成（替换菜品 #{target_recipe_id}，锁定其余 {len(expected_locked)} 道菜品）",
+            )
             d1_api.publish_analysis_event(
-                request_id, "query_understanding", "理解需求完成（替换指定菜品）", []
+                request_id, "query_understanding", f"理解需求完成（替换菜品 #{target_recipe_id}）", []
             )
             self._trace_end(NodeType.QUERY_UNDERSTANDING.value)
 
@@ -1165,8 +1268,8 @@ class LangGraphRecommendationOrchestrator(AgentRuntime):
                 "query_plan": qp,
                 "workflow_state": wf_state,
                 "tool_context": tool_ctx,
-                "locked_recipe_ids": [],
-                "rejected_recipe_ids": [],
+                "locked_recipe_ids": expected_locked,
+                "rejected_recipe_ids": [target_recipe_id],
             }
 
         # 4. 多轮与改写 (add_constraint / reject_plan / new_recommendation)
@@ -1190,6 +1293,9 @@ class LangGraphRecommendationOrchestrator(AgentRuntime):
 
         # 5. 构建 QueryPlanArtifact
         self._trace_start(NodeType.QUERY_UNDERSTANDING.value)
+        d1_api.publish_thought_node(
+            request_id, "query_understanding", "意图分析与查询规划", "running"
+        )
         qp = self._build_query_plan(intent, request_id, participant_refs)
         wf_state = reduce_workflow_state(
             wf_state, action="set_artifact", artifact="query_plan", value=qp
@@ -1206,6 +1312,13 @@ class LangGraphRecommendationOrchestrator(AgentRuntime):
         if qp.time_constraint_policy == "hard" and qp.time_constraint_seconds:
             tool_ctx.max_estimated_time_seconds = qp.time_constraint_seconds
 
+        d1_api.publish_thought_node(
+            request_id,
+            "query_understanding",
+            "意图分析与查询规划",
+            "done",
+            summary="已完成意图解析与约束规则提取",
+        )
         d1_api.publish_analysis_event(
             request_id, "query_understanding", "理解需求完成", []
         )
@@ -1255,7 +1368,11 @@ class LangGraphRecommendationOrchestrator(AgentRuntime):
         if guard is not None:
             return {"workflow_state": guard, "is_terminal": True}
 
+        t0 = time.perf_counter()
         self._trace_start("retrieval")
+        invocation_id = tool_ctx.progress_invocation_id = d1_api.publish_thought_node(
+            request_id, "candidate_search", "菜品候选检索", "running", tool_name="search_candidates"
+        )
         tool_ctx.node_id = self._NODE_RETRIEVE
         handler = ToolHandler(tool_ctx)
 
@@ -1270,6 +1387,11 @@ class LangGraphRecommendationOrchestrator(AgentRuntime):
 
         # R2: 技术错误 fail-closed，记录真实失败回执，进入错误终态，绝不转为用户追问
         if res.status == "error":
+            dur_ms = int((time.perf_counter() - t0) * 1000)
+            d1_api.publish_thought_node(
+                request_id, "candidate_search", "菜品候选检索", "error",
+                summary=f"检索服务调用失败: {res.message}", tool_name="search_candidates", duration_ms=dur_ms
+            )
             handler._emit_receipt(
                 "retrieve_recipes",
                 {"query": self._retrieval_query(intent), "top_k": 40},
@@ -1310,18 +1432,64 @@ class LangGraphRecommendationOrchestrator(AgentRuntime):
             candidate_ids = list(dict.fromkeys(current_ids + candidate_ids))
 
         if not candidate_ids:
+            dur_ms = int((time.perf_counter() - t0) * 1000)
+            d1_api.publish_thought_node(
+                request_id, "candidate_search", "菜品候选检索", "warning",
+                summary="未能检索到符合条件的菜品候选，转入澄清", tool_name="search_candidates", duration_ms=dur_ms
+            )
+            query_plan = state.get("query_plan")
+            structured_options = []
+            if query_plan and query_plan.taste_tags:
+                structured_options.append({
+                    "option_id": 1,
+                    "text": "不限制口味，保留其他要求重新检索",
+                    "modifications": {"taste_tags": []},
+                })
+            meal_types = set(query_plan.meal_types) if query_plan else set()
+            for meal_type, label in (("dinner", "晚餐"), ("lunch", "午餐"), ("breakfast", "早餐")):
+                if len(structured_options) >= 2:
+                    break
+                if meal_types and meal_type not in meal_types:
+                    structured_options.append({
+                        "option_id": len(structured_options) + 1,
+                        "text": f"改为{label}，保留其他要求重新检索",
+                        "modifications": {"meal_type": meal_type},
+                    })
+            for query_label in ("家常菜", "时令菜"):
+                if len(structured_options) >= 2:
+                    break
+                structured_options.append({
+                    "option_id": len(structured_options) + 1,
+                    "text": f"以{query_label}重新检索，保留其他要求",
+                    "modifications": {},
+                })
             return {
                 "candidate_recipes": [],
                 "inquiry_needed": True,
                 "diagnosis_code": "CANDIDATES_REQUIRED",
                 "inquiry_reason": "未能检索到符合您当前偏好或限制的菜品候选。",
-                "inquiry_options": [
-                    "选项 1: 放宽菜系或口味要求，以检索更多菜品",
-                    "选项 2: 调整特定的食材限制或特殊要求",
-                    "选项 3: 更换搜索关键词后重新推荐",
-                ],
+                "inquiry_options": [option["text"] for option in structured_options],
+                "structured_options": structured_options,
             }
 
+        dur_ms = int((time.perf_counter() - t0) * 1000)
+        d1_api.publish_tool_trace(
+            request_id,
+            "search_candidates",
+            f"检索完成，获取 {len(candidate_ids)} 道候选菜品",
+            invocation_id=invocation_id,
+            node_id="candidate_search",
+            duration_ms=dur_ms,
+        )
+        d1_api.publish_thought_node(
+            request_id,
+            "candidate_search",
+            "菜品候选检索",
+            "done",
+            summary=f"检索完成，获取 {len(candidate_ids)} 道候选菜品",
+            tool_name="search_candidates",
+            duration_ms=dur_ms,
+        )
         d1_api.publish_analysis_event(
             request_id,
             "retrieval",
@@ -1342,16 +1510,30 @@ class LangGraphRecommendationOrchestrator(AgentRuntime):
         lock_token = state["lock_token"]
         lost = state["lost"]
         tool_ctx = state["tool_context"]
-        candidate_ids = state["candidate_recipes"]
+        candidate_ids = list(state.get("candidate_recipes") or [])
         request_id = state["request_id"]
         intent = state.get("intent")
         build_id = state.get("build_id", "")
+
+        # R07: 替换场景下确保原菜单保留菜品（locked_recipe_ids）同时进入健康合规全量复核
+        if intent and intent.intent == "replace":
+            current_menu = (c4.get_session_state(session_id) or {}).get("current_menu") or {}
+            current_ids = list(current_menu.get("recipe_ids", []))
+            target_id = intent.target_recipe_id
+            expected_locked = [rid for rid in current_ids if rid != target_id]
+            for rid in expected_locked:
+                if rid not in candidate_ids:
+                    candidate_ids.append(rid)
 
         guard = self._guard_active(wf_state, c4, session_id, lock_token, lost)
         if guard is not None:
             return {"workflow_state": guard, "is_terminal": True}
 
+        t0 = time.perf_counter()
         self._trace_start(NodeType.HEALTH_MENU_PLANNING.value)
+        invocation_id = tool_ctx.progress_invocation_id = d1_api.publish_thought_node(
+            request_id, "recipe_audit", "健康合规审查", "running", tool_name="audit_recipe_health"
+        )
         tool_ctx.node_id = self._NODE_HEALTH
         handler = ToolHandler(tool_ctx)
 
@@ -1367,6 +1549,11 @@ class LangGraphRecommendationOrchestrator(AgentRuntime):
 
         # R2: 严格区分技术错误与业务无解。技术错误 fail-closed，记录真实失败回执，绝不转用户追问
         if res.status == "error":
+            dur_ms = int((time.perf_counter() - t0) * 1000)
+            d1_api.publish_thought_node(
+                request_id, "recipe_audit", "健康合规审查", "error",
+                summary=f"健康审查技术故障: {res.message}", tool_name="audit_recipe_health", duration_ms=dur_ms
+            )
             handler._emit_receipt(
                 "evaluate_recipe_health",
                 {"recipe_ids": candidate_ids},
@@ -1403,7 +1590,25 @@ class LangGraphRecommendationOrchestrator(AgentRuntime):
             None,
         )
 
+        dur_ms = int((time.perf_counter() - t0) * 1000)
         if not safe_ids:
+            d1_api.publish_tool_trace(
+                request_id,
+                "audit_recipe_health",
+                f"健康审查完成，0 道安全菜品，排除 {len(excluded_ids)} 道菜品",
+                invocation_id=invocation_id,
+                node_id="recipe_audit",
+                duration_ms=dur_ms,
+            )
+            d1_api.publish_thought_node(
+                request_id,
+                "recipe_audit",
+                "健康合规审查",
+                "warning",
+                summary="所有候选菜品均不符合健康安全要求，转入澄清",
+                tool_name="audit_recipe_health",
+                duration_ms=dur_ms,
+            )
             d1_api.publish_analysis_event(
                 request_id,
                 "health_evaluation",
@@ -1427,6 +1632,23 @@ class LangGraphRecommendationOrchestrator(AgentRuntime):
                 ],
             }
 
+        d1_api.publish_tool_trace(
+            request_id,
+            "audit_recipe_health",
+            f"健康审查完成，保留 {len(safe_ids)} 道安全菜品",
+            invocation_id=invocation_id,
+            node_id="recipe_audit",
+            duration_ms=dur_ms,
+        )
+        d1_api.publish_thought_node(
+            request_id,
+            "recipe_audit",
+            "健康合规审查",
+            "done",
+            summary=f"健康审查完成，保留 {len(safe_ids)} 道安全菜品",
+            tool_name="audit_recipe_health",
+            duration_ms=dur_ms,
+        )
         d1_api.publish_analysis_event(
             request_id, "health_evaluation", "健康审查完成", []
         )
@@ -1438,6 +1660,15 @@ class LangGraphRecommendationOrchestrator(AgentRuntime):
         if intent and intent.intent == "restore":
             candidate_ids = state.get("candidate_recipes", [])
             if set(safe_ids) != set(candidate_ids):
+                d1_api.publish_thought_node(
+                    request_id,
+                    "recipe_audit",
+                    "健康合规审查",
+                    "warning",
+                    summary="历史菜单菜品不符合当前健康要求",
+                    tool_name="audit_recipe_health",
+                    duration_ms=dur_ms,
+                )
                 d1_api.publish_analysis_event(
                     request_id,
                     "health_evaluation",
@@ -1556,7 +1787,11 @@ class LangGraphRecommendationOrchestrator(AgentRuntime):
             else None
         )
 
+        t0 = time.perf_counter()
         tool_ctx.node_id = self._NODE_HEALTH
+        invocation_id = tool_ctx.progress_invocation_id = d1_api.publish_thought_node(
+            request_id, "menu_combination", "营养与偏好组合", "running", tool_name="combine_nutritional_menu"
+        )
         res = combine_nutritional_menu(
             safe_recipe_ids=safe_ids,
             dish_count=dish_count,
@@ -1570,6 +1805,11 @@ class LangGraphRecommendationOrchestrator(AgentRuntime):
         )
 
         if res.status == "error":
+            dur_ms = int((time.perf_counter() - t0) * 1000)
+            d1_api.publish_thought_node(
+                request_id, "menu_combination", "营养与偏好组合", "error",
+                summary=f"菜单规划技术故障: {res.message}", tool_name="combine_nutritional_menu", duration_ms=dur_ms
+            )
             wf_state = self._fail(
                 wf_state,
                 res.error_code or "PLANNING_ERROR",
@@ -1670,6 +1910,24 @@ class LangGraphRecommendationOrchestrator(AgentRuntime):
                     },
                 ]
 
+            dur_ms = int((time.perf_counter() - t0) * 1000)
+            d1_api.publish_tool_trace(
+                request_id,
+                "combine_nutritional_menu",
+                f"菜单规划需澄清: {reason}",
+                invocation_id=invocation_id,
+                node_id="menu_combination",
+                duration_ms=dur_ms,
+            )
+            d1_api.publish_thought_node(
+                request_id,
+                "menu_combination",
+                "营养与偏好组合",
+                "warning",
+                summary=f"约束冲突待澄清: {reason}",
+                tool_name="combine_nutritional_menu",
+                duration_ms=dur_ms,
+            )
             d1_api.publish_analysis_event(
                 request_id,
                 "menu_planning",
@@ -1706,6 +1964,24 @@ class LangGraphRecommendationOrchestrator(AgentRuntime):
         tool_ctx.previous_results["feasible_menus"] = plans
         tool_ctx.safe_recipe_ids = list(safe_ids)
 
+        dur_ms = int((time.perf_counter() - t0) * 1000)
+        d1_api.publish_tool_trace(
+            request_id,
+            "combine_nutritional_menu",
+            f"生成 {len(plans)} 个可行菜单组合",
+            invocation_id=invocation_id,
+            node_id="menu_combination",
+            duration_ms=dur_ms,
+        )
+        d1_api.publish_thought_node(
+            request_id,
+            "menu_combination",
+            "营养与偏好组合",
+            "done",
+            summary=f"生成 {len(plans)} 个可行菜单组合",
+            tool_name="combine_nutritional_menu",
+            duration_ms=dur_ms,
+        )
         d1_api.publish_analysis_event(
             request_id,
             "menu_planning",
@@ -1827,6 +2103,9 @@ class LangGraphRecommendationOrchestrator(AgentRuntime):
         )
         wf_state.error = WorkflowError(code, inquiry_text)
 
+        d1_api.publish_thought_node(
+            request_id, "inquire_user", "需求澄清", "warning", summary=inquiry_reason
+        )
         d1_api.publish_analysis_event(
             request_id, "constraint_inquiry", inquiry_reason, []
         )
@@ -1884,6 +2163,14 @@ class LangGraphRecommendationOrchestrator(AgentRuntime):
             st = state.get("workflow_state")
             if st and st.status:
                 final_status = st.status.value if hasattr(st.status, "value") else str(st.status)
+        if final_status == "completed":
+            d1_api.publish_thought_node(
+                state["request_id"], "commit", "结果持久化", "done", summary="全流程合规复核通过，结果已持久化"
+            )
+        elif final_status == "needs_clarification":
+            d1_api.publish_thought_node(
+                state["request_id"], "commit", "等待用户确认", "warning", summary="已生成澄清选项并等待用户选择"
+            )
         if (
             qid and final_status in ("completed", "needs_clarification")
             and c4 and hasattr(c4, "consume_pending_clarification")
@@ -1926,7 +2213,7 @@ class LangGraphRecommendationOrchestrator(AgentRuntime):
     def _node_finish_error(self, state: DietAgentState) -> dict[str, Any]:
         """错误终态节点。"""
         wf_state = state["workflow_state"]
-        if wf_state.status != RequestStatus.FAILED:
+        if wf_state.status not in (RequestStatus.FAILED, RequestStatus.CANCELLED, RequestStatus.INTERRUPTED):
             wf_state = self._fail(
                 wf_state,
                 state.get("error_code") or "INTERNAL_ERROR",
@@ -2105,6 +2392,8 @@ class LangGraphRecommendationOrchestrator(AgentRuntime):
             invoke_kwargs: dict[str, Any] = {}
             if "timeout_seconds" in sig.parameters:
                 invoke_kwargs["timeout_seconds"] = 60.0
+            if "response_format" in sig.parameters:
+                invoke_kwargs["response_format"] = {"type": "json_object"}
             if "role" in sig.parameters:
                 resp = self._llm.invoke(
                     role="menu_decision",
@@ -2130,7 +2419,7 @@ class LangGraphRecommendationOrchestrator(AgentRuntime):
                 if model_cfg and hasattr(model_cfg, "model_for_role"):
                     m_name = model_cfg.model_for_role("menu_decision")
                 else:
-                    m_name = getattr(self._llm, "model", "qwen3.8-max")
+                    m_name = getattr(self._llm, "model", "unconfigured")
                 self._trace.add_model_call(
                     role="menu_decision",
                     model=m_name,
@@ -2371,7 +2660,11 @@ class LangGraphRecommendationOrchestrator(AgentRuntime):
         if len(recipe_ids) != len(set(recipe_ids)) or set(recipe_ids) != set(plan.recipe_ids):
             return error("MENU_HASH_MISMATCH", "校验菜品与所选可行方案不一致")
 
+        t0 = time.perf_counter()
         tool_ctx.node_id = self._NODE_DECISION
+        invocation_id = tool_ctx.progress_invocation_id = d1_api.publish_thought_node(
+            str(state["request_id"]), "final_validation", "全流程合规复核", "running", tool_name="validate_selected_menu_health"
+        )
         result = ToolHandler(tool_ctx).execute(
             "validate_selected_menu_health",
             {"plan_id": plan_id, "recipe_ids": recipe_ids},
@@ -2401,7 +2694,17 @@ class LangGraphRecommendationOrchestrator(AgentRuntime):
 
         evidence_ref = str(fv.artifact_id)
         execution_context.setdefault("known_evidence", set()).add(evidence_ref)
+        dur_ms = int((time.perf_counter() - t0) * 1000)
         if fv.status == "PASS":
+            d1_api.publish_tool_trace(
+                str(state["request_id"]), "validate_selected_menu_health", "最终全量健康约束复核通过",
+                invocation_id=invocation_id,
+                node_id="final_validation", duration_ms=dur_ms
+            )
+            d1_api.publish_thought_node(
+                str(state["request_id"]), "final_validation", "全流程合规复核", "done",
+                summary="最终全量健康约束复核通过", tool_name="validate_selected_menu_health", duration_ms=dur_ms
+            )
             execution_context["final_validation"] = fv
             execution_context["final_validation_ref"] = evidence_ref
             res["final_validation"] = fv
@@ -2414,6 +2717,10 @@ class LangGraphRecommendationOrchestrator(AgentRuntime):
         if fv.status != "EXCLUDE":
             return error("FINAL_HEALTH_VALIDATION_FAILED", "最终健康校验状态无效")
 
+        d1_api.publish_thought_node(
+            str(state["request_id"]), "final_validation", "全流程合规复核", "warning",
+            summary="最终全量健康约束复核未通过，需重新审查", tool_name="validate_selected_menu_health", duration_ms=dur_ms
+        )
         # EXCLUDE invalidates the earlier candidate audit; a new B4 audit is mandatory.
         execution_context.update(
             is_health_revision=True, last_health_validation_status="EXCLUDE",
@@ -2525,6 +2832,15 @@ class LangGraphRecommendationOrchestrator(AgentRuntime):
                     status="error",
                     error_code=res.get("error_code"),
                     message=res.get("error_message") or "",
+                )
+            elif res.get("inquiry_needed"):
+                _invalidate_health_evaluation()
+                obs = Observation(
+                    action=action.action,
+                    status="no_solution",
+                    error_code=res.get("diagnosis_code", "CANDIDATES_REQUIRED"),
+                    desensitized_facts={"new_candidate_count": 0},
+                    message=res.get("inquiry_reason") or "",
                 )
             else:
                 existing = state.get("candidate_recipes", [])
@@ -2691,7 +3007,17 @@ class LangGraphRecommendationOrchestrator(AgentRuntime):
 
         return {
             **res,
-            "inquiry_needed": False,
+            "inquiry_needed": bool(
+                res.get("inquiry_needed")
+                and obs.status == "no_solution"
+                and (
+                    action.action in (ActionType.SEARCH_CANDIDATES, ActionType.EXPAND_CANDIDATES)
+                    or (
+                        action.action == ActionType.COMBINE_NUTRITIONAL_MENU
+                        and res.get("diagnosis_code") == "TIME_LIMIT_EXCEEDED"
+                    )
+                )
+            ),
             "observations": observations,
             "policy": policy,
             "execution_context": execution_context,
@@ -2726,6 +3052,8 @@ class LangGraphRecommendationOrchestrator(AgentRuntime):
     def _route_after_execute(state: DietAgentState) -> str:
         if state.get("is_terminal"):
             return "error"
+        if state.get("inquiry_needed"):
+            return "inquire"
         return "decide"
 
     @staticmethod
@@ -2821,6 +3149,11 @@ class LangGraphRecommendationOrchestrator(AgentRuntime):
         lock_token: str,
         lost: Any,
         clarification_response: dict | None = None,
+        action: str | None = None,
+        target_recipe_id: int | None = None,
+        source_plan_id: str | None = None,
+        source_menu_hash: str | None = None,
+        **extra_kwargs: Any,
     ) -> None:
         if self._trace is None:
             self._trace = PerfTrace(request_id=request_id)
@@ -2893,6 +3226,10 @@ class LangGraphRecommendationOrchestrator(AgentRuntime):
             "clarification_transition": None,
             "selected_option_id": None,
             "supersede_clarification": False,
+            "action": action,
+            "target_recipe_id": target_recipe_id,
+            "source_plan_id": source_plan_id,
+            "source_menu_hash": source_menu_hash,
         }
 
         self._graph.invoke(initial_state)

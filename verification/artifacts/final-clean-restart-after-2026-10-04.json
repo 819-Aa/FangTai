@@ -1,0 +1,28 @@
+{
+  "checks": [
+    {
+      "request_id": "8044d130-91a1-4e99-b0f2-c3fff8262795",
+      "http_ok": true,
+      "status_unchanged": true,
+      "result_unchanged": true,
+      "cold_sse_events_unchanged": true,
+      "last_event_id_exact_suffix": true,
+      "unique_ids": true,
+      "session_menu_matches": true,
+      "no_reexecution": true
+    },
+    {
+      "request_id": "a14aa131-479f-467d-8667-97ed43f20945",
+      "http_ok": true,
+      "status_unchanged": true,
+      "result_unchanged": true,
+      "cold_sse_events_unchanged": true,
+      "last_event_id_exact_suffix": true,
+      "unique_ids": true,
+      "session_menu_matches": true,
+      "no_reexecution": true
+    }
+  ],
+  "passed": 16,
+  "complete": true
+}

@@ -18,6 +18,8 @@ build/
 node_modules/
 frontend/dist/
 .vite/
+/frontend/test-results/
+/frontend/playwright-report/
 
 # Runtime state
 .runtime/
@@ -52,3 +54,17 @@ Thumbs.db
 
 # Local Git worktrees
 .worktrees/
+
+# Generated browser traces and per-run cache directories
+/verification/artifacts/*/
+
+# Curated acceptance logs published with the implementation evidence
+!/verification/artifacts/final-clean-exclusive-backend-2026-10-04.log
+!/verification/artifacts/final-clean-final-frontend-2026-10-04.log
+!/verification/artifacts/final-clean-verified-browser-2026-10-04.log
+!/verification/artifacts/final-clean-model-red-2026-10-04.log
+!/verification/artifacts/final-clean-custard-red-2026-10-04.log
+!/verification/artifacts/final-clean-custard-green-2026-10-04.log
+!/verification/artifacts/final-clean-custard-backend-2026-10-04.log
+!/verification/artifacts/final-clean-verified-backend-2026-10-04.log
+!/verification/artifacts/completion-cold-restart-after-2026-10-04.log

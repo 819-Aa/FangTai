@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 from types import SimpleNamespace
 from typing import Any
@@ -351,7 +352,18 @@ def test_node_combine_menu_handles_zero_silent_relaxation_for_time() -> None:
 
 def test_graph_e2e_time_limit_exceeded_reaches_clarification() -> None:
     """端到端状态图执行：当烹饪时间超限时，经由条件边自动路由至 inquire_user 并提交 needs_clarification。"""
-    orchestrator = LangGraphRecommendationOrchestrator(llm=DeterministicScriptedAgentModel())
+    class NoExtraDecisionModel:
+        def __init__(self):
+            self.calls = 0
+
+        def decide_action(self, state: DietAgentState) -> AgentAction:
+            self.calls += 1
+            if self.calls > 3:
+                raise RuntimeError("规划器已提供澄清选项，不应再次要求模型生成 JSON")
+            return LangGraphRecommendationOrchestrator._default_agent_decision(state)
+
+    model = NoExtraDecisionModel()
+    orchestrator = LangGraphRecommendationOrchestrator(llm=model)
 
     rid = _fresh_rid()
     wf_state = WorkflowState(
@@ -452,6 +464,7 @@ def test_graph_e2e_time_limit_exceeded_reaches_clarification() -> None:
     assert final_wf.status == RequestStatus.NEEDS_CLARIFICATION
     assert final_wf.error.error_code == "TIME_LIMIT_EXCEEDED"
     assert "28 分钟" in final_wf.error.message
+    assert model.calls == 3
 
 
 def test_graph_e2e_safe_candidate_shortage_reaches_clarification() -> None:
@@ -688,6 +701,20 @@ def test_graph_e2e_happy_path_completes_successfully() -> None:
     assert len(finalized_states) == 1
     final_wf = finalized_states[0]
     assert final_wf.status == RequestStatus.COMPLETED
+
+    # R05: 真实 C3 节点执行与工具调用发布 thought_node 和 tool_trace 事件
+    events = d1_api.subscribe_events(rid)
+    thought_events = [e for e in events if e["event"] == "thought_node"]
+    tool_events = [e for e in events if e["event"] == "tool_trace"]
+    assert len(thought_events) >= 3
+    assert len(tool_events) >= 1
+    node_ids = [
+        (e["data"] if isinstance(e["data"], dict) else json.loads(e["data"]))["node_id"]
+        for e in thought_events
+    ]
+    assert "context_building" in node_ids
+    assert "query_understanding" in node_ids
+    assert "candidate_search" in node_ids
 
 
 # ============================================================================
@@ -3130,6 +3157,118 @@ def test_r6_gate_rejects_duplicate_tool_call():
     assert finalized_states[0].error.error_code == "DUPLICATE_TOOL_CALL"
 
 
+def test_empty_search_inquires_without_repeating_search():
+    class RepeatingSearchModel:
+        def __init__(self):
+            self.calls = 0
+
+        def decide_action(self, state: DietAgentState) -> AgentAction:
+            self.calls += 1
+            return AgentAction(action=ActionType.SEARCH_CANDIDATES, arguments={"query": "家常菜"})
+
+    model = RepeatingSearchModel()
+    orchestrator = LangGraphRecommendationOrchestrator(llm=model)
+    rid = _fresh_rid()
+    wf_state = WorkflowState(
+        request_id=rid,
+        build_id="00000000-0000-0000-0000-000000000001",
+        status=RequestStatus.RUNNING,
+        participant_refs=["p1"],
+    )
+    state: DietAgentState = {
+        "request_id": rid,
+        "session_id": "sess_empty_search",
+        "message": "推荐三道菜",
+        "participant_refs": ["p1"],
+        "user_id_mapping": {"p1": 1},
+        "build_id": "00000000-0000-0000-0000-000000000001",
+        "lock_token": "token-1",
+        "lost": SimpleNamespace(is_set=lambda: False),
+        "c4": _create_test_c4_service(),
+        "workflow_state": wf_state,
+        "tool_context": ToolContext(request_id=rid, build_id="00000000-0000-0000-0000-000000000001"),
+    }
+    empty_search = ToolResponse(
+        success=False,
+        status="no_solution",
+        data={"candidates": [], "total": 0},
+        error_code="CANDIDATES_REQUIRED",
+    )
+    finalized_states: list[WorkflowState] = []
+    transitions = []
+    with patch("food_agent_v2.c3.graph_orchestrator.search_candidates", return_value=empty_search) as search_mock, \
+         patch.object(orchestrator, "_guard_active", return_value=None), \
+         patch.object(orchestrator, "_finalize", side_effect=lambda st, *args, **kwargs: (finalized_states.append(st), transitions.append(kwargs.get("clarification_transition")))), \
+         patch("food_agent_v2.c3.graph_orchestrator.QueryNormalizer.normalize", return_value=SimpleNamespace(
+             retrieval_query="三道清淡午餐", meal_types=("lunch",), population_tags=(), scenario_tags=(), dish_count=3,
+             taste_tags=("清淡",), cuisine_tags=(), dish_types=(), include_ingredients=(), exclude_ingredients=(),
+             nutrition_goal_codes=(), health_constraints=(), time_constraint_seconds=None, max_time_minutes=None,
+         )):
+        orchestrator._graph.invoke(state)
+
+    assert search_mock.call_count == 1
+    assert model.calls == 1
+    assert len(finalized_states) == 1
+    assert finalized_states[0].status == RequestStatus.NEEDS_CLARIFICATION
+    assert transitions[0].next_private_snapshot["option_modifications"][1] == {"taste_tags": []}
+
+
+def test_empty_expansion_inquires_instead_of_reporting_success():
+    class ExpandAfterSearchModel:
+        def __init__(self):
+            self.calls = 0
+
+        def decide_action(self, state: DietAgentState) -> AgentAction:
+            self.calls += 1
+            if self.calls == 1:
+                return AgentAction(action=ActionType.SEARCH_CANDIDATES, arguments={"query": "家常菜"})
+            return AgentAction(
+                action=ActionType.EXPAND_CANDIDATES,
+                arguments={"query": "更多家常菜"},
+                evidence_refs=[state["observations"][0].evidence_ref],
+            )
+
+    model = ExpandAfterSearchModel()
+    orchestrator = LangGraphRecommendationOrchestrator(llm=model)
+    rid = _fresh_rid()
+    build_id = "00000000-0000-0000-0000-000000000001"
+    state: DietAgentState = {
+        "request_id": rid,
+        "session_id": "sess_empty_expansion",
+        "message": "推荐三道菜",
+        "participant_refs": ["p1"],
+        "user_id_mapping": {"p1": 1},
+        "build_id": build_id,
+        "lock_token": "token-1",
+        "lost": SimpleNamespace(is_set=lambda: False),
+        "c4": _create_test_c4_service(),
+        "workflow_state": WorkflowState(
+            request_id=rid, build_id=build_id, status=RequestStatus.RUNNING,
+            participant_refs=["p1"],
+        ),
+        "tool_context": ToolContext(request_id=rid, build_id=build_id),
+    }
+    search_results = [
+        ToolResponse(success=True, data={"candidates": [1], "total": 1}),
+        ToolResponse(success=False, status="no_solution", data={"candidates": []}, error_code="CANDIDATES_REQUIRED"),
+    ]
+    finalized_states: list[WorkflowState] = []
+    with patch("food_agent_v2.c3.graph_orchestrator.search_candidates", side_effect=search_results) as search_mock, \
+         patch.object(orchestrator, "_guard_active", return_value=None), \
+         patch.object(orchestrator, "_finalize", side_effect=lambda st, *args, **kwargs: finalized_states.append(st)), \
+         patch("food_agent_v2.c3.graph_orchestrator.QueryNormalizer.normalize", return_value=SimpleNamespace(
+             retrieval_query="三道菜", meal_types=(), population_tags=(), scenario_tags=(), dish_count=3,
+             taste_tags=(), cuisine_tags=(), dish_types=(), include_ingredients=(), exclude_ingredients=(),
+             nutrition_goal_codes=(), health_constraints=(), time_constraint_seconds=None, max_time_minutes=None,
+         )):
+        final_state = orchestrator._graph.invoke(state)
+
+    assert search_mock.call_count == 2
+    assert model.calls == 2
+    assert finalized_states[0].status == RequestStatus.NEEDS_CLARIFICATION
+    assert final_state["observations"][-1].status == "no_solution"
+
+
 def test_r6_gate_rejects_budget_exhaustion():
     """R6 安全门卫：决策或工具预算耗尽时强制停止，防止循环失控。"""
     # 1. 决策预算耗尽
@@ -3282,6 +3421,23 @@ def test_d1_model_output_invalid_json_fails_closed():
     assert len(finalized_states) == 1
     assert finalized_states[0].status == RequestStatus.FAILED
     assert finalized_states[0].error.error_code == "MODEL_OUTPUT_INVALID_JSON"
+
+
+def test_agent_decision_requests_json_object_response():
+    class JsonModeModel:
+        def __init__(self):
+            self.response_format = None
+
+        def invoke(self, role, system_prompt, user_message, response_format=None):
+            self.response_format = response_format
+            return {"content": '{"action":"search_candidates","arguments":{"query":"家常菜"}}'}
+
+    model = JsonModeModel()
+    orchestrator = LangGraphRecommendationOrchestrator(llm=model)
+    action = orchestrator._decide_next_action({"observations": [], "execution_context": {}}, AgentPolicy())
+
+    assert action.action == ActionType.SEARCH_CANDIDATES
+    assert model.response_format == {"type": "json_object"}
 
 
 def test_d1_model_output_invalid_schema_fails_closed():

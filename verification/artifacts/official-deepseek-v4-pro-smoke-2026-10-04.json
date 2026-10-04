@@ -1,0 +1,22 @@
+{
+  "provider": "DeepSeek official",
+  "model": "deepseek-v4-pro",
+  "thinking": "disabled",
+  "base_url": "https://api.deepseek.com",
+  "ok": true,
+  "usage": {
+    "completion_tokens": 5,
+    "prompt_tokens": 36,
+    "total_tokens": 41,
+    "completion_tokens_details": null,
+    "prompt_tokens_details": {
+      "audio_tokens": null,
+      "cache_write_tokens": null,
+      "cached_tokens": 0
+    },
+    "prompt_cache_hit_tokens": 0,
+    "prompt_cache_miss_tokens": 36
+  },
+  "response_model": "deepseek-v4-pro",
+  "elapsed_seconds": 1.28
+}

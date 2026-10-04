@@ -1,0 +1,311 @@
+{
+  "request": {
+    "session_id": "f2f7aa63-a4a",
+    "participants": [
+      {
+        "participant_ref": "p1"
+      }
+    ],
+    "idempotency_key": "soup-audit-f3067f40331f418e9424c5075ce521c3",
+    "message": "今晚晚餐请安排四菜一汤，家常口味，90分钟内完成"
+  },
+  "state": {
+    "request_id": "26c794de-33b6-462c-88c4-2fbcdf7944d3",
+    "session_id": "f2f7aa63-a4a",
+    "status": "needs_clarification",
+    "created_at": "1791084295.0",
+    "updated_at": "1791084295.0",
+    "stage_events_cursor": 24,
+    "result_summary": {
+      "status": "needs_clarification"
+    },
+    "error": {
+      "code": "TIME_LIMIT_EXCEEDED",
+      "message": "您要求在 90 分钟内完成 5 道菜。在满足健康安全条件的前提下，基于当前安全候选菜谱，最快制作组合预计需要约 131 分钟，因此无法在不超时的情况下凑齐 5 道菜。\n\n您可以考虑以下调整方案：\n- 选项 1: 将时间限制放宽至 131 分钟或以上，保留 5 道菜\n- 选项 2: 调整菜品数量为 4 道菜，以缩短烹饪制作耗时\n- 选项 3: 取消严格时间限制，优先保证营养均衡与菜品丰富度"
+    },
+    "active_clarification": {
+      "question_id": "q_26c794de-33b6-462c-88c4-2fbcdf7944d3",
+      "question_text": "您要求在 90 分钟内完成 5 道菜。在满足健康安全条件的前提下，基于当前安全候选菜谱，最快制作组合预计需要约 131 分钟，因此无法在不超时的情况下凑齐 5 道菜。\n\n您可以考虑以下调整方案：\n- 选项 1: 将时间限制放宽至 131 分钟或以上，保留 5 道菜\n- 选项 2: 调整菜品数量为 4 道菜，以缩短烹饪制作耗时\n- 选项 3: 取消严格时间限制，优先保证营养均衡与菜品丰富度",
+      "options": [
+        {
+          "option_id": 1,
+          "text": "选项 1: 将时间限制放宽至 131 分钟或以上，保留 5 道菜"
+        },
+        {
+          "option_id": 2,
+          "text": "选项 2: 调整菜品数量为 4 道菜，以缩短烹饪制作耗时"
+        },
+        {
+          "option_id": 3,
+          "text": "选项 3: 取消严格时间限制，优先保证营养均衡与菜品丰富度"
+        }
+      ],
+      "expires_at": 1791087895.0,
+      "status": "pending"
+    }
+  },
+  "events": [
+    {
+      "id": "1",
+      "event": "request_accepted",
+      "data": {
+        "request_id": "26c794de-33b6-462c-88c4-2fbcdf7944d3",
+        "session_id": "f2f7aa63-a4a"
+      }
+    },
+    {
+      "id": "ev_thought_26c794de-33b6-462c-88c4-2fbcdf7944d3_context_building_running_1",
+      "event": "thought_node",
+      "data": {
+        "request_id": "26c794de-33b6-462c-88c4-2fbcdf7944d3",
+        "node_id": "context_building",
+        "title": "上下文解析与需求对齐",
+        "status": "running"
+      }
+    },
+    {
+      "id": "ev_thought_26c794de-33b6-462c-88c4-2fbcdf7944d3_context_building_done_1",
+      "event": "thought_node",
+      "data": {
+        "request_id": "26c794de-33b6-462c-88c4-2fbcdf7944d3",
+        "node_id": "context_building",
+        "title": "上下文解析与需求对齐",
+        "status": "done",
+        "summary": "已理解 1 位参与者的用餐需求"
+      }
+    },
+    {
+      "id": "4",
+      "event": "analysis_ready",
+      "data": {
+        "stage": "context_ready",
+        "summary": "已理解1位参与者的需求",
+        "evidence_refs": []
+      }
+    },
+    {
+      "id": "5",
+      "event": "answer_started",
+      "data": {
+        "request_id": "26c794de-33b6-462c-88c4-2fbcdf7944d3"
+      }
+    },
+    {
+      "id": "ev_thought_26c794de-33b6-462c-88c4-2fbcdf7944d3_query_understanding_running_1",
+      "event": "thought_node",
+      "data": {
+        "request_id": "26c794de-33b6-462c-88c4-2fbcdf7944d3",
+        "node_id": "query_understanding",
+        "title": "意图分析与查询规划",
+        "status": "running"
+      }
+    },
+    {
+      "id": "ev_thought_26c794de-33b6-462c-88c4-2fbcdf7944d3_query_understanding_done_1",
+      "event": "thought_node",
+      "data": {
+        "request_id": "26c794de-33b6-462c-88c4-2fbcdf7944d3",
+        "node_id": "query_understanding",
+        "title": "意图分析与查询规划",
+        "status": "done",
+        "summary": "已完成意图解析与约束规则提取"
+      }
+    },
+    {
+      "id": "8",
+      "event": "analysis_ready",
+      "data": {
+        "stage": "query_understanding",
+        "summary": "理解需求完成",
+        "evidence_refs": []
+      }
+    },
+    {
+      "id": "ev_thought_26c794de-33b6-462c-88c4-2fbcdf7944d3_candidate_search_running_1",
+      "event": "thought_node",
+      "data": {
+        "request_id": "26c794de-33b6-462c-88c4-2fbcdf7944d3",
+        "node_id": "candidate_search",
+        "title": "菜品候选检索",
+        "status": "running",
+        "tool_name": "search_candidates"
+      }
+    },
+    {
+      "id": "ev_tool_26c794de-33b6-462c-88c4-2fbcdf7944d3_search_candidates_candidate_search_1",
+      "event": "tool_trace",
+      "data": {
+        "request_id": "26c794de-33b6-462c-88c4-2fbcdf7944d3",
+        "tool_name": "search_candidates",
+        "result_summary": "检索完成，获取 40 道候选菜品",
+        "node_id": "candidate_search",
+        "duration_ms": 1268
+      }
+    },
+    {
+      "id": "ev_thought_26c794de-33b6-462c-88c4-2fbcdf7944d3_candidate_search_done_1",
+      "event": "thought_node",
+      "data": {
+        "request_id": "26c794de-33b6-462c-88c4-2fbcdf7944d3",
+        "node_id": "candidate_search",
+        "title": "菜品候选检索",
+        "status": "done",
+        "summary": "检索完成，获取 40 道候选菜品",
+        "tool_name": "search_candidates",
+        "duration_ms": 1268
+      }
+    },
+    {
+      "id": "12",
+      "event": "analysis_ready",
+      "data": {
+        "stage": "retrieval",
+        "summary": "检索完成，找到 40 道候选菜品",
+        "evidence_refs": []
+      }
+    },
+    {
+      "id": "ev_thought_26c794de-33b6-462c-88c4-2fbcdf7944d3_recipe_audit_running_1",
+      "event": "thought_node",
+      "data": {
+        "request_id": "26c794de-33b6-462c-88c4-2fbcdf7944d3",
+        "node_id": "recipe_audit",
+        "title": "健康合规审查",
+        "status": "running",
+        "tool_name": "audit_recipe_health"
+      }
+    },
+    {
+      "id": "ev_tool_26c794de-33b6-462c-88c4-2fbcdf7944d3_audit_recipe_health_recipe_audit_1",
+      "event": "tool_trace",
+      "data": {
+        "request_id": "26c794de-33b6-462c-88c4-2fbcdf7944d3",
+        "tool_name": "audit_recipe_health",
+        "result_summary": "健康审查完成，保留 31 道安全菜品",
+        "node_id": "recipe_audit",
+        "duration_ms": 1600
+      }
+    },
+    {
+      "id": "ev_thought_26c794de-33b6-462c-88c4-2fbcdf7944d3_recipe_audit_done_1",
+      "event": "thought_node",
+      "data": {
+        "request_id": "26c794de-33b6-462c-88c4-2fbcdf7944d3",
+        "node_id": "recipe_audit",
+        "title": "健康合规审查",
+        "status": "done",
+        "summary": "健康审查完成，保留 31 道安全菜品",
+        "tool_name": "audit_recipe_health",
+        "duration_ms": 1600
+      }
+    },
+    {
+      "id": "16",
+      "event": "analysis_ready",
+      "data": {
+        "stage": "health_evaluation",
+        "summary": "健康审查完成",
+        "evidence_refs": []
+      }
+    },
+    {
+      "id": "ev_thought_26c794de-33b6-462c-88c4-2fbcdf7944d3_menu_combination_running_1",
+      "event": "thought_node",
+      "data": {
+        "request_id": "26c794de-33b6-462c-88c4-2fbcdf7944d3",
+        "node_id": "menu_combination",
+        "title": "营养与偏好组合",
+        "status": "running",
+        "tool_name": "combine_nutritional_menu"
+      }
+    },
+    {
+      "id": "ev_tool_26c794de-33b6-462c-88c4-2fbcdf7944d3_combine_nutritional_menu_menu_combination_1",
+      "event": "tool_trace",
+      "data": {
+        "request_id": "26c794de-33b6-462c-88c4-2fbcdf7944d3",
+        "tool_name": "combine_nutritional_menu",
+        "result_summary": "菜单规划需澄清: 您要求在 90 分钟内完成 5 道菜。在满足健康安全条件的前提下，基于当前安全候选菜谱，最快制作组合预计需要约 131 分钟，因此无法在不超时的情况下凑齐 5 道菜。",
+        "node_id": "menu_combination",
+        "duration_ms": 3661
+      }
+    },
+    {
+      "id": "ev_thought_26c794de-33b6-462c-88c4-2fbcdf7944d3_menu_combination_warning_1",
+      "event": "thought_node",
+      "data": {
+        "request_id": "26c794de-33b6-462c-88c4-2fbcdf7944d3",
+        "node_id": "menu_combination",
+        "title": "营养与偏好组合",
+        "status": "warning",
+        "summary": "约束冲突待澄清: 您要求在 90 分钟内完成 5 道菜。在满足健康安全条件的前提下，基于当前安全候选菜谱，最快制作组合预计需要约 131 分钟，因此无法在不超时的情况下凑齐 5 道菜。",
+        "tool_name": "combine_nutritional_menu",
+        "duration_ms": 3661
+      }
+    },
+    {
+      "id": "20",
+      "event": "analysis_ready",
+      "data": {
+        "stage": "menu_planning",
+        "summary": "菜单规划受阻: 您要求在 90 分钟内完成 5 道菜。在满足健康安全条件的前提下，基于当前安全候选菜谱，最快制作组合预计需要约 131 分钟，因此无法在不超时的情况下凑齐 5 道菜。",
+        "evidence_refs": []
+      }
+    },
+    {
+      "id": "ev_thought_26c794de-33b6-462c-88c4-2fbcdf7944d3_inquire_user_warning_1",
+      "event": "thought_node",
+      "data": {
+        "request_id": "26c794de-33b6-462c-88c4-2fbcdf7944d3",
+        "node_id": "inquire_user",
+        "title": "需求澄清",
+        "status": "warning",
+        "summary": "您要求在 90 分钟内完成 5 道菜。在满足健康安全条件的前提下，基于当前安全候选菜谱，最快制作组合预计需要约 131 分钟，因此无法在不超时的情况下凑齐 5 道菜。"
+      }
+    },
+    {
+      "id": "22",
+      "event": "analysis_ready",
+      "data": {
+        "stage": "constraint_inquiry",
+        "summary": "您要求在 90 分钟内完成 5 道菜。在满足健康安全条件的前提下，基于当前安全候选菜谱，最快制作组合预计需要约 131 分钟，因此无法在不超时的情况下凑齐 5 道菜。",
+        "evidence_refs": []
+      }
+    },
+    {
+      "id": "ev_thought_26c794de-33b6-462c-88c4-2fbcdf7944d3_commit_warning_1",
+      "event": "thought_node",
+      "data": {
+        "request_id": "26c794de-33b6-462c-88c4-2fbcdf7944d3",
+        "node_id": "commit",
+        "title": "等待用户确认",
+        "status": "warning",
+        "summary": "已生成澄清选项并等待用户选择"
+      }
+    },
+    {
+      "id": "ev_clarify_26c794de-33b6-462c-88c4-2fbcdf7944d3",
+      "event": "clarification_needed",
+      "data": {
+        "request_id": "26c794de-33b6-462c-88c4-2fbcdf7944d3",
+        "question_id": "q_26c794de-33b6-462c-88c4-2fbcdf7944d3",
+        "clarification": "您要求在 90 分钟内完成 5 道菜。在满足健康安全条件的前提下，基于当前安全候选菜谱，最快制作组合预计需要约 131 分钟，因此无法在不超时的情况下凑齐 5 道菜。\n\n您可以考虑以下调整方案：\n- 选项 1: 将时间限制放宽至 131 分钟或以上，保留 5 道菜\n- 选项 2: 调整菜品数量为 4 道菜，以缩短烹饪制作耗时\n- 选项 3: 取消严格时间限制，优先保证营养均衡与菜品丰富度",
+        "options": [
+          {
+            "option_id": 1,
+            "text": "选项 1: 将时间限制放宽至 131 分钟或以上，保留 5 道菜"
+          },
+          {
+            "option_id": 2,
+            "text": "选项 2: 调整菜品数量为 4 道菜，以缩短烹饪制作耗时"
+          },
+          {
+            "option_id": 3,
+            "text": "选项 3: 取消严格时间限制，优先保证营养均衡与菜品丰富度"
+          }
+        ],
+        "expires_at": 1791087894.851601
+      }
+    }
+  ]
+}

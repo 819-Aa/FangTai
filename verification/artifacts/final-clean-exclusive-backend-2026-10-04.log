@@ -1,0 +1,34 @@
+........................................................................ [  4%]
+........................................................................ [  9%]
+.........................................................s.............. [ 13%]
+........................................................................ [ 18%]
+........................................................................ [ 22%]
+........................................................................ [ 27%]
+........................................................................ [ 31%]
+........................s............................................... [ 36%]
+........................................................................ [ 40%]
+...........................................s............................ [ 45%]
+........................................................................ [ 49%]
+........................................................................ [ 54%]
+........................................................................ [ 58%]
+........................................................................ [ 63%]
+........................................................................ [ 67%]
+........................................................................ [ 72%]
+........................................................................ [ 76%]
+........................................................................ [ 81%]
+........................................................................ [ 85%]
+........................................................................ [ 90%]
+........................................................................ [ 94%]
+........................................................................ [ 99%]
+...............                                                          [100%]
+============================== warnings summary ===============================
+.venv\Lib\site-packages\fastapi\testclient.py:1
+  C:\Users\zhiyo\Desktop\����\program_v2\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+SKIPPED [1] tests\b1\test_data_review.py:28: Windows symlink privilege unavailable for CLI formal-target alias test: [WinError 1314] �ͻ���û���������Ȩ��: 'C:\\Users\\zhiyo\\AppData\\Local\\Temp\\pytest-of-zhiyo\\pytest-885\\test_nutrition_occurrence_cli_3\\data\\review\\ingredient_nutrition_retention_decisions.csv' -> 'C:\\Users\\zhiyo\\AppData\\Local\\Temp\\pytest-of-zhiyo\\pytest-885\\test_nutrition_occurrence_cli_3\\retention-cli-symlink.csv'
+SKIPPED [1] tests\b1\test_nutrition_occurrence_review.py:38: Windows symlink privilege unavailable for direct writer formal-target alias test: [WinError 1314] �ͻ���û���������Ȩ��: 'C:\\Users\\zhiyo\\AppData\\Local\\Temp\\pytest-of-zhiyo\\pytest-885\\test_writer_refuses_symlink_to0\\data\\review\\ingredient_nutrition_retention_decisions.csv' -> 'C:\\Users\\zhiyo\\AppData\\Local\\Temp\\pytest-of-zhiyo\\pytest-885\\test_writer_refuses_symlink_to0\\retention-review-symlink.csv'
+SKIPPED [1] tests\b1\test_quantity_rule_review.py:253: symlink creation unavailable: [WinError 1314] �ͻ���û���������Ȩ��: 'C:\\Users\\zhiyo\\AppData\\Local\\Temp\\pytest-of-zhiyo\\pytest-885\\test_writer_refuses_resolved_s0\\data\\review\\ingredient_measure_rules.csv' -> 'C:\\Users\\zhiyo\\AppData\\Local\\Temp\\pytest-of-zhiyo\\pytest-885\\test_writer_refuses_resolved_s0\\resolved-alias.csv'
+1596 passed, 3 skipped, 5 deselected, 1 warning in 110.96s (0:01:50)

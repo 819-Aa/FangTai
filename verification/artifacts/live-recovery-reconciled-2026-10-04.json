@@ -1,0 +1,29 @@
+{
+  "date": "2026-10-04",
+  "source": "live-recovery-2026-10-04.json",
+  "request_id": "443fe42c-0fed-4308-9389-7b3077c0a73e",
+  "checks": [
+    {
+      "name": "public_menu_get_session_mysql_sse_consistent",
+      "passed": true
+    },
+    {
+      "name": "three_real_dishes",
+      "passed": true
+    },
+    {
+      "name": "outbox_result_committed",
+      "passed": true
+    },
+    {
+      "name": "terminal_replay_same_id",
+      "passed": true
+    },
+    {
+      "name": "same_key_changed_body_409",
+      "passed": true
+    }
+  ],
+  "note": "Original strict dict comparison failed because session adds committed_at; validate all five public menu fields.",
+  "complete": true
+}

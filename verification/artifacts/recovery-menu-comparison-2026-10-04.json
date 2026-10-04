@@ -1,0 +1,54 @@
+{
+  "request_id": "443fe42c-0fed-4308-9389-7b3077c0a73e",
+  "request_menu": {
+    "build_id": "98f7cf59-29b2-4c0c-b933-5a8f6ed0e669",
+    "plan_id": "bb2a34037b58b8cff5683da48ea7614b73b68fedf129ebfa6695577ac3531b31",
+    "menu_hash": "df270660faf6284f5bbd1d59ab4c8604b1cf4bd276786338b4c4fb79425cf770",
+    "recipe_ids": [
+      778,
+      320,
+      444
+    ],
+    "items": [
+      {
+        "recipe_id": 778,
+        "name": "清炒苕尖"
+      },
+      {
+        "recipe_id": 320,
+        "name": "冬瓜双豆"
+      },
+      {
+        "recipe_id": 444,
+        "name": "油渣白菜"
+      }
+    ]
+  },
+  "session_menu": {
+    "plan_id": "bb2a34037b58b8cff5683da48ea7614b73b68fedf129ebfa6695577ac3531b31",
+    "menu_hash": "df270660faf6284f5bbd1d59ab4c8604b1cf4bd276786338b4c4fb79425cf770",
+    "recipe_ids": [
+      778,
+      320,
+      444
+    ],
+    "committed_at": "2026-10-04 02:15:27",
+    "build_id": "98f7cf59-29b2-4c0c-b933-5a8f6ed0e669",
+    "items": [
+      {
+        "recipe_id": 778,
+        "name": "清炒苕尖"
+      },
+      {
+        "recipe_id": 320,
+        "name": "冬瓜双豆"
+      },
+      {
+        "recipe_id": 444,
+        "name": "油渣白菜"
+      }
+    ]
+  },
+  "mysql_status": "completed",
+  "final_plan_id": "bb2a34037b58b8cff5683da48ea7614b73b68fedf129ebfa6695577ac3531b31"
+}

@@ -1,0 +1,75 @@
+[
+  {
+    "name": "real-poll-clarification",
+    "data": {
+      "request_ids": [
+        "c5c133b6-229c-49df-b844-4de712624527",
+        "85f4a0e0-feb1-462f-9591-b5ed7b30de2e"
+      ],
+      "polls_before_clarification": 3,
+      "poll_stopped": true,
+      "final_status": "completed",
+      "session_id": "2895a226-bb4",
+      "menu": {
+        "build_id": "98f7cf59-29b2-4c0c-b933-5a8f6ed0e669",
+        "plan_id": "57a170115ee9e203b5bb5e0e47691c7caff6f131cab00fdd1be28184843c2005",
+        "menu_hash": "37dace887004c58043b46e587dcf5101f620e451ac383e1cbda64ca09e20ea55",
+        "recipe_ids": [
+          520,
+          753,
+          872
+        ],
+        "items": [
+          {
+            "recipe_id": 520,
+            "name": "蔚蓝星空"
+          },
+          {
+            "recipe_id": 753,
+            "name": "妩媚妃子笑"
+          },
+          {
+            "recipe_id": 872,
+            "name": "实蛋"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "real-menu-and-progress",
+    "data": {
+      "request_id": "381546bc-bee5-41fe-9e52-50bb06c518d5",
+      "items": [
+        {
+          "recipe_id": 1740,
+          "name": "麻婆蛋羹"
+        },
+        {
+          "recipe_id": 335,
+          "name": "肉丸"
+        },
+        {
+          "recipe_id": 1531,
+          "name": "家常烤时蔬"
+        },
+        {
+          "recipe_id": 1957,
+          "name": "家常卤鸡腿"
+        },
+        {
+          "recipe_id": 1498,
+          "name": "烤冬笋"
+        }
+      ],
+      "dish_kinds": [
+        "soup",
+        "main",
+        "main",
+        "main",
+        "main"
+      ],
+      "invocation_count": 7
+    }
+  }
+]

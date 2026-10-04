@@ -1,0 +1,202 @@
+{
+  "date": "2026-10-03",
+  "transport": "real HTTP",
+  "mock": false,
+  "incomplete": true,
+  "abort_reason": "Concurrent request did not reach terminal within 300 seconds",
+  "scenarios": [
+    {
+      "name": "recommendation",
+      "request_id": "e0d74487-2300-414d-b05a-7db97b126e8d",
+      "session_id": "00cda1f4-3b4",
+      "status": "completed",
+      "error_code": null,
+      "mysql_log_status": "completed",
+      "outbox_types": [
+        "answer_ready",
+        "result_committed"
+      ],
+      "sse_types": [
+        "request_accepted",
+        "thought_node",
+        "thought_node",
+        "analysis_ready",
+        "answer_started",
+        "thought_node",
+        "thought_node",
+        "analysis_ready",
+        "thought_node",
+        "tool_trace",
+        "thought_node",
+        "analysis_ready",
+        "thought_node",
+        "tool_trace",
+        "thought_node",
+        "analysis_ready",
+        "thought_node",
+        "tool_trace",
+        "thought_node",
+        "analysis_ready",
+        "thought_node",
+        "tool_trace",
+        "thought_node",
+        "thought_node",
+        "answer_ready",
+        "result_committed"
+      ],
+      "sse_ids_unique": true,
+      "resume_exact_suffix": true,
+      "public_forbidden_field_count": 0
+    },
+    {
+      "name": "replacement",
+      "request_id": "7e90f23e-dad6-4f25-8b6d-269b2b8ab026",
+      "session_id": "00cda1f4-3b4",
+      "status": "completed",
+      "error_code": null,
+      "mysql_log_status": "completed",
+      "outbox_types": [
+        "answer_ready",
+        "result_committed"
+      ],
+      "sse_types": [
+        "request_accepted",
+        "thought_node",
+        "thought_node",
+        "analysis_ready",
+        "answer_started",
+        "thought_node",
+        "thought_node",
+        "analysis_ready",
+        "thought_node",
+        "tool_trace",
+        "thought_node",
+        "analysis_ready",
+        "thought_node",
+        "tool_trace",
+        "thought_node",
+        "analysis_ready",
+        "thought_node",
+        "tool_trace",
+        "thought_node",
+        "analysis_ready",
+        "thought_node",
+        "tool_trace",
+        "thought_node",
+        "thought_node",
+        "answer_ready",
+        "result_committed"
+      ],
+      "sse_ids_unique": true,
+      "resume_exact_suffix": true,
+      "public_forbidden_field_count": 0
+    },
+    {
+      "name": "concurrent_replacement_1",
+      "request_id": "71e89ebc-af81-4137-8089-4f3a7f2f17d3",
+      "session_id": "00cda1f4-3b4",
+      "status": "failed",
+      "error_code": "RETRIEVAL_FAILED",
+      "mysql_log_status": "failed",
+      "outbox_types": [],
+      "sse_types": [
+        "request_accepted",
+        "thought_node",
+        "thought_node",
+        "analysis_ready",
+        "answer_started",
+        "thought_node",
+        "thought_node",
+        "analysis_ready",
+        "thought_node",
+        "thought_node",
+        "request_terminal"
+      ],
+      "sse_ids_unique": true,
+      "resume_exact_suffix": true,
+      "public_forbidden_field_count": 0
+    }
+  ],
+  "checks": [
+    {
+      "name": "recommendation_sse_suffix",
+      "passed": true
+    },
+    {
+      "name": "recommendation_public_payload",
+      "passed": true
+    },
+    {
+      "name": "recommendation_mysql_terminal",
+      "passed": true,
+      "http_status": "completed",
+      "mysql_status": "completed"
+    },
+    {
+      "name": "recommendation_committed_menu",
+      "passed": true
+    },
+    {
+      "name": "recommendation_completed",
+      "passed": true
+    },
+    {
+      "name": "idempotent_replay",
+      "passed": true
+    },
+    {
+      "name": "idempotent_conflict",
+      "passed": true
+    },
+    {
+      "name": "replacement_accepted",
+      "passed": true,
+      "http_code": 200
+    },
+    {
+      "name": "replacement_sse_suffix",
+      "passed": true
+    },
+    {
+      "name": "replacement_public_payload",
+      "passed": true
+    },
+    {
+      "name": "replacement_mysql_terminal",
+      "passed": true,
+      "http_status": "completed",
+      "mysql_status": "completed"
+    },
+    {
+      "name": "replacement_committed_menu",
+      "passed": true
+    },
+    {
+      "name": "replacement_only_target_changed",
+      "passed": true
+    },
+    {
+      "name": "stale_menu_conflict",
+      "passed": true
+    },
+    {
+      "name": "concurrent_replacement_1_sse_suffix",
+      "passed": true
+    },
+    {
+      "name": "concurrent_replacement_1_public_payload",
+      "passed": true
+    },
+    {
+      "name": "concurrent_replacement_1_mysql_terminal",
+      "passed": true,
+      "http_status": "failed",
+      "mysql_status": "failed"
+    }
+  ],
+  "concurrent_pending": {
+    "request_id": "ee618da0-c94e-43d8-876e-045624162742",
+    "status": "recovery_required"
+  },
+  "failed_concurrent_kept_old_menu": true
+}

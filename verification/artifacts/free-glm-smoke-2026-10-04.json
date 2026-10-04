@@ -1,0 +1,13 @@
+{
+  "model": "THUDM/GLM-4-9B-0414",
+  "enable_thinking": false,
+  "ok": false,
+  "usage": {
+    "completion_tokens": 1,
+    "prompt_tokens": 12,
+    "total_tokens": 13,
+    "completion_tokens_details": null,
+    "prompt_tokens_details": null
+  },
+  "elapsed_seconds": 1.94
+}

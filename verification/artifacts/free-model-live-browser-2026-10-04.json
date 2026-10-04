@@ -1,0 +1,237 @@
+{
+  "config": {
+    "argv": [
+      "D:\\App\\nodejs\\node.exe",
+      "C:\\Users\\zhiyo\\Desktop\\竞赛\\program_v2\\frontend\\node_modules\\@playwright\\test\\cli.js",
+      "test",
+      "--config",
+      "verification/playwright.free-model.config.ts",
+      "clarification.spec.ts",
+      "structure.spec.ts"
+    ],
+    "configFile": "C:\\Users\\zhiyo\\Desktop\\竞赛\\program_v2\\frontend\\verification\\playwright.free-model.config.ts",
+    "rootDir": "C:/Users/zhiyo/Desktop/竞赛/program_v2/frontend/e2e",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "C:/Users/zhiyo/Desktop/竞赛/program_v2/verification/artifacts/free-model-live-browser-2026-10-04",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "",
+        "name": "",
+        "testDir": "C:/Users/zhiyo/Desktop/竞赛/program_v2/frontend/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 300000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "line",
+        null
+      ],
+      [
+        "json",
+        {
+          "outputFile": "C:\\Users\\zhiyo\\Desktop\\竞赛\\program_v2\\verification\\artifacts\\free-model-live-browser-2026-10-04.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.62.1",
+    "workers": 1,
+    "webServer": {
+      "command": "npm run dev -- --port 5176 --strictPort",
+      "url": "http://127.0.0.1:5176",
+      "reuseExistingServer": false,
+      "env": {
+        "VITE_API_BASE_URL": "/api"
+      }
+    }
+  },
+  "suites": [
+    {
+      "title": "clarification.spec.ts",
+      "file": "clarification.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "真实 SSE 连续失败降级轮询：待澄清停止轮询，选项续接后成单",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 300000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 300046,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 300000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 300000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 300000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "C:\\Users\\zhiyo\\Desktop\\竞赛\\program_v2\\frontend\\e2e\\clarification.spec.ts",
+                        "column": 47,
+                        "line": 53
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator:  locator('.terminal-bar')\nExpected: \u001b[32m\"已完成\"\u001b[39m\nReceived: \u001b[31m\"待澄清\"\u001b[39m\n\nCall log:\n\u001b[2m  - Expect \"toHaveText\" with timeout 180000ms\u001b[22m\n\u001b[2m  - waiting for locator('.terminal-bar')\u001b[22m\n\u001b[2m    348 × locator resolved to <div role=\"status\" class=\"terminal-bar term-needs_clarification\">待澄清</div>\u001b[22m\n\u001b[2m        - unexpected value \"待澄清\"\u001b[22m\n\u001b[2m  - Test timeout of 300000ms exceeded.\u001b[22m\n\n\n  51 |     const accepted = page.waitForResponse((response) => response.request().method() === \"POST\"\n  52 |       && new URL(response.url()).pathname.endsWith(\"/recommendation-requests\"));\n> 53 |     await choice.click();\n     |                          ^\n  54 |     expect((await accepted).ok()).toBe(true);\n  55 |     await expect(page.locator(\".terminal-bar\")).toBeVisible({ timeout: 180000 });\n  56 |   }\n    at C:\\Users\\zhiyo\\Desktop\\竞赛\\program_v2\\frontend\\e2e\\clarification.spec.ts:53:47"
+                    }
+                  ],
+                  "stdout": [
+                    {
+                      "text": "SSE_DIAG {\"readyState\":0}\n"
+                    },
+                    {
+                      "text": "SSE_DIAG {\"readyState\":0}\n"
+                    },
+                    {
+                      "text": "SSE_DIAG {\"readyState\":0}\n"
+                    },
+                    {
+                      "text": "SSE_DIAG {\"readyState\":0}\n"
+                    },
+                    {
+                      "text": "SSE_DIAG {\"readyState\":0}\n"
+                    },
+                    {
+                      "text": "SSE_DIAG {\"readyState\":0}\n"
+                    },
+                    {
+                      "text": "SSE_DIAG {\"readyState\":0}\n"
+                    },
+                    {
+                      "text": "SSE_DIAG {\"readyState\":0}\n"
+                    },
+                    {
+                      "text": "SSE_DIAG {\"readyState\":0}\n"
+                    },
+                    {
+                      "text": "SSE_DIAG {\"readyState\":0}\n"
+                    },
+                    {
+                      "text": "SSE_DIAG {\"readyState\":0}\n"
+                    },
+                    {
+                      "text": "SSE_DIAG {\"readyState\":0}\n"
+                    }
+                  ],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-04T04:55:28.550Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "C:\\Users\\zhiyo\\Desktop\\竞赛\\program_v2\\verification\\artifacts\\free-model-live-browser-2026-10-04\\clarification-真实-SSE-连续失败降级轮询：待澄清停止轮询，选项续接后成单\\error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "95576b76c291c9797d67-a491a19d85a263d0df74",
+          "file": "clarification.spec.ts",
+          "line": 5,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "structure.spec.ts",
+      "file": "structure.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "四菜一汤：真实五道菜、汤槽位、执行身份与刷新恢复",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 300000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 50934,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-04T05:00:29.451Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "real-menu-and-progress",
+                      "contentType": "application/json",
+                      "body": "eyJyZXF1ZXN0X2lkIjoiODAxM2IwYzItYmU0ZC00OTM5LThkNTktOTAyZWYzY2I1ZGE2IiwiaXRlbXMiOlt7InJlY2lwZV9pZCI6ODMsIm5hbWUiOiLopb/nuqLmn7/osYbohZDnvrkifSx7InJlY2lwZV9pZCI6Mzg1LCJuYW1lIjoi5a625bi46IKJ5pyr5qao6I+c6JK46LGG6IWQIn0seyJyZWNpcGVfaWQiOjQzNywibmFtZSI6IumxvOmmmeadj+myjeiPhyJ9LHsicmVjaXBlX2lkIjoxNTMxLCJuYW1lIjoi5a625bi454Ok5pe26JSsIn0seyJyZWNpcGVfaWQiOjE5NTcsIm5hbWUiOiLlrrbluLjljaTpuKHohb8ifV0sImRpc2hfa2luZHMiOlsic291cCIsIm1haW4iLCJtYWluIiwibWFpbiIsIm1haW4iXSwiaW52b2NhdGlvbl9jb3VudCI6N30="
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "15cbc0a9e470f55a69d6-7772b7abc07ddd8b6bbf",
+          "file": "structure.spec.ts",
+          "line": 5,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-04T04:55:27.123Z",
+    "duration": 353662.82,
+    "expected": 1,
+    "skipped": 0,
+    "unexpected": 1,
+    "flaky": 0
+  }
+}

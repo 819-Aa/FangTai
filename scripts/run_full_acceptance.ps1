@@ -35,12 +35,13 @@ expected = {
     "mysql": "127.0.0.1:3309/food_agent_v2_h07",
     "qdrant": "127.0.0.1:6339/recipe_retrieval_v2_h07",
     "redis": "127.0.0.1:6382/v2:h07",
-    "reasoning_model": "qwen3.8-max",
-    "answer_model": "qwen3.8-max",
-    "llm_key_present": True,
 }
-if summary != expected:
-    print("[H07_CONFIG_MISMATCH] active .env is not the accepted H07/Qwen runtime", file=sys.stderr)
+if any(summary[key] != value for key, value in expected.items()):
+    print("[H07_CONFIG_MISMATCH] active .env is not the accepted H07 store runtime", file=sys.stderr)
+    raise SystemExit(2)
+if not all((config.llm.api_key, config.llm.base_url, config.llm.model_reasoning,
+            config.llm.model_for_role("answer_generation"))):
+    print("[H07_LLM_NOT_CONFIGURED] missing provider/model configuration", file=sys.stderr)
     raise SystemExit(2)
 print(json.dumps(summary, ensure_ascii=False, separators=(",", ":")))
 '@

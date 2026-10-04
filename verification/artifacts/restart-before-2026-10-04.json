@@ -1,0 +1,1067 @@
+[
+  {
+    "request_id": "4e661a42-95e3-4019-8648-5a4522c6b660",
+    "state": {
+      "request_id": "4e661a42-95e3-4019-8648-5a4522c6b660",
+      "session_id": "4eddd9ce-683",
+      "status": "completed",
+      "created_at": "1791080363.0",
+      "updated_at": "1791080363.0",
+      "stage_events_cursor": 26,
+      "result_summary": {
+        "status": "completed",
+        "answer": {
+          "text": "为您推荐以下 3 道菜：淮山炒藕、清炒苕尖、清蒸茄子。\n淮山炒藕、清炒苕尖、清蒸茄子\n菜品已结合当前参与者的饮食约束与健康审查结果筛选，并兼顾口味与菜式多样化。\n按当前步骤估算，预计需要 27 分钟。",
+          "menu_ref": "d871b26a-b3c3-424b-9e5f-f058236badec",
+          "evidence_refs": [
+            "fa2895aa-224c-4234-9f5e-e760d1345ebd"
+          ]
+        },
+        "menu_summary": {
+          "build_id": "98f7cf59-29b2-4c0c-b933-5a8f6ed0e669",
+          "plan_id": "7e8fd9301b7846ab86f631b419b1d8e27a3514fe958a9daa82dc0d71033fa2ef",
+          "menu_hash": "48d913a6c4166935c9c356c8bc901e32a02cdac6e1a1fb5db747fe8301a9cada",
+          "recipe_ids": [
+            1065,
+            778,
+            1789
+          ],
+          "items": [
+            {
+              "recipe_id": 1065,
+              "name": "淮山炒藕"
+            },
+            {
+              "recipe_id": 778,
+              "name": "清炒苕尖"
+            },
+            {
+              "recipe_id": 1789,
+              "name": "清蒸茄子"
+            }
+          ]
+        }
+      },
+      "error": null
+    },
+    "events": [
+      {
+        "id": "1",
+        "event": "request_accepted",
+        "data": {
+          "request_id": "4e661a42-95e3-4019-8648-5a4522c6b660",
+          "session_id": "4eddd9ce-683"
+        }
+      },
+      {
+        "id": "ev_thought_4e661a42-95e3-4019-8648-5a4522c6b660_context_building_running_1",
+        "event": "thought_node",
+        "data": {
+          "request_id": "4e661a42-95e3-4019-8648-5a4522c6b660",
+          "node_id": "context_building",
+          "title": "上下文解析与需求对齐",
+          "status": "running"
+        }
+      },
+      {
+        "id": "ev_thought_4e661a42-95e3-4019-8648-5a4522c6b660_context_building_done_1",
+        "event": "thought_node",
+        "data": {
+          "request_id": "4e661a42-95e3-4019-8648-5a4522c6b660",
+          "node_id": "context_building",
+          "title": "上下文解析与需求对齐",
+          "status": "done",
+          "summary": "已理解 1 位参与者的用餐需求"
+        }
+      },
+      {
+        "id": "4",
+        "event": "analysis_ready",
+        "data": {
+          "stage": "context_ready",
+          "summary": "已理解1位参与者的需求",
+          "evidence_refs": []
+        }
+      },
+      {
+        "id": "5",
+        "event": "answer_started",
+        "data": {
+          "request_id": "4e661a42-95e3-4019-8648-5a4522c6b660"
+        }
+      },
+      {
+        "id": "ev_thought_4e661a42-95e3-4019-8648-5a4522c6b660_query_understanding_running_1",
+        "event": "thought_node",
+        "data": {
+          "request_id": "4e661a42-95e3-4019-8648-5a4522c6b660",
+          "node_id": "query_understanding",
+          "title": "意图分析与查询规划",
+          "status": "running"
+        }
+      },
+      {
+        "id": "ev_thought_4e661a42-95e3-4019-8648-5a4522c6b660_query_understanding_done_1",
+        "event": "thought_node",
+        "data": {
+          "request_id": "4e661a42-95e3-4019-8648-5a4522c6b660",
+          "node_id": "query_understanding",
+          "title": "意图分析与查询规划",
+          "status": "done",
+          "summary": "已完成意图解析与约束规则提取"
+        }
+      },
+      {
+        "id": "8",
+        "event": "analysis_ready",
+        "data": {
+          "stage": "query_understanding",
+          "summary": "理解需求完成",
+          "evidence_refs": []
+        }
+      },
+      {
+        "id": "ev_thought_4e661a42-95e3-4019-8648-5a4522c6b660_candidate_search_running_1",
+        "event": "thought_node",
+        "data": {
+          "request_id": "4e661a42-95e3-4019-8648-5a4522c6b660",
+          "node_id": "candidate_search",
+          "title": "菜品候选检索",
+          "status": "running",
+          "tool_name": "search_candidates"
+        }
+      },
+      {
+        "id": "ev_tool_4e661a42-95e3-4019-8648-5a4522c6b660_search_candidates_candidate_search_1",
+        "event": "tool_trace",
+        "data": {
+          "request_id": "4e661a42-95e3-4019-8648-5a4522c6b660",
+          "tool_name": "search_candidates",
+          "result_summary": "检索完成，获取 40 道候选菜品",
+          "node_id": "candidate_search",
+          "duration_ms": 1498
+        }
+      },
+      {
+        "id": "ev_thought_4e661a42-95e3-4019-8648-5a4522c6b660_candidate_search_done_1",
+        "event": "thought_node",
+        "data": {
+          "request_id": "4e661a42-95e3-4019-8648-5a4522c6b660",
+          "node_id": "candidate_search",
+          "title": "菜品候选检索",
+          "status": "done",
+          "summary": "检索完成，获取 40 道候选菜品",
+          "tool_name": "search_candidates",
+          "duration_ms": 1498
+        }
+      },
+      {
+        "id": "12",
+        "event": "analysis_ready",
+        "data": {
+          "stage": "retrieval",
+          "summary": "检索完成，找到 40 道候选菜品",
+          "evidence_refs": []
+        }
+      },
+      {
+        "id": "ev_thought_4e661a42-95e3-4019-8648-5a4522c6b660_recipe_audit_running_1",
+        "event": "thought_node",
+        "data": {
+          "request_id": "4e661a42-95e3-4019-8648-5a4522c6b660",
+          "node_id": "recipe_audit",
+          "title": "健康合规审查",
+          "status": "running",
+          "tool_name": "audit_recipe_health"
+        }
+      },
+      {
+        "id": "ev_tool_4e661a42-95e3-4019-8648-5a4522c6b660_audit_recipe_health_recipe_audit_1",
+        "event": "tool_trace",
+        "data": {
+          "request_id": "4e661a42-95e3-4019-8648-5a4522c6b660",
+          "tool_name": "audit_recipe_health",
+          "result_summary": "健康审查完成，保留 25 道安全菜品",
+          "node_id": "recipe_audit",
+          "duration_ms": 1556
+        }
+      },
+      {
+        "id": "ev_thought_4e661a42-95e3-4019-8648-5a4522c6b660_recipe_audit_done_1",
+        "event": "thought_node",
+        "data": {
+          "request_id": "4e661a42-95e3-4019-8648-5a4522c6b660",
+          "node_id": "recipe_audit",
+          "title": "健康合规审查",
+          "status": "done",
+          "summary": "健康审查完成，保留 25 道安全菜品",
+          "tool_name": "audit_recipe_health",
+          "duration_ms": 1556
+        }
+      },
+      {
+        "id": "16",
+        "event": "analysis_ready",
+        "data": {
+          "stage": "health_evaluation",
+          "summary": "健康审查完成",
+          "evidence_refs": []
+        }
+      },
+      {
+        "id": "ev_thought_4e661a42-95e3-4019-8648-5a4522c6b660_menu_combination_running_1",
+        "event": "thought_node",
+        "data": {
+          "request_id": "4e661a42-95e3-4019-8648-5a4522c6b660",
+          "node_id": "menu_combination",
+          "title": "营养与偏好组合",
+          "status": "running",
+          "tool_name": "combine_nutritional_menu"
+        }
+      },
+      {
+        "id": "ev_tool_4e661a42-95e3-4019-8648-5a4522c6b660_combine_nutritional_menu_menu_combination_1",
+        "event": "tool_trace",
+        "data": {
+          "request_id": "4e661a42-95e3-4019-8648-5a4522c6b660",
+          "tool_name": "combine_nutritional_menu",
+          "result_summary": "生成 2 个可行菜单组合",
+          "node_id": "menu_combination",
+          "duration_ms": 125
+        }
+      },
+      {
+        "id": "ev_thought_4e661a42-95e3-4019-8648-5a4522c6b660_menu_combination_done_1",
+        "event": "thought_node",
+        "data": {
+          "request_id": "4e661a42-95e3-4019-8648-5a4522c6b660",
+          "node_id": "menu_combination",
+          "title": "营养与偏好组合",
+          "status": "done",
+          "summary": "生成 2 个可行菜单组合",
+          "tool_name": "combine_nutritional_menu",
+          "duration_ms": 125
+        }
+      },
+      {
+        "id": "20",
+        "event": "analysis_ready",
+        "data": {
+          "stage": "menu_planning",
+          "summary": "菜单方案生成完成，生成 2 个可行方案",
+          "evidence_refs": []
+        }
+      },
+      {
+        "id": "ev_thought_4e661a42-95e3-4019-8648-5a4522c6b660_final_validation_running_1",
+        "event": "thought_node",
+        "data": {
+          "request_id": "4e661a42-95e3-4019-8648-5a4522c6b660",
+          "node_id": "final_validation",
+          "title": "全流程合规复核",
+          "status": "running",
+          "tool_name": "validate_selected_menu_health"
+        }
+      },
+      {
+        "id": "ev_tool_4e661a42-95e3-4019-8648-5a4522c6b660_validate_selected_menu_health_final_validation_1",
+        "event": "tool_trace",
+        "data": {
+          "request_id": "4e661a42-95e3-4019-8648-5a4522c6b660",
+          "tool_name": "validate_selected_menu_health",
+          "result_summary": "最终全量健康约束复核通过",
+          "node_id": "final_validation",
+          "duration_ms": 1375
+        }
+      },
+      {
+        "id": "ev_thought_4e661a42-95e3-4019-8648-5a4522c6b660_final_validation_done_1",
+        "event": "thought_node",
+        "data": {
+          "request_id": "4e661a42-95e3-4019-8648-5a4522c6b660",
+          "node_id": "final_validation",
+          "title": "全流程合规复核",
+          "status": "done",
+          "summary": "最终全量健康约束复核通过",
+          "tool_name": "validate_selected_menu_health",
+          "duration_ms": 1375
+        }
+      },
+      {
+        "id": "ev_thought_4e661a42-95e3-4019-8648-5a4522c6b660_commit_done_1",
+        "event": "thought_node",
+        "data": {
+          "request_id": "4e661a42-95e3-4019-8648-5a4522c6b660",
+          "node_id": "commit",
+          "title": "结果持久化",
+          "status": "done",
+          "summary": "全流程合规复核通过，结果已持久化"
+        }
+      },
+      {
+        "id": "ev_answer_4e661a42-95e3-4019-8648-5a4522c6b660",
+        "event": "answer_ready",
+        "data": {
+          "text": "为您推荐以下 3 道菜：淮山炒藕、清炒苕尖、清蒸茄子。\n淮山炒藕、清炒苕尖、清蒸茄子\n菜品已结合当前参与者的饮食约束与健康审查结果筛选，并兼顾口味与菜式多样化。\n按当前步骤估算，预计需要 27 分钟。",
+          "menu_ref": "d871b26a-b3c3-424b-9e5f-f058236badec",
+          "evidence_refs": [
+            "fa2895aa-224c-4234-9f5e-e760d1345ebd"
+          ]
+        }
+      },
+      {
+        "id": "ev_result_4e661a42-95e3-4019-8648-5a4522c6b660",
+        "event": "result_committed",
+        "data": {
+          "request_id": "4e661a42-95e3-4019-8648-5a4522c6b660",
+          "menu_summary": {
+            "items": [
+              {
+                "name": "淮山炒藕",
+                "recipe_id": 1065
+              },
+              {
+                "name": "清炒苕尖",
+                "recipe_id": 778
+              },
+              {
+                "name": "清蒸茄子",
+                "recipe_id": 1789
+              }
+            ],
+            "plan_id": "7e8fd9301b7846ab86f631b419b1d8e27a3514fe958a9daa82dc0d71033fa2ef",
+            "build_id": "98f7cf59-29b2-4c0c-b933-5a8f6ed0e669",
+            "menu_hash": "48d913a6c4166935c9c356c8bc901e32a02cdac6e1a1fb5db747fe8301a9cada",
+            "recipe_ids": [
+              1065,
+              778,
+              1789
+            ]
+          }
+        }
+      }
+    ],
+    "generation": 1
+  },
+  {
+    "request_id": "4138b008-64d3-4128-875e-d8918e385130",
+    "state": {
+      "request_id": "4138b008-64d3-4128-875e-d8918e385130",
+      "session_id": "0b226e5e-9c4",
+      "status": "completed",
+      "created_at": "1791080831.0",
+      "updated_at": "1791080831.0",
+      "stage_events_cursor": 26,
+      "result_summary": {
+        "status": "completed",
+        "answer": {
+          "text": "为您推荐以下 3 道菜：淮山炒藕、清炒苕尖、清蒸茄子。\n淮山炒藕、清炒苕尖、清蒸茄子\n菜品已结合当前参与者的饮食约束与健康审查结果筛选，并兼顾口味与菜式多样化。\n按当前步骤估算，预计需要 27 分钟。",
+          "menu_ref": "8b56771a-dd6c-4f20-bf91-f9da4fdcf7d3",
+          "evidence_refs": [
+            "b31f9ea2-9762-4668-8234-a4e7edfcb569"
+          ]
+        },
+        "menu_summary": {
+          "build_id": "98f7cf59-29b2-4c0c-b933-5a8f6ed0e669",
+          "plan_id": "7e8fd9301b7846ab86f631b419b1d8e27a3514fe958a9daa82dc0d71033fa2ef",
+          "menu_hash": "48d913a6c4166935c9c356c8bc901e32a02cdac6e1a1fb5db747fe8301a9cada",
+          "recipe_ids": [
+            1065,
+            778,
+            1789
+          ],
+          "items": [
+            {
+              "recipe_id": 1065,
+              "name": "淮山炒藕"
+            },
+            {
+              "recipe_id": 778,
+              "name": "清炒苕尖"
+            },
+            {
+              "recipe_id": 1789,
+              "name": "清蒸茄子"
+            }
+          ]
+        }
+      },
+      "error": null
+    },
+    "events": [
+      {
+        "id": "1",
+        "event": "request_accepted",
+        "data": {
+          "request_id": "4138b008-64d3-4128-875e-d8918e385130",
+          "session_id": "0b226e5e-9c4"
+        }
+      },
+      {
+        "id": "ev_thought_4138b008-64d3-4128-875e-d8918e385130_context_building_running_1",
+        "event": "thought_node",
+        "data": {
+          "request_id": "4138b008-64d3-4128-875e-d8918e385130",
+          "node_id": "context_building",
+          "title": "上下文解析与需求对齐",
+          "status": "running"
+        }
+      },
+      {
+        "id": "ev_thought_4138b008-64d3-4128-875e-d8918e385130_context_building_done_1",
+        "event": "thought_node",
+        "data": {
+          "request_id": "4138b008-64d3-4128-875e-d8918e385130",
+          "node_id": "context_building",
+          "title": "上下文解析与需求对齐",
+          "status": "done",
+          "summary": "已理解 1 位参与者的用餐需求"
+        }
+      },
+      {
+        "id": "4",
+        "event": "analysis_ready",
+        "data": {
+          "stage": "context_ready",
+          "summary": "已理解1位参与者的需求",
+          "evidence_refs": []
+        }
+      },
+      {
+        "id": "5",
+        "event": "answer_started",
+        "data": {
+          "request_id": "4138b008-64d3-4128-875e-d8918e385130"
+        }
+      },
+      {
+        "id": "ev_thought_4138b008-64d3-4128-875e-d8918e385130_query_understanding_running_1",
+        "event": "thought_node",
+        "data": {
+          "request_id": "4138b008-64d3-4128-875e-d8918e385130",
+          "node_id": "query_understanding",
+          "title": "意图分析与查询规划",
+          "status": "running"
+        }
+      },
+      {
+        "id": "ev_thought_4138b008-64d3-4128-875e-d8918e385130_query_understanding_done_1",
+        "event": "thought_node",
+        "data": {
+          "request_id": "4138b008-64d3-4128-875e-d8918e385130",
+          "node_id": "query_understanding",
+          "title": "意图分析与查询规划",
+          "status": "done",
+          "summary": "已完成意图解析与约束规则提取"
+        }
+      },
+      {
+        "id": "8",
+        "event": "analysis_ready",
+        "data": {
+          "stage": "query_understanding",
+          "summary": "理解需求完成",
+          "evidence_refs": []
+        }
+      },
+      {
+        "id": "ev_thought_4138b008-64d3-4128-875e-d8918e385130_candidate_search_running_1",
+        "event": "thought_node",
+        "data": {
+          "request_id": "4138b008-64d3-4128-875e-d8918e385130",
+          "node_id": "candidate_search",
+          "title": "菜品候选检索",
+          "status": "running",
+          "tool_name": "search_candidates"
+        }
+      },
+      {
+        "id": "ev_tool_4138b008-64d3-4128-875e-d8918e385130_search_candidates_candidate_search_1",
+        "event": "tool_trace",
+        "data": {
+          "request_id": "4138b008-64d3-4128-875e-d8918e385130",
+          "tool_name": "search_candidates",
+          "result_summary": "检索完成，获取 40 道候选菜品",
+          "node_id": "candidate_search",
+          "duration_ms": 1345
+        }
+      },
+      {
+        "id": "ev_thought_4138b008-64d3-4128-875e-d8918e385130_candidate_search_done_1",
+        "event": "thought_node",
+        "data": {
+          "request_id": "4138b008-64d3-4128-875e-d8918e385130",
+          "node_id": "candidate_search",
+          "title": "菜品候选检索",
+          "status": "done",
+          "summary": "检索完成，获取 40 道候选菜品",
+          "tool_name": "search_candidates",
+          "duration_ms": 1345
+        }
+      },
+      {
+        "id": "12",
+        "event": "analysis_ready",
+        "data": {
+          "stage": "retrieval",
+          "summary": "检索完成，找到 40 道候选菜品",
+          "evidence_refs": []
+        }
+      },
+      {
+        "id": "ev_thought_4138b008-64d3-4128-875e-d8918e385130_recipe_audit_running_1",
+        "event": "thought_node",
+        "data": {
+          "request_id": "4138b008-64d3-4128-875e-d8918e385130",
+          "node_id": "recipe_audit",
+          "title": "健康合规审查",
+          "status": "running",
+          "tool_name": "audit_recipe_health"
+        }
+      },
+      {
+        "id": "ev_tool_4138b008-64d3-4128-875e-d8918e385130_audit_recipe_health_recipe_audit_1",
+        "event": "tool_trace",
+        "data": {
+          "request_id": "4138b008-64d3-4128-875e-d8918e385130",
+          "tool_name": "audit_recipe_health",
+          "result_summary": "健康审查完成，保留 25 道安全菜品",
+          "node_id": "recipe_audit",
+          "duration_ms": 1304
+        }
+      },
+      {
+        "id": "ev_thought_4138b008-64d3-4128-875e-d8918e385130_recipe_audit_done_1",
+        "event": "thought_node",
+        "data": {
+          "request_id": "4138b008-64d3-4128-875e-d8918e385130",
+          "node_id": "recipe_audit",
+          "title": "健康合规审查",
+          "status": "done",
+          "summary": "健康审查完成，保留 25 道安全菜品",
+          "tool_name": "audit_recipe_health",
+          "duration_ms": 1304
+        }
+      },
+      {
+        "id": "16",
+        "event": "analysis_ready",
+        "data": {
+          "stage": "health_evaluation",
+          "summary": "健康审查完成",
+          "evidence_refs": []
+        }
+      },
+      {
+        "id": "ev_thought_4138b008-64d3-4128-875e-d8918e385130_menu_combination_running_1",
+        "event": "thought_node",
+        "data": {
+          "request_id": "4138b008-64d3-4128-875e-d8918e385130",
+          "node_id": "menu_combination",
+          "title": "营养与偏好组合",
+          "status": "running",
+          "tool_name": "combine_nutritional_menu"
+        }
+      },
+      {
+        "id": "ev_tool_4138b008-64d3-4128-875e-d8918e385130_combine_nutritional_menu_menu_combination_1",
+        "event": "tool_trace",
+        "data": {
+          "request_id": "4138b008-64d3-4128-875e-d8918e385130",
+          "tool_name": "combine_nutritional_menu",
+          "result_summary": "生成 2 个可行菜单组合",
+          "node_id": "menu_combination",
+          "duration_ms": 96
+        }
+      },
+      {
+        "id": "ev_thought_4138b008-64d3-4128-875e-d8918e385130_menu_combination_done_1",
+        "event": "thought_node",
+        "data": {
+          "request_id": "4138b008-64d3-4128-875e-d8918e385130",
+          "node_id": "menu_combination",
+          "title": "营养与偏好组合",
+          "status": "done",
+          "summary": "生成 2 个可行菜单组合",
+          "tool_name": "combine_nutritional_menu",
+          "duration_ms": 96
+        }
+      },
+      {
+        "id": "20",
+        "event": "analysis_ready",
+        "data": {
+          "stage": "menu_planning",
+          "summary": "菜单方案生成完成，生成 2 个可行方案",
+          "evidence_refs": []
+        }
+      },
+      {
+        "id": "ev_thought_4138b008-64d3-4128-875e-d8918e385130_final_validation_running_1",
+        "event": "thought_node",
+        "data": {
+          "request_id": "4138b008-64d3-4128-875e-d8918e385130",
+          "node_id": "final_validation",
+          "title": "全流程合规复核",
+          "status": "running",
+          "tool_name": "validate_selected_menu_health"
+        }
+      },
+      {
+        "id": "ev_tool_4138b008-64d3-4128-875e-d8918e385130_validate_selected_menu_health_final_validation_1",
+        "event": "tool_trace",
+        "data": {
+          "request_id": "4138b008-64d3-4128-875e-d8918e385130",
+          "tool_name": "validate_selected_menu_health",
+          "result_summary": "最终全量健康约束复核通过",
+          "node_id": "final_validation",
+          "duration_ms": 1346
+        }
+      },
+      {
+        "id": "ev_thought_4138b008-64d3-4128-875e-d8918e385130_final_validation_done_1",
+        "event": "thought_node",
+        "data": {
+          "request_id": "4138b008-64d3-4128-875e-d8918e385130",
+          "node_id": "final_validation",
+          "title": "全流程合规复核",
+          "status": "done",
+          "summary": "最终全量健康约束复核通过",
+          "tool_name": "validate_selected_menu_health",
+          "duration_ms": 1346
+        }
+      },
+      {
+        "id": "ev_thought_4138b008-64d3-4128-875e-d8918e385130_commit_done_1",
+        "event": "thought_node",
+        "data": {
+          "request_id": "4138b008-64d3-4128-875e-d8918e385130",
+          "node_id": "commit",
+          "title": "结果持久化",
+          "status": "done",
+          "summary": "全流程合规复核通过，结果已持久化"
+        }
+      },
+      {
+        "id": "ev_answer_4138b008-64d3-4128-875e-d8918e385130",
+        "event": "answer_ready",
+        "data": {
+          "text": "为您推荐以下 3 道菜：淮山炒藕、清炒苕尖、清蒸茄子。\n淮山炒藕、清炒苕尖、清蒸茄子\n菜品已结合当前参与者的饮食约束与健康审查结果筛选，并兼顾口味与菜式多样化。\n按当前步骤估算，预计需要 27 分钟。",
+          "menu_ref": "8b56771a-dd6c-4f20-bf91-f9da4fdcf7d3",
+          "evidence_refs": [
+            "b31f9ea2-9762-4668-8234-a4e7edfcb569"
+          ]
+        }
+      },
+      {
+        "id": "ev_result_4138b008-64d3-4128-875e-d8918e385130",
+        "event": "result_committed",
+        "data": {
+          "request_id": "4138b008-64d3-4128-875e-d8918e385130",
+          "menu_summary": {
+            "items": [
+              {
+                "name": "淮山炒藕",
+                "recipe_id": 1065
+              },
+              {
+                "name": "清炒苕尖",
+                "recipe_id": 778
+              },
+              {
+                "name": "清蒸茄子",
+                "recipe_id": 1789
+              }
+            ],
+            "plan_id": "7e8fd9301b7846ab86f631b419b1d8e27a3514fe958a9daa82dc0d71033fa2ef",
+            "build_id": "98f7cf59-29b2-4c0c-b933-5a8f6ed0e669",
+            "menu_hash": "48d913a6c4166935c9c356c8bc901e32a02cdac6e1a1fb5db747fe8301a9cada",
+            "recipe_ids": [
+              1065,
+              778,
+              1789
+            ]
+          }
+        }
+      }
+    ],
+    "generation": 2
+  },
+  {
+    "request_id": "3e9d8783-7077-470b-9f02-10750787c7c9",
+    "state": {
+      "request_id": "3e9d8783-7077-470b-9f02-10750787c7c9",
+      "session_id": "44b570e8-561",
+      "status": "completed",
+      "created_at": "1791080704.0",
+      "updated_at": "1791080704.0",
+      "stage_events_cursor": 26,
+      "result_summary": {
+        "status": "completed",
+        "answer": {
+          "text": "为您推荐以下 3 道菜：香菇肉片、猪肉大葱肉饼、韭菜炒豆芽。\n香菇肉片、猪肉大葱肉饼、韭菜炒豆芽\n菜品已结合当前参与者的饮食约束与健康审查结果筛选，并兼顾口味与菜式多样化。\n按当前步骤估算，预计需要 26 分钟。",
+          "menu_ref": "ce8a2c3f-ded5-4542-adab-28fc0d6a8a13",
+          "evidence_refs": [
+            "329f0cb0-61d0-42d0-a7f9-29b8d83d1a09"
+          ]
+        },
+        "menu_summary": {
+          "build_id": "98f7cf59-29b2-4c0c-b933-5a8f6ed0e669",
+          "plan_id": "e3fccd7fa77a9405403368c3b19dc71fe2e97c8a8a13afd40564d1695f5e5485",
+          "menu_hash": "4f17b5864a4fa52c769c712d9132f0c4df27218eef5425d8a4a6d112cd806e20",
+          "recipe_ids": [
+            1352,
+            1657,
+            87
+          ],
+          "items": [
+            {
+              "recipe_id": 1352,
+              "name": "香菇肉片"
+            },
+            {
+              "recipe_id": 1657,
+              "name": "猪肉大葱肉饼"
+            },
+            {
+              "recipe_id": 87,
+              "name": "韭菜炒豆芽"
+            }
+          ]
+        }
+      },
+      "error": null
+    },
+    "events": [
+      {
+        "id": "1",
+        "event": "request_accepted",
+        "data": {
+          "request_id": "3e9d8783-7077-470b-9f02-10750787c7c9",
+          "session_id": "44b570e8-561"
+        }
+      },
+      {
+        "id": "ev_thought_3e9d8783-7077-470b-9f02-10750787c7c9_context_building_running_1",
+        "event": "thought_node",
+        "data": {
+          "request_id": "3e9d8783-7077-470b-9f02-10750787c7c9",
+          "node_id": "context_building",
+          "title": "上下文解析与需求对齐",
+          "status": "running"
+        }
+      },
+      {
+        "id": "ev_thought_3e9d8783-7077-470b-9f02-10750787c7c9_context_building_done_1",
+        "event": "thought_node",
+        "data": {
+          "request_id": "3e9d8783-7077-470b-9f02-10750787c7c9",
+          "node_id": "context_building",
+          "title": "上下文解析与需求对齐",
+          "status": "done",
+          "summary": "已理解 1 位参与者的用餐需求"
+        }
+      },
+      {
+        "id": "4",
+        "event": "analysis_ready",
+        "data": {
+          "stage": "context_ready",
+          "summary": "已理解1位参与者的需求",
+          "evidence_refs": []
+        }
+      },
+      {
+        "id": "5",
+        "event": "answer_started",
+        "data": {
+          "request_id": "3e9d8783-7077-470b-9f02-10750787c7c9"
+        }
+      },
+      {
+        "id": "ev_thought_3e9d8783-7077-470b-9f02-10750787c7c9_query_understanding_running_1",
+        "event": "thought_node",
+        "data": {
+          "request_id": "3e9d8783-7077-470b-9f02-10750787c7c9",
+          "node_id": "query_understanding",
+          "title": "意图分析与查询规划",
+          "status": "running"
+        }
+      },
+      {
+        "id": "ev_thought_3e9d8783-7077-470b-9f02-10750787c7c9_query_understanding_done_1",
+        "event": "thought_node",
+        "data": {
+          "request_id": "3e9d8783-7077-470b-9f02-10750787c7c9",
+          "node_id": "query_understanding",
+          "title": "意图分析与查询规划",
+          "status": "done",
+          "summary": "已确认需求调整方案"
+        }
+      },
+      {
+        "id": "8",
+        "event": "analysis_ready",
+        "data": {
+          "stage": "query_understanding",
+          "summary": "已确认调整方案：选项 1: 将时间限制放宽至 41 分钟或以上，保留 3 道菜",
+          "evidence_refs": []
+        }
+      },
+      {
+        "id": "ev_thought_3e9d8783-7077-470b-9f02-10750787c7c9_candidate_search_running_1",
+        "event": "thought_node",
+        "data": {
+          "request_id": "3e9d8783-7077-470b-9f02-10750787c7c9",
+          "node_id": "candidate_search",
+          "title": "菜品候选检索",
+          "status": "running",
+          "tool_name": "search_candidates"
+        }
+      },
+      {
+        "id": "ev_tool_3e9d8783-7077-470b-9f02-10750787c7c9_search_candidates_candidate_search_1",
+        "event": "tool_trace",
+        "data": {
+          "request_id": "3e9d8783-7077-470b-9f02-10750787c7c9",
+          "tool_name": "search_candidates",
+          "result_summary": "检索完成，获取 40 道候选菜品",
+          "node_id": "candidate_search",
+          "duration_ms": 1409
+        }
+      },
+      {
+        "id": "ev_thought_3e9d8783-7077-470b-9f02-10750787c7c9_candidate_search_done_1",
+        "event": "thought_node",
+        "data": {
+          "request_id": "3e9d8783-7077-470b-9f02-10750787c7c9",
+          "node_id": "candidate_search",
+          "title": "菜品候选检索",
+          "status": "done",
+          "summary": "检索完成，获取 40 道候选菜品",
+          "tool_name": "search_candidates",
+          "duration_ms": 1409
+        }
+      },
+      {
+        "id": "12",
+        "event": "analysis_ready",
+        "data": {
+          "stage": "retrieval",
+          "summary": "检索完成，找到 40 道候选菜品",
+          "evidence_refs": []
+        }
+      },
+      {
+        "id": "ev_thought_3e9d8783-7077-470b-9f02-10750787c7c9_recipe_audit_running_1",
+        "event": "thought_node",
+        "data": {
+          "request_id": "3e9d8783-7077-470b-9f02-10750787c7c9",
+          "node_id": "recipe_audit",
+          "title": "健康合规审查",
+          "status": "running",
+          "tool_name": "audit_recipe_health"
+        }
+      },
+      {
+        "id": "ev_tool_3e9d8783-7077-470b-9f02-10750787c7c9_audit_recipe_health_recipe_audit_1",
+        "event": "tool_trace",
+        "data": {
+          "request_id": "3e9d8783-7077-470b-9f02-10750787c7c9",
+          "tool_name": "audit_recipe_health",
+          "result_summary": "健康审查完成，保留 19 道安全菜品",
+          "node_id": "recipe_audit",
+          "duration_ms": 1422
+        }
+      },
+      {
+        "id": "ev_thought_3e9d8783-7077-470b-9f02-10750787c7c9_recipe_audit_done_1",
+        "event": "thought_node",
+        "data": {
+          "request_id": "3e9d8783-7077-470b-9f02-10750787c7c9",
+          "node_id": "recipe_audit",
+          "title": "健康合规审查",
+          "status": "done",
+          "summary": "健康审查完成，保留 19 道安全菜品",
+          "tool_name": "audit_recipe_health",
+          "duration_ms": 1422
+        }
+      },
+      {
+        "id": "16",
+        "event": "analysis_ready",
+        "data": {
+          "stage": "health_evaluation",
+          "summary": "健康审查完成",
+          "evidence_refs": []
+        }
+      },
+      {
+        "id": "ev_thought_3e9d8783-7077-470b-9f02-10750787c7c9_menu_combination_running_1",
+        "event": "thought_node",
+        "data": {
+          "request_id": "3e9d8783-7077-470b-9f02-10750787c7c9",
+          "node_id": "menu_combination",
+          "title": "营养与偏好组合",
+          "status": "running",
+          "tool_name": "combine_nutritional_menu"
+        }
+      },
+      {
+        "id": "ev_tool_3e9d8783-7077-470b-9f02-10750787c7c9_combine_nutritional_menu_menu_combination_1",
+        "event": "tool_trace",
+        "data": {
+          "request_id": "3e9d8783-7077-470b-9f02-10750787c7c9",
+          "tool_name": "combine_nutritional_menu",
+          "result_summary": "生成 2 个可行菜单组合",
+          "node_id": "menu_combination",
+          "duration_ms": 149
+        }
+      },
+      {
+        "id": "ev_thought_3e9d8783-7077-470b-9f02-10750787c7c9_menu_combination_done_1",
+        "event": "thought_node",
+        "data": {
+          "request_id": "3e9d8783-7077-470b-9f02-10750787c7c9",
+          "node_id": "menu_combination",
+          "title": "营养与偏好组合",
+          "status": "done",
+          "summary": "生成 2 个可行菜单组合",
+          "tool_name": "combine_nutritional_menu",
+          "duration_ms": 149
+        }
+      },
+      {
+        "id": "20",
+        "event": "analysis_ready",
+        "data": {
+          "stage": "menu_planning",
+          "summary": "菜单方案生成完成，生成 2 个可行方案",
+          "evidence_refs": []
+        }
+      },
+      {
+        "id": "ev_thought_3e9d8783-7077-470b-9f02-10750787c7c9_final_validation_running_1",
+        "event": "thought_node",
+        "data": {
+          "request_id": "3e9d8783-7077-470b-9f02-10750787c7c9",
+          "node_id": "final_validation",
+          "title": "全流程合规复核",
+          "status": "running",
+          "tool_name": "validate_selected_menu_health"
+        }
+      },
+      {
+        "id": "ev_tool_3e9d8783-7077-470b-9f02-10750787c7c9_validate_selected_menu_health_final_validation_1",
+        "event": "tool_trace",
+        "data": {
+          "request_id": "3e9d8783-7077-470b-9f02-10750787c7c9",
+          "tool_name": "validate_selected_menu_health",
+          "result_summary": "最终全量健康约束复核通过",
+          "node_id": "final_validation",
+          "duration_ms": 1354
+        }
+      },
+      {
+        "id": "ev_thought_3e9d8783-7077-470b-9f02-10750787c7c9_final_validation_done_1",
+        "event": "thought_node",
+        "data": {
+          "request_id": "3e9d8783-7077-470b-9f02-10750787c7c9",
+          "node_id": "final_validation",
+          "title": "全流程合规复核",
+          "status": "done",
+          "summary": "最终全量健康约束复核通过",
+          "tool_name": "validate_selected_menu_health",
+          "duration_ms": 1354
+        }
+      },
+      {
+        "id": "ev_thought_3e9d8783-7077-470b-9f02-10750787c7c9_commit_done_1",
+        "event": "thought_node",
+        "data": {
+          "request_id": "3e9d8783-7077-470b-9f02-10750787c7c9",
+          "node_id": "commit",
+          "title": "结果持久化",
+          "status": "done",
+          "summary": "全流程合规复核通过，结果已持久化"
+        }
+      },
+      {
+        "id": "ev_answer_3e9d8783-7077-470b-9f02-10750787c7c9",
+        "event": "answer_ready",
+        "data": {
+          "text": "为您推荐以下 3 道菜：香菇肉片、猪肉大葱肉饼、韭菜炒豆芽。\n香菇肉片、猪肉大葱肉饼、韭菜炒豆芽\n菜品已结合当前参与者的饮食约束与健康审查结果筛选，并兼顾口味与菜式多样化。\n按当前步骤估算，预计需要 26 分钟。",
+          "menu_ref": "ce8a2c3f-ded5-4542-adab-28fc0d6a8a13",
+          "evidence_refs": [
+            "329f0cb0-61d0-42d0-a7f9-29b8d83d1a09"
+          ]
+        }
+      },
+      {
+        "id": "ev_result_3e9d8783-7077-470b-9f02-10750787c7c9",
+        "event": "result_committed",
+        "data": {
+          "request_id": "3e9d8783-7077-470b-9f02-10750787c7c9",
+          "menu_summary": {
+            "items": [
+              {
+                "name": "香菇肉片",
+                "recipe_id": 1352
+              },
+              {
+                "name": "猪肉大葱肉饼",
+                "recipe_id": 1657
+              },
+              {
+                "name": "韭菜炒豆芽",
+                "recipe_id": 87
+              }
+            ],
+            "plan_id": "e3fccd7fa77a9405403368c3b19dc71fe2e97c8a8a13afd40564d1695f5e5485",
+            "build_id": "98f7cf59-29b2-4c0c-b933-5a8f6ed0e669",
+            "menu_hash": "4f17b5864a4fa52c769c712d9132f0c4df27218eef5425d8a4a6d112cd806e20",
+            "recipe_ids": [
+              1352,
+              1657,
+              87
+            ]
+          }
+        }
+      }
+    ],
+    "generation": 1
+  },
+  {
+    "request_id": "808be6f5-a7f2-4d60-89b1-3525d2b6840e",
+    "state": {
+      "request_id": "808be6f5-a7f2-4d60-89b1-3525d2b6840e",
+      "session_id": "b3525bad-730",
+      "status": "cancelled",
+      "created_at": "1791080709.0",
+      "updated_at": "1791080709.0",
+      "stage_events_cursor": 2,
+      "result_summary": {
+        "status": "cancelled"
+      },
+      "error": null
+    },
+    "events": [
+      {
+        "id": "1",
+        "event": "request_accepted",
+        "data": {
+          "request_id": "808be6f5-a7f2-4d60-89b1-3525d2b6840e",
+          "session_id": "b3525bad-730"
+        }
+      },
+      {
+        "id": "2",
+        "event": "request_cancelled",
+        "data": {
+          "request_id": "808be6f5-a7f2-4d60-89b1-3525d2b6840e"
+        }
+      }
+    ],
+    "generation": 1
+  }
+]

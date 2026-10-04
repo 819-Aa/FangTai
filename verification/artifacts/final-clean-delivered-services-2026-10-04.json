@@ -1,0 +1,34 @@
+{
+  "api_status": 200,
+  "user_frontend_status": 200,
+  "readiness": {
+    "status": "ready",
+    "build_id": "98f7cf59-29b2-4c0c-b933-5a8f6ed0e669",
+    "checks": {
+      "mysql": {
+        "status": "ready",
+        "artifact_count": 20,
+        "recipe_count": 1932,
+        "runtime_schema_versions": {
+          "rag_documents": "2.0.0",
+          "nutrition_features": "2.0.0",
+          "step_tasks": "2.0.0"
+        }
+      },
+      "redis": {
+        "status": "ready"
+      },
+      "qdrant": {
+        "status": "ready",
+        "point_count": 1932
+      },
+      "siliconflow": {
+        "status": "ready",
+        "models": {
+          "embedding": "BAAI/bge-m3",
+          "rerank": "BAAI/bge-reranker-v2-m3"
+        }
+      }
+    }
+  }
+}

@@ -86,6 +86,13 @@ class MenuPlanner:
                 if self._recipe_features.get(r, {}).get("has_available_ingredients", True)
             ]
 
+        # 菜与汤的组合中，未要求的主食不能占用菜槽位。
+        if constraints.require_soup and not constraints.require_staple:
+            if any(self._classify_dish_type(
+                self._recipe_features.get(rid, {}).get("name", "")
+            ) == "staple" for rid in locked):
+                return []
+
         # 饮品/甜点只有 QueryPlan 明确要求时才能进入正餐菜单，不能替代菜或汤。
         candidates = [
             rid for rid in candidates
@@ -94,6 +101,7 @@ class MenuPlanner:
             ) not in (
                 (() if constraints.require_drink else ("drink",))
                 + (() if constraints.require_dessert else ("dessert",))
+                + (() if not constraints.require_soup or constraints.require_staple else ("staple",))
             )
         ]
         available_remaining = [r for r in candidates if r not in locked]
@@ -361,7 +369,14 @@ class MenuPlanner:
         if any(m in n for m in ("蛋糕", "布丁", "冰淇淋", "甜点", "点心", "曲奇",
                                 "饼干", "蛋挞", "慕斯", "醪糟", "汤圆", "米糕", "发糕", "马拉糕")):
             return "dessert"
+        # Egg custard is a steamed dish; the word 羹 alone must not satisfy a soup slot.
+        # Egg-drop thick soups (蛋花羹) and tofu soups keep their soup classification.
+        if "蛋羹" in n and not n.endswith("汤"):
+            return "main"
         if "汤" in n or "羹" in n:
+            # Stock describes the preparation of these dishes, not a soup slot.
+            if n.startswith(("上汤", "高汤")) and not n.endswith(("汤", "羹")):
+                return "main"
             return "soup"
         if any(m in n for m in ("米饭", "炒饭", "煲仔饭", "面条", "米线", "凉皮",
                                 "馒头", "包子", "饺子", "馄饨", "粥", "饼", "粉",

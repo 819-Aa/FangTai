@@ -1,0 +1,144 @@
+{
+  "mock": false,
+  "request": {
+    "session_id": "13e91972-048",
+    "participants": [
+      {
+        "participant_ref": "p1"
+      }
+    ],
+    "idempotency_key": "soup-audit-d99d0b68b1864329bfb1fc76282238c3",
+    "message": "今晚晚餐请安排四菜一汤，家常口味，180分钟内完成"
+  },
+  "state": {
+    "request_id": "9246ffaa-824c-4c06-8404-7ab0e18267f0",
+    "session_id": "13e91972-048",
+    "status": "failed",
+    "created_at": "1791089436.0",
+    "updated_at": "1791089436.0",
+    "stage_events_cursor": 9,
+    "result_summary": {
+      "status": "failed"
+    },
+    "error": {
+      "code": "MODEL_INVOCATION_FAILED",
+      "message": "Agent 决策模型调用失败 (APITimeoutError): Request timed out."
+    }
+  },
+  "events": [
+    {
+      "id": "1",
+      "event": "request_accepted",
+      "data": {
+        "request_id": "9246ffaa-824c-4c06-8404-7ab0e18267f0",
+        "session_id": "13e91972-048"
+      }
+    },
+    {
+      "id": "ev_thought_9246ffaa-824c-4c06-8404-7ab0e18267f0_g1_44195c3389ff4f50b12909a067560b58_running",
+      "event": "thought_node",
+      "data": {
+        "request_id": "9246ffaa-824c-4c06-8404-7ab0e18267f0",
+        "node_id": "context_building",
+        "title": "上下文解析与需求对齐",
+        "status": "running",
+        "summary": "上下文解析与需求对齐进行中",
+        "execution_generation": 1,
+        "invocation_id": "44195c3389ff4f50b12909a067560b58"
+      }
+    },
+    {
+      "id": "ev_thought_9246ffaa-824c-4c06-8404-7ab0e18267f0_g1_44195c3389ff4f50b12909a067560b58_done",
+      "event": "thought_node",
+      "data": {
+        "request_id": "9246ffaa-824c-4c06-8404-7ab0e18267f0",
+        "node_id": "context_building",
+        "title": "上下文解析与需求对齐",
+        "status": "done",
+        "summary": "上下文解析与需求对齐已完成",
+        "execution_generation": 1,
+        "invocation_id": "44195c3389ff4f50b12909a067560b58"
+      }
+    },
+    {
+      "id": "ev_analysis_9246ffaa-824c-4c06-8404-7ab0e18267f0_g1_44195c3389ff4f50b12909a067560b58_done",
+      "event": "analysis_ready",
+      "data": {
+        "stage": "context_ready",
+        "summary": "上下文解析与需求对齐已完成",
+        "evidence_refs": [],
+        "node_id": "context_building",
+        "status": "done",
+        "execution_generation": 1,
+        "invocation_id": "44195c3389ff4f50b12909a067560b58"
+      }
+    },
+    {
+      "id": "5",
+      "event": "answer_started",
+      "data": {
+        "request_id": "9246ffaa-824c-4c06-8404-7ab0e18267f0"
+      }
+    },
+    {
+      "id": "ev_thought_9246ffaa-824c-4c06-8404-7ab0e18267f0_g1_c3b150a9d85c4a65a36794dfbef10ac4_running",
+      "event": "thought_node",
+      "data": {
+        "request_id": "9246ffaa-824c-4c06-8404-7ab0e18267f0",
+        "node_id": "query_understanding",
+        "title": "意图分析与查询计划",
+        "status": "running",
+        "summary": "意图分析与查询计划进行中",
+        "execution_generation": 1,
+        "invocation_id": "c3b150a9d85c4a65a36794dfbef10ac4"
+      }
+    },
+    {
+      "id": "ev_thought_9246ffaa-824c-4c06-8404-7ab0e18267f0_g1_c3b150a9d85c4a65a36794dfbef10ac4_done",
+      "event": "thought_node",
+      "data": {
+        "request_id": "9246ffaa-824c-4c06-8404-7ab0e18267f0",
+        "node_id": "query_understanding",
+        "title": "意图分析与查询计划",
+        "status": "done",
+        "summary": "意图分析与查询计划已完成",
+        "execution_generation": 1,
+        "invocation_id": "c3b150a9d85c4a65a36794dfbef10ac4"
+      }
+    },
+    {
+      "id": "ev_analysis_9246ffaa-824c-4c06-8404-7ab0e18267f0_g1_c3b150a9d85c4a65a36794dfbef10ac4_done",
+      "event": "analysis_ready",
+      "data": {
+        "stage": "query_understanding",
+        "summary": "意图分析与查询计划已完成",
+        "evidence_refs": [],
+        "node_id": "query_understanding",
+        "status": "done",
+        "execution_generation": 1,
+        "invocation_id": "c3b150a9d85c4a65a36794dfbef10ac4"
+      }
+    },
+    {
+      "id": "9",
+      "event": "request_terminal",
+      "data": {
+        "request_id": "9246ffaa-824c-4c06-8404-7ab0e18267f0",
+        "status": "failed",
+        "message": "Agent 决策模型调用失败 (APITimeoutError): Request timed out."
+      }
+    }
+  ],
+  "dish_kinds": [],
+  "checks": {
+    "completed": false,
+    "exact_five": false,
+    "one_soup": false,
+    "four_main_dishes": false,
+    "mysql_status": false,
+    "menu_consistent": false,
+    "committed_event": false,
+    "fixed_templates": true
+  },
+  "complete": false
+}

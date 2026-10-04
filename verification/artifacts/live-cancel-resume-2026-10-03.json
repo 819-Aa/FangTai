@@ -1,0 +1,8 @@
+{
+  "request_id": "02778c3e-d1b7-4d9b-ac74-298862e436e4",
+  "session_id": "80209f71-eab",
+  "cancel_http": 200,
+  "get_status": "failed",
+  "mysql_log_status": "failed",
+  "has_menu": false
+}

@@ -1,0 +1,46 @@
+{
+  "date": "2026-10-04",
+  "selected_provider": "SiliconFlow China",
+  "selected_model": "Qwen/Qwen3-8B",
+  "base_url": "https://api.siliconflow.cn/v1",
+  "enable_thinking": false,
+  "reason": "free model with verified JSON/tool support and real menu completion after explicit audit-order prompt",
+  "credentials_exposed": false,
+  "original_dashscope_credentials_preserved_in_ignored_env": true,
+  "candidates": {
+    "deepseek-v4-pro-0813": "HTTP 400 Arrearage; account blocked despite free quota",
+    "Qwen/Qwen3-8B": "selected; initial unsafe-order action rejected, corrected prompt real completion verified",
+    "THUDM/GLM-4-9B-0414": "JSON probe did not satisfy expected result",
+    "XingChenAGI/Xing4.0-29B": "free and JSON-capable, but real decision exceeded 60-second timeout"
+  },
+  "regression": {
+    "passed": 94,
+    "log": "free-model-prompt-regression-2026-10-04.log"
+  },
+  "real_http": {
+    "checks": 8,
+    "passed": 8,
+    "report": "free-qwen-explicit-audit-soup-2026-10-04.json"
+  },
+  "browser": {
+    "first_run": {
+      "passed": 1,
+      "failed": 1,
+      "failure": "minimum-time options remained infeasible",
+      "report": "free-model-live-browser-2026-10-04.json"
+    },
+    "clarification_recheck": {
+      "passed": 1,
+      "failed": 0,
+      "report": "free-model-clarification-browser-2026-10-04.json"
+    },
+    "covered_remaining_scenarios": 2,
+    "single_run_all_green": false
+  },
+  "sources": [
+    "https://help.aliyun.com/zh/model-studio/new-free-quota",
+    "https://docs.siliconflow.cn/docs/usercases/use-siliconcloud-in-minbricks",
+    "https://www.siliconflow.cn/models"
+  ],
+  "superseded_by_user_requested_provider": "DeepSeek official"
+}

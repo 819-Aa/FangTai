@@ -1,0 +1,163 @@
+{
+  "config": {
+    "argv": [
+      "D:\\App\\nodejs\\node.exe",
+      "C:\\Users\\zhiyo\\Desktop\\竞赛\\program_v2\\frontend\\node_modules\\@playwright\\test\\cli.js",
+      "test",
+      "--config",
+      "verification/playwright.free-clarification.config.ts",
+      "clarification.spec.ts"
+    ],
+    "configFile": "C:\\Users\\zhiyo\\Desktop\\竞赛\\program_v2\\frontend\\verification\\playwright.free-clarification.config.ts",
+    "rootDir": "C:/Users/zhiyo/Desktop/竞赛/program_v2/frontend/e2e",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "C:/Users/zhiyo/Desktop/竞赛/program_v2/verification/artifacts/free-model-clarification-browser-2026-10-04",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "",
+        "name": "",
+        "testDir": "C:/Users/zhiyo/Desktop/竞赛/program_v2/frontend/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 300000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "line",
+        null
+      ],
+      [
+        "json",
+        {
+          "outputFile": "C:\\Users\\zhiyo\\Desktop\\竞赛\\program_v2\\verification\\artifacts\\free-model-clarification-browser-2026-10-04.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.62.1",
+    "workers": 1,
+    "webServer": {
+      "command": "npm run dev -- --port 5176 --strictPort",
+      "url": "http://127.0.0.1:5176",
+      "reuseExistingServer": false,
+      "env": {
+        "VITE_API_BASE_URL": "/api"
+      }
+    }
+  },
+  "suites": [
+    {
+      "title": "clarification.spec.ts",
+      "file": "clarification.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "真实 SSE 连续失败降级轮询：待澄清停止轮询，选项续接后成单",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 300000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 101494,
+                  "errors": [],
+                  "stdout": [
+                    {
+                      "text": "SSE_DIAG {\"readyState\":0}\n"
+                    },
+                    {
+                      "text": "SSE_DIAG {\"readyState\":0}\n"
+                    },
+                    {
+                      "text": "SSE_DIAG {\"readyState\":0}\n"
+                    },
+                    {
+                      "text": "SSE_DIAG {\"readyState\":0}\n"
+                    },
+                    {
+                      "text": "SSE_DIAG {\"readyState\":0}\n"
+                    },
+                    {
+                      "text": "SSE_DIAG {\"readyState\":0}\n"
+                    },
+                    {
+                      "text": "SSE_DIAG {\"readyState\":0}\n"
+                    },
+                    {
+                      "text": "SSE_DIAG {\"readyState\":0}\n"
+                    },
+                    {
+                      "text": "SSE_DIAG {\"readyState\":0}\n"
+                    }
+                  ],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-04T05:01:57.990Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "real-poll-clarification",
+                      "contentType": "application/json",
+                      "body": "ewogICJyZXF1ZXN0X2lkcyI6IFsKICAgICIxYTgxMjNjYi0yMDE4LTQyNDEtODU1ZS02Y2VjMWUzN2ExNmQiLAogICAgIjU4ODI4NWIxLWFiYmItNDU4NS1iMTE2LWViZmJkM2IyN2E3YyIsCiAgICAiNjM2ZGEzYzUtNjQ1ZC00ZGQ1LTgzZTktNzIxNmZiZjY4MjljIgogIF0sCiAgInBvbGxzX2JlZm9yZV9jbGFyaWZpY2F0aW9uIjogNCwKICAicG9sbF9zdG9wcGVkIjogdHJ1ZSwKICAiZmluYWxfc3RhdHVzIjogImNvbXBsZXRlZCIsCiAgInNlc3Npb25faWQiOiAiZjAxNzBiZTYtY2E5IiwKICAibWVudSI6IHsKICAgICJidWlsZF9pZCI6ICI5OGY3Y2Y1OS0yOWIyLTRjMGMtYjkzMy01YThmNmVkMGU2NjkiLAogICAgInBsYW5faWQiOiAiMGFmOTMyY2RjMmZmNTIyYzI4OWIxZDUxODQ4YWUwYTAxMTE4ZDhkYzViNTg5MTNjOTE1ZDQyZTE0MjBkYjA0OCIsCiAgICAibWVudV9oYXNoIjogIjg5NjYwNTVmNmZhYTg2MDFhY2UwMzFkYTE0ZmUzMmExY2RkMzIwODBhY2Q2NGNkNmQ1OGM1OWMyNmExZGVmNTciLAogICAgInJlY2lwZV9pZHMiOiBbCiAgICAgIDE3MjAsCiAgICAgIDYxNiwKICAgICAgMzIwCiAgICBdLAogICAgIml0ZW1zIjogWwogICAgICB7CiAgICAgICAgInJlY2lwZV9pZCI6IDE3MjAsCiAgICAgICAgIm5hbWUiOiAi5LqU6LC35Liw55m7IgogICAgICB9LAogICAgICB7CiAgICAgICAgInJlY2lwZV9pZCI6IDYxNiwKICAgICAgICAibmFtZSI6ICLntKDku4DplKYiCiAgICAgIH0sCiAgICAgIHsKICAgICAgICAicmVjaXBlX2lkIjogMzIwLAogICAgICAgICJuYW1lIjogIuWGrOeTnOWPjOixhiIKICAgICAgfQogICAgXQogIH0KfQ=="
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "95576b76c291c9797d67-a491a19d85a263d0df74",
+          "file": "clarification.spec.ts",
+          "line": 5,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-04T05:01:56.589Z",
+    "duration": 103395.995,
+    "expected": 1,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

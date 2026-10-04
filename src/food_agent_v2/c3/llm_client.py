@@ -1,7 +1,7 @@
 """C3 LLM 客户端 —— 五模型统一调用接口。
 
 每个模型节点通过此客户端调用对应的 LLM。
-使用 langchain-openai 兼容接口（阿里百炼 DashScope 兼容 OpenAI API）。
+使用 OpenAI SDK 兼容接口，模型与参数由当前 LLM_* 配置指定。
 """
 
 from __future__ import annotations
@@ -25,10 +25,10 @@ class LLMClient:
     """五模型 LLM 调用客户端。
 
     角色 → 模型分配：
-    - query_understanding     → LLM_MODEL_REASONING (qwen3.7-max)
+    - query_understanding     → LLM_MODEL_REASONING
     - health_menu_planning    → LLM_MODEL_REASONING
     - menu_decision           → LLM_MODEL_REASONING
-    - answer_generation       → LLM_MODEL_ANSWER (qwen3.7-plus)
+    - answer_generation       → LLM_MODEL_ANSWER
     - unified_review          → LLM_MODEL_REASONING
     """
 
@@ -37,7 +37,6 @@ class LLMClient:
         self._api_key = cfg.llm.api_key
         self._base_url = cfg.llm.base_url
         self._timeout = cfg.llm.timeout_seconds
-        self._max_retries = cfg.llm.max_retries
         self._llm_config = cfg.llm
         # P2：进程生命周期复用 OpenAI client（内部 httpx 连接池 keep-alive），
         # 避免每次 _call_openai 新建 client + 连接池。惰性创建，测试注入 FakeLLM 不触发。
@@ -73,15 +72,6 @@ class LLMClient:
                 "MODEL_NOT_CONFIGURED", "缺少 LLM API 配置（api_key/base_url）")
 
         extra_body = self._llm_config.extra_body_for_role(role)
-        reasoning_effort = None
-        if role == "menu_decision" and model.startswith("qwen3.8-"):
-            extra_body = dict(extra_body or {})
-            reasoning_effort = extra_body.pop("reasoning_effort", None)
-            if reasoning_effort is None and not any(
-                key in extra_body for key in ("thinking_budget", "enable_thinking")
-            ):
-                reasoning_effort = "low"
-
         return self._call_openai(
             model=model,
             system_prompt=system_prompt,
@@ -90,7 +80,6 @@ class LLMClient:
             response_format=response_format,
             extra_body=extra_body,
             timeout_seconds=timeout_seconds,
-            reasoning_effort=reasoning_effort,
         )
 
     def invoke_messages(
@@ -122,7 +111,6 @@ class LLMClient:
         extra_body: dict | None,
         messages: list[dict[str, Any]] | None = None,
         timeout_seconds: float | None = None,
-        reasoning_effort: str | None = None,
     ) -> dict:
         """通过 OpenAI 兼容 API 调用。"""
         import time as _time
@@ -158,8 +146,6 @@ class LLMClient:
             kwargs["extra_body"] = extra_body
         if timeout_seconds is not None:
             kwargs["timeout"] = timeout_seconds
-        if reasoning_effort is not None:
-            kwargs["reasoning_effort"] = reasoning_effort
 
         start = _time.perf_counter()
         response = client.chat.completions.create(**kwargs)

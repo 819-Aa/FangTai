@@ -1,0 +1,479 @@
+{
+  "config": {
+    "argv": [
+      "D:\\App\\nodejs\\node.exe",
+      "C:\\Users\\zhiyo\\Desktop\\竞赛\\program_v2\\frontend\\node_modules\\@playwright\\test\\cli.js",
+      "test"
+    ],
+    "configFile": "C:\\Users\\zhiyo\\Desktop\\竞赛\\program_v2\\frontend\\playwright.config.ts",
+    "rootDir": "C:/Users/zhiyo/Desktop/竞赛/program_v2/frontend/e2e",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "C:/Users/zhiyo/Desktop/竞赛/program_v2/verification/artifacts/final-clean-stable-browser-2026-10-04",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "",
+        "name": "",
+        "testDir": "C:/Users/zhiyo/Desktop/竞赛/program_v2/frontend/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 300000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "line",
+        null
+      ],
+      [
+        "json",
+        {
+          "outputFile": "C:\\Users\\zhiyo\\Desktop\\竞赛\\program_v2\\verification\\artifacts\\final-clean-stable-browser-2026-10-04.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.62.1",
+    "workers": 1,
+    "webServer": {
+      "command": "npm run preview -- --port 5176 --strictPort",
+      "url": "http://127.0.0.1:5176",
+      "reuseExistingServer": false,
+      "env": {
+        "VITE_API_BASE_URL": "/api"
+      }
+    }
+  },
+  "suites": [
+    {
+      "title": "browser.spec.ts",
+      "file": "browser.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "首次进入为空白新对话且可选择成员",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 300000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 286,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-04T06:03:10.177Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "fbeac1b2decfba2c3acd-a537f6c8eefa0df4bf63",
+          "file": "browser.spec.ts",
+          "line": 57,
+          "column": 1
+        },
+        {
+          "title": "成功路径：仅接受 completed / result_committed，并归档至侧边栏",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 300000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 39645,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-04T06:03:10.579Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "fbeac1b2decfba2c3acd-a1edd61f114351c2a1be",
+          "file": "browser.spec.ts",
+          "line": 69,
+          "column": 1
+        },
+        {
+          "title": "页面刷新默认进入空白对话，可从侧边栏恢复历史会话与已提交菜单",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 300000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 29426,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-04T06:03:50.233Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "fbeac1b2decfba2c3acd-b7b20fcbb6fd71b764d1",
+          "file": "browser.spec.ts",
+          "line": 81,
+          "column": 1
+        },
+        {
+          "title": "多轮对话会话内成员固定：首轮发送后禁用参与者切换",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 300000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 36552,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-04T06:04:19.667Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "fbeac1b2decfba2c3acd-6bde105ce53c7871dd4f",
+          "file": "browser.spec.ts",
+          "line": 99,
+          "column": 1
+        },
+        {
+          "title": "生成中点击停止生成能够可靠取消且不展示完成徽标",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 300000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 723,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-04T06:04:56.230Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "fbeac1b2decfba2c3acd-465fd0f856b4844464f6",
+          "file": "browser.spec.ts",
+          "line": 108,
+          "column": 1
+        },
+        {
+          "title": "SSE 中断连接后自动恢复并最终 completed",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 300000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 30458,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-04T06:04:56.967Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "fbeac1b2decfba2c3acd-2781e6e89e7d5d218546",
+          "file": "browser.spec.ts",
+          "line": 129,
+          "column": 1
+        },
+        {
+          "title": "浏览器最终菜单展示（真实可用）：正文与结构化菜单均可见",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 300000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 27636,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-04T06:05:27.437Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "fbeac1b2decfba2c3acd-e8c29033e7f2867b36e1",
+          "file": "browser.spec.ts",
+          "line": 147,
+          "column": 1
+        },
+        {
+          "title": "真实锁竞争：刷新后点击恢复生成，用原请求成单并与数据库一致",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 300000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 48269,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-04T06:05:55.083Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "fbeac1b2decfba2c3acd-0b40554f9d1ca5ddf626",
+          "file": "browser.spec.ts",
+          "line": 160,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "clarification.spec.ts",
+      "file": "clarification.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "真实 SSE 连续失败降级轮询：待澄清停止轮询，选项续接后成单",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 300000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 65279,
+                  "errors": [],
+                  "stdout": [
+                    {
+                      "text": "SSE_DIAG {\"readyState\":0}\n"
+                    },
+                    {
+                      "text": "SSE_DIAG {\"readyState\":0}\n"
+                    },
+                    {
+                      "text": "SSE_DIAG {\"readyState\":0}\n"
+                    },
+                    {
+                      "text": "SSE_DIAG {\"readyState\":0}\n"
+                    },
+                    {
+                      "text": "SSE_DIAG {\"readyState\":0}\n"
+                    },
+                    {
+                      "text": "SSE_DIAG {\"readyState\":0}\n"
+                    }
+                  ],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-04T06:06:43.376Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "real-poll-clarification",
+                      "contentType": "application/json",
+                      "body": "ewogICJyZXF1ZXN0X2lkcyI6IFsKICAgICJjNWMxMzNiNi0yMjljLTQ5ZGYtYjg0NC00ZGU3MTI2MjQ1MjciLAogICAgIjg1ZjRhMGUwLWZlYjEtNDYyZi05NTkxLWI1ZWQ3YjMwZGUyZSIKICBdLAogICJwb2xsc19iZWZvcmVfY2xhcmlmaWNhdGlvbiI6IDMsCiAgInBvbGxfc3RvcHBlZCI6IHRydWUsCiAgImZpbmFsX3N0YXR1cyI6ICJjb21wbGV0ZWQiLAogICJzZXNzaW9uX2lkIjogIjI4OTVhMjI2LWJiNCIsCiAgIm1lbnUiOiB7CiAgICAiYnVpbGRfaWQiOiAiOThmN2NmNTktMjliMi00YzBjLWI5MzMtNWE4ZjZlZDBlNjY5IiwKICAgICJwbGFuX2lkIjogIjU3YTE3MDExNWVlOWUyMDNiNWJiNWUwZTQ3NjkxYzdjYWZmNmYxMzFjYWIwMGZkZDFiZTI4MTg0ODQzYzIwMDUiLAogICAgIm1lbnVfaGFzaCI6ICIzN2RhY2U4ODcwMDRjNTgwNDNiNDZlNTg3ZGNmNTEwMWY2MjBlNDUxYWMzODNlMWNiZGE2NGNhMDllMjBlYTU1IiwKICAgICJyZWNpcGVfaWRzIjogWwogICAgICA1MjAsCiAgICAgIDc1MywKICAgICAgODcyCiAgICBdLAogICAgIml0ZW1zIjogWwogICAgICB7CiAgICAgICAgInJlY2lwZV9pZCI6IDUyMCwKICAgICAgICAibmFtZSI6ICLolJrok53mmJ/nqboiCiAgICAgIH0sCiAgICAgIHsKICAgICAgICAicmVjaXBlX2lkIjogNzUzLAogICAgICAgICJuYW1lIjogIuWmqeWqmuWmg+WtkOeskSIKICAgICAgfSwKICAgICAgewogICAgICAgICJyZWNpcGVfaWQiOiA4NzIsCiAgICAgICAgIm5hbWUiOiAi5a6e6JuLIgogICAgICB9CiAgICBdCiAgfQp9"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "95576b76c291c9797d67-a491a19d85a263d0df74",
+          "file": "clarification.spec.ts",
+          "line": 5,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "structure.spec.ts",
+      "file": "structure.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "四菜一汤：真实五道菜、汤槽位、执行身份与刷新恢复",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 300000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 37412,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-04T06:07:48.685Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "real-menu-and-progress",
+                      "contentType": "application/json",
+                      "body": "eyJyZXF1ZXN0X2lkIjoiMzgxNTQ2YmMtYmVlNS00MWZlLTllNTItNTBiYjA2YzUxOGQ1IiwiaXRlbXMiOlt7InJlY2lwZV9pZCI6MTc0MCwibmFtZSI6Ium6u+Wphuibi+e+uSJ9LHsicmVjaXBlX2lkIjozMzUsIm5hbWUiOiLogonkuLgifSx7InJlY2lwZV9pZCI6MTUzMSwibmFtZSI6IuWutuW4uOeDpOaXtuiUrCJ9LHsicmVjaXBlX2lkIjoxOTU3LCJuYW1lIjoi5a625bi45Y2k6bih6IW/In0seyJyZWNpcGVfaWQiOjE0OTgsIm5hbWUiOiLng6TlhqznrIsifV0sImRpc2hfa2luZHMiOlsic291cCIsIm1haW4iLCJtYWluIiwibWFpbiIsIm1haW4iXSwiaW52b2NhdGlvbl9jb3VudCI6N30="
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "15cbc0a9e470f55a69d6-7772b7abc07ddd8b6bbf",
+          "file": "structure.spec.ts",
+          "line": 5,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-04T06:03:08.799Z",
+    "duration": 317894.781,
+    "expected": 10,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "model": "XingChenAGI/Xing4.0-29B",
+  "enable_thinking": false,
+  "ok": true,
+  "usage": {
+    "completion_tokens": 6,
+    "prompt_tokens": 11,
+    "total_tokens": 17,
+    "completion_tokens_details": null,
+    "prompt_tokens_details": null
+  },
+  "elapsed_seconds": 19.74
+}

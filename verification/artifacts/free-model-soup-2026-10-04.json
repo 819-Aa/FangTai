@@ -1,0 +1,199 @@
+{
+  "mock": false,
+  "request": {
+    "session_id": "0c5285f3-7b5",
+    "participants": [
+      {
+        "participant_ref": "p1"
+      }
+    ],
+    "idempotency_key": "soup-audit-9fcf7bc4b4ad4a1b9a3c339f31a7bbfc",
+    "message": "今晚晚餐请安排四菜一汤，家常口味，180分钟内完成"
+  },
+  "state": {
+    "request_id": "e0f9265f-7589-4411-a5b8-4f1013d3acad",
+    "session_id": "0c5285f3-7b5",
+    "status": "failed",
+    "created_at": "1791088989.0",
+    "updated_at": "1791088989.0",
+    "stage_events_cursor": 13,
+    "result_summary": {
+      "status": "failed"
+    },
+    "error": {
+      "code": "AUDIT_REQUIRED_BEFORE_COMBINE",
+      "message": "必须先完成健康审核才能进行菜单规划"
+    }
+  },
+  "events": [
+    {
+      "id": "1",
+      "event": "request_accepted",
+      "data": {
+        "request_id": "e0f9265f-7589-4411-a5b8-4f1013d3acad",
+        "session_id": "0c5285f3-7b5"
+      }
+    },
+    {
+      "id": "ev_thought_e0f9265f-7589-4411-a5b8-4f1013d3acad_g1_29f821803ee048b09ae0b57823cd7327_running",
+      "event": "thought_node",
+      "data": {
+        "request_id": "e0f9265f-7589-4411-a5b8-4f1013d3acad",
+        "node_id": "context_building",
+        "title": "上下文解析与需求对齐",
+        "status": "running",
+        "summary": "上下文解析与需求对齐进行中",
+        "execution_generation": 1,
+        "invocation_id": "29f821803ee048b09ae0b57823cd7327"
+      }
+    },
+    {
+      "id": "ev_thought_e0f9265f-7589-4411-a5b8-4f1013d3acad_g1_29f821803ee048b09ae0b57823cd7327_done",
+      "event": "thought_node",
+      "data": {
+        "request_id": "e0f9265f-7589-4411-a5b8-4f1013d3acad",
+        "node_id": "context_building",
+        "title": "上下文解析与需求对齐",
+        "status": "done",
+        "summary": "上下文解析与需求对齐已完成",
+        "execution_generation": 1,
+        "invocation_id": "29f821803ee048b09ae0b57823cd7327"
+      }
+    },
+    {
+      "id": "ev_analysis_e0f9265f-7589-4411-a5b8-4f1013d3acad_g1_29f821803ee048b09ae0b57823cd7327_done",
+      "event": "analysis_ready",
+      "data": {
+        "stage": "context_ready",
+        "summary": "上下文解析与需求对齐已完成",
+        "evidence_refs": [],
+        "node_id": "context_building",
+        "status": "done",
+        "execution_generation": 1,
+        "invocation_id": "29f821803ee048b09ae0b57823cd7327"
+      }
+    },
+    {
+      "id": "5",
+      "event": "answer_started",
+      "data": {
+        "request_id": "e0f9265f-7589-4411-a5b8-4f1013d3acad"
+      }
+    },
+    {
+      "id": "ev_thought_e0f9265f-7589-4411-a5b8-4f1013d3acad_g1_30b6b4f1fbbb4b64bb47792d279bf0bf_running",
+      "event": "thought_node",
+      "data": {
+        "request_id": "e0f9265f-7589-4411-a5b8-4f1013d3acad",
+        "node_id": "query_understanding",
+        "title": "意图分析与查询计划",
+        "status": "running",
+        "summary": "意图分析与查询计划进行中",
+        "execution_generation": 1,
+        "invocation_id": "30b6b4f1fbbb4b64bb47792d279bf0bf"
+      }
+    },
+    {
+      "id": "ev_thought_e0f9265f-7589-4411-a5b8-4f1013d3acad_g1_30b6b4f1fbbb4b64bb47792d279bf0bf_done",
+      "event": "thought_node",
+      "data": {
+        "request_id": "e0f9265f-7589-4411-a5b8-4f1013d3acad",
+        "node_id": "query_understanding",
+        "title": "意图分析与查询计划",
+        "status": "done",
+        "summary": "意图分析与查询计划已完成",
+        "execution_generation": 1,
+        "invocation_id": "30b6b4f1fbbb4b64bb47792d279bf0bf"
+      }
+    },
+    {
+      "id": "ev_analysis_e0f9265f-7589-4411-a5b8-4f1013d3acad_g1_30b6b4f1fbbb4b64bb47792d279bf0bf_done",
+      "event": "analysis_ready",
+      "data": {
+        "stage": "query_understanding",
+        "summary": "意图分析与查询计划已完成",
+        "evidence_refs": [],
+        "node_id": "query_understanding",
+        "status": "done",
+        "execution_generation": 1,
+        "invocation_id": "30b6b4f1fbbb4b64bb47792d279bf0bf"
+      }
+    },
+    {
+      "id": "ev_thought_e0f9265f-7589-4411-a5b8-4f1013d3acad_g1_e991642aa4854800874672bc6f5bd48a_running",
+      "event": "thought_node",
+      "data": {
+        "request_id": "e0f9265f-7589-4411-a5b8-4f1013d3acad",
+        "node_id": "candidate_search",
+        "title": "菜品候选检索",
+        "status": "running",
+        "tool_name": "search_candidates",
+        "summary": "菜品候选检索进行中",
+        "execution_generation": 1,
+        "invocation_id": "e991642aa4854800874672bc6f5bd48a"
+      }
+    },
+    {
+      "id": "ev_tool_e0f9265f-7589-4411-a5b8-4f1013d3acad_g1_e991642aa4854800874672bc6f5bd48a",
+      "event": "tool_trace",
+      "data": {
+        "request_id": "e0f9265f-7589-4411-a5b8-4f1013d3acad",
+        "tool_name": "search_candidates",
+        "result_summary": "候选检索已完成",
+        "node_id": "candidate_search",
+        "duration_ms": 1189,
+        "execution_generation": 1,
+        "invocation_id": "e991642aa4854800874672bc6f5bd48a"
+      }
+    },
+    {
+      "id": "ev_thought_e0f9265f-7589-4411-a5b8-4f1013d3acad_g1_e991642aa4854800874672bc6f5bd48a_done",
+      "event": "thought_node",
+      "data": {
+        "request_id": "e0f9265f-7589-4411-a5b8-4f1013d3acad",
+        "node_id": "candidate_search",
+        "title": "菜品候选检索",
+        "status": "done",
+        "summary": "菜品候选检索已完成",
+        "tool_name": "search_candidates",
+        "duration_ms": 1189,
+        "execution_generation": 1,
+        "invocation_id": "e991642aa4854800874672bc6f5bd48a"
+      }
+    },
+    {
+      "id": "ev_analysis_e0f9265f-7589-4411-a5b8-4f1013d3acad_g1_e991642aa4854800874672bc6f5bd48a_done",
+      "event": "analysis_ready",
+      "data": {
+        "stage": "retrieval",
+        "summary": "菜品候选检索已完成",
+        "evidence_refs": [],
+        "node_id": "candidate_search",
+        "status": "done",
+        "execution_generation": 1,
+        "invocation_id": "e991642aa4854800874672bc6f5bd48a"
+      }
+    },
+    {
+      "id": "13",
+      "event": "request_terminal",
+      "data": {
+        "request_id": "e0f9265f-7589-4411-a5b8-4f1013d3acad",
+        "status": "failed",
+        "message": "必须先完成健康审核才能进行菜单规划"
+      }
+    }
+  ],
+  "dish_kinds": [],
+  "checks": {
+    "completed": false,
+    "exact_five": false,
+    "one_soup": false,
+    "four_main_dishes": false,
+    "mysql_status": false,
+    "menu_consistent": false,
+    "committed_event": false,
+    "fixed_templates": true
+  },
+  "complete": false
+}

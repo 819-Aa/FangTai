@@ -78,6 +78,9 @@ uv run ruff check src tests scripts/verify_v2_live_structured.py
 Set-Location frontend
 npm test -- --run
 npm run build
+npm run test:e2e
 ```
+
+真实浏览器验收使用独立 5176 服务，保留用户正在使用的 5174 页面。当前 LLM 配置为 DeepSeek 官方 `deepseek-v4-pro`，由 `.env` 中的 `LLM_*` 字段指定；检索使用 SiliconFlow 嵌入与重排。旧提供商别名和工作流模式开关已移除。最新验收记录见 [复测说明](verification/README.md)。
 
 领域约束与数据契约见[全局不变量](docs/contracts/global-invariants.md)和[固定数据契约](docs/contracts/data-artifact-contracts.md)。本项目提供膳食推荐，不提供医学诊断或治疗建议。

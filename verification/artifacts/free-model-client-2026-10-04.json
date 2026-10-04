@@ -1,0 +1,24 @@
+{
+  "result": {
+    "content": "",
+    "tool_calls": [
+      {
+        "id": "01a10537adddf24e33fa9e6c889f4616",
+        "name": "echo",
+        "arguments": {
+          "ok": true
+        }
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 164,
+      "completion_tokens": 17,
+      "elapsed_ms": 2620,
+      "model": "Qwen/Qwen3-8B"
+    }
+  },
+  "checks": {
+    "model": true,
+    "function_call": true
+  }
+}

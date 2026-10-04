@@ -32,7 +32,7 @@ class MySQLConfig:
     host: str = "localhost"
     port: int = 3306
     user: str = "foodagent"
-    password: str = "foodagent_v2"
+    password: str = ""
     database: str = "food_agent_v2"
 
     @property
@@ -62,7 +62,6 @@ class LLMConfig:
     model_reasoning: str = ""       # query/health/menu/review
     model_answer: str = ""          # answer_generation
     timeout_seconds: int = 30
-    max_retries: int = 1
     reasoning_extra_body: dict | None = None
     answer_extra_body: dict | None = None
     query_extra_body: dict | None = None
@@ -122,7 +121,7 @@ def load_config() -> AppConfig:
             host=os.getenv("MYSQL_HOST", "localhost"),
             port=int(os.getenv("MYSQL_PORT", "3306")),
             user=os.getenv("MYSQL_USER", "foodagent"),
-            password=os.getenv("MYSQL_PASSWORD", "foodagent_v2"),
+            password=os.getenv("MYSQL_PASSWORD", ""),
             database=os.getenv("MYSQL_DATABASE", "food_agent_v2"),
         ),
         qdrant=QdrantConfig(
@@ -142,7 +141,6 @@ def load_config() -> AppConfig:
             model_reasoning=os.getenv("LLM_MODEL_REASONING", ""),
             model_answer=os.getenv("LLM_MODEL_ANSWER", ""),
             timeout_seconds=int(os.getenv("LLM_TIMEOUT_SECONDS", "30")),
-            max_retries=int(os.getenv("LLM_MAX_RETRIES", "1")),
             reasoning_extra_body=_parse_json_env("LLM_MODEL_REASONING_EXTRA_BODY"),
             answer_extra_body=_parse_json_env("LLM_MODEL_ANSWER_EXTRA_BODY"),
             query_extra_body=_parse_json_env("LLM_MODEL_QUERY_EXTRA_BODY"),

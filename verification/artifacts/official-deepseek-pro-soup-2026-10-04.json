@@ -1,0 +1,451 @@
+{
+  "mock": false,
+  "request": {
+    "session_id": "aaf18d28-b3c",
+    "participants": [
+      {
+        "participant_ref": "p1"
+      }
+    ],
+    "idempotency_key": "soup-audit-a26d198292db455fbe8f67c3e85b4874",
+    "message": "今晚晚餐请安排四菜一汤，家常口味，180分钟内完成"
+  },
+  "state": {
+    "request_id": "9436d9ea-1ee7-4d70-9474-0b5c009f6bc5",
+    "session_id": "aaf18d28-b3c",
+    "status": "completed",
+    "created_at": "1791090532.0",
+    "updated_at": "1791090532.0",
+    "stage_events_cursor": 26,
+    "result_summary": {
+      "status": "completed",
+      "answer": {
+        "text": "为您推荐以下 5 道菜：瓦罐牛肉汤、家常烤时蔬、烤冬笋、蛋黄蒸肉、腊味芥蓝炒饭。\n瓦罐牛肉汤、家常烤时蔬、烤冬笋、蛋黄蒸肉、腊味芥蓝炒饭\n菜品已结合当前参与者的饮食约束与健康审查结果筛选，并兼顾口味与菜式多样化。\n按当前步骤估算，预计需要 120 分钟。",
+        "menu_ref": "2ff01a34-c660-48a2-b094-719f1d099dfc",
+        "evidence_refs": [
+          "03fa239c-4df0-4a34-b993-d603f1e9f530"
+        ]
+      },
+      "menu_summary": {
+        "build_id": "98f7cf59-29b2-4c0c-b933-5a8f6ed0e669",
+        "plan_id": "d5106e18e6811c80516f5eb1087eae83f0294e9c4fd7e85a7e3043bd552ceb8d",
+        "menu_hash": "47b234467658b3222b9365df871776d134883cd25c7507bc3d042830b80df94c",
+        "recipe_ids": [
+          75,
+          1531,
+          1498,
+          1001,
+          719
+        ],
+        "items": [
+          {
+            "recipe_id": 75,
+            "name": "瓦罐牛肉汤"
+          },
+          {
+            "recipe_id": 1531,
+            "name": "家常烤时蔬"
+          },
+          {
+            "recipe_id": 1498,
+            "name": "烤冬笋"
+          },
+          {
+            "recipe_id": 1001,
+            "name": "蛋黄蒸肉"
+          },
+          {
+            "recipe_id": 719,
+            "name": "腊味芥蓝炒饭"
+          }
+        ]
+      }
+    },
+    "error": null
+  },
+  "events": [
+    {
+      "id": "1",
+      "event": "request_accepted",
+      "data": {
+        "request_id": "9436d9ea-1ee7-4d70-9474-0b5c009f6bc5",
+        "session_id": "aaf18d28-b3c"
+      }
+    },
+    {
+      "id": "ev_thought_9436d9ea-1ee7-4d70-9474-0b5c009f6bc5_g1_95c290c83eee41ee9ef9608101eee3b2_running",
+      "event": "thought_node",
+      "data": {
+        "request_id": "9436d9ea-1ee7-4d70-9474-0b5c009f6bc5",
+        "node_id": "context_building",
+        "title": "上下文解析与需求对齐",
+        "status": "running",
+        "summary": "上下文解析与需求对齐进行中",
+        "execution_generation": 1,
+        "invocation_id": "95c290c83eee41ee9ef9608101eee3b2"
+      }
+    },
+    {
+      "id": "ev_thought_9436d9ea-1ee7-4d70-9474-0b5c009f6bc5_g1_95c290c83eee41ee9ef9608101eee3b2_done",
+      "event": "thought_node",
+      "data": {
+        "request_id": "9436d9ea-1ee7-4d70-9474-0b5c009f6bc5",
+        "node_id": "context_building",
+        "title": "上下文解析与需求对齐",
+        "status": "done",
+        "summary": "上下文解析与需求对齐已完成",
+        "execution_generation": 1,
+        "invocation_id": "95c290c83eee41ee9ef9608101eee3b2"
+      }
+    },
+    {
+      "id": "ev_analysis_9436d9ea-1ee7-4d70-9474-0b5c009f6bc5_g1_95c290c83eee41ee9ef9608101eee3b2_done",
+      "event": "analysis_ready",
+      "data": {
+        "stage": "context_ready",
+        "summary": "上下文解析与需求对齐已完成",
+        "evidence_refs": [],
+        "node_id": "context_building",
+        "status": "done",
+        "execution_generation": 1,
+        "invocation_id": "95c290c83eee41ee9ef9608101eee3b2"
+      }
+    },
+    {
+      "id": "5",
+      "event": "answer_started",
+      "data": {
+        "request_id": "9436d9ea-1ee7-4d70-9474-0b5c009f6bc5"
+      }
+    },
+    {
+      "id": "ev_thought_9436d9ea-1ee7-4d70-9474-0b5c009f6bc5_g1_be2d63aa57124a6ab762a08b30ee7aca_running",
+      "event": "thought_node",
+      "data": {
+        "request_id": "9436d9ea-1ee7-4d70-9474-0b5c009f6bc5",
+        "node_id": "query_understanding",
+        "title": "意图分析与查询计划",
+        "status": "running",
+        "summary": "意图分析与查询计划进行中",
+        "execution_generation": 1,
+        "invocation_id": "be2d63aa57124a6ab762a08b30ee7aca"
+      }
+    },
+    {
+      "id": "ev_thought_9436d9ea-1ee7-4d70-9474-0b5c009f6bc5_g1_be2d63aa57124a6ab762a08b30ee7aca_done",
+      "event": "thought_node",
+      "data": {
+        "request_id": "9436d9ea-1ee7-4d70-9474-0b5c009f6bc5",
+        "node_id": "query_understanding",
+        "title": "意图分析与查询计划",
+        "status": "done",
+        "summary": "意图分析与查询计划已完成",
+        "execution_generation": 1,
+        "invocation_id": "be2d63aa57124a6ab762a08b30ee7aca"
+      }
+    },
+    {
+      "id": "ev_analysis_9436d9ea-1ee7-4d70-9474-0b5c009f6bc5_g1_be2d63aa57124a6ab762a08b30ee7aca_done",
+      "event": "analysis_ready",
+      "data": {
+        "stage": "query_understanding",
+        "summary": "意图分析与查询计划已完成",
+        "evidence_refs": [],
+        "node_id": "query_understanding",
+        "status": "done",
+        "execution_generation": 1,
+        "invocation_id": "be2d63aa57124a6ab762a08b30ee7aca"
+      }
+    },
+    {
+      "id": "ev_thought_9436d9ea-1ee7-4d70-9474-0b5c009f6bc5_g1_5f57796fcf364c00872058ab5ce10b63_running",
+      "event": "thought_node",
+      "data": {
+        "request_id": "9436d9ea-1ee7-4d70-9474-0b5c009f6bc5",
+        "node_id": "candidate_search",
+        "title": "菜品候选检索",
+        "status": "running",
+        "tool_name": "search_candidates",
+        "summary": "菜品候选检索进行中",
+        "execution_generation": 1,
+        "invocation_id": "5f57796fcf364c00872058ab5ce10b63"
+      }
+    },
+    {
+      "id": "ev_tool_9436d9ea-1ee7-4d70-9474-0b5c009f6bc5_g1_5f57796fcf364c00872058ab5ce10b63",
+      "event": "tool_trace",
+      "data": {
+        "request_id": "9436d9ea-1ee7-4d70-9474-0b5c009f6bc5",
+        "tool_name": "search_candidates",
+        "result_summary": "候选检索已完成",
+        "node_id": "candidate_search",
+        "duration_ms": 1197,
+        "execution_generation": 1,
+        "invocation_id": "5f57796fcf364c00872058ab5ce10b63"
+      }
+    },
+    {
+      "id": "ev_thought_9436d9ea-1ee7-4d70-9474-0b5c009f6bc5_g1_5f57796fcf364c00872058ab5ce10b63_done",
+      "event": "thought_node",
+      "data": {
+        "request_id": "9436d9ea-1ee7-4d70-9474-0b5c009f6bc5",
+        "node_id": "candidate_search",
+        "title": "菜品候选检索",
+        "status": "done",
+        "summary": "菜品候选检索已完成",
+        "tool_name": "search_candidates",
+        "duration_ms": 1197,
+        "execution_generation": 1,
+        "invocation_id": "5f57796fcf364c00872058ab5ce10b63"
+      }
+    },
+    {
+      "id": "ev_analysis_9436d9ea-1ee7-4d70-9474-0b5c009f6bc5_g1_5f57796fcf364c00872058ab5ce10b63_done",
+      "event": "analysis_ready",
+      "data": {
+        "stage": "retrieval",
+        "summary": "菜品候选检索已完成",
+        "evidence_refs": [],
+        "node_id": "candidate_search",
+        "status": "done",
+        "execution_generation": 1,
+        "invocation_id": "5f57796fcf364c00872058ab5ce10b63"
+      }
+    },
+    {
+      "id": "ev_thought_9436d9ea-1ee7-4d70-9474-0b5c009f6bc5_g1_7fe0d1c67725469f9ab50c329ff2f32a_running",
+      "event": "thought_node",
+      "data": {
+        "request_id": "9436d9ea-1ee7-4d70-9474-0b5c009f6bc5",
+        "node_id": "recipe_audit",
+        "title": "健康合规审查",
+        "status": "running",
+        "tool_name": "audit_recipe_health",
+        "summary": "健康合规审查进行中",
+        "execution_generation": 1,
+        "invocation_id": "7fe0d1c67725469f9ab50c329ff2f32a"
+      }
+    },
+    {
+      "id": "ev_tool_9436d9ea-1ee7-4d70-9474-0b5c009f6bc5_g1_7fe0d1c67725469f9ab50c329ff2f32a",
+      "event": "tool_trace",
+      "data": {
+        "request_id": "9436d9ea-1ee7-4d70-9474-0b5c009f6bc5",
+        "tool_name": "audit_recipe_health",
+        "result_summary": "健康审查已完成",
+        "node_id": "recipe_audit",
+        "duration_ms": 1565,
+        "execution_generation": 1,
+        "invocation_id": "7fe0d1c67725469f9ab50c329ff2f32a"
+      }
+    },
+    {
+      "id": "ev_thought_9436d9ea-1ee7-4d70-9474-0b5c009f6bc5_g1_7fe0d1c67725469f9ab50c329ff2f32a_done",
+      "event": "thought_node",
+      "data": {
+        "request_id": "9436d9ea-1ee7-4d70-9474-0b5c009f6bc5",
+        "node_id": "recipe_audit",
+        "title": "健康合规审查",
+        "status": "done",
+        "summary": "健康合规审查已完成",
+        "tool_name": "audit_recipe_health",
+        "duration_ms": 1565,
+        "execution_generation": 1,
+        "invocation_id": "7fe0d1c67725469f9ab50c329ff2f32a"
+      }
+    },
+    {
+      "id": "ev_analysis_9436d9ea-1ee7-4d70-9474-0b5c009f6bc5_g1_7fe0d1c67725469f9ab50c329ff2f32a_done",
+      "event": "analysis_ready",
+      "data": {
+        "stage": "health_evaluation",
+        "summary": "健康合规审查已完成",
+        "evidence_refs": [],
+        "node_id": "recipe_audit",
+        "status": "done",
+        "execution_generation": 1,
+        "invocation_id": "7fe0d1c67725469f9ab50c329ff2f32a"
+      }
+    },
+    {
+      "id": "ev_thought_9436d9ea-1ee7-4d70-9474-0b5c009f6bc5_g1_dcc3698b90334d8f8ca48c2b37ad6cf8_running",
+      "event": "thought_node",
+      "data": {
+        "request_id": "9436d9ea-1ee7-4d70-9474-0b5c009f6bc5",
+        "node_id": "menu_combination",
+        "title": "营养与偏好组合",
+        "status": "running",
+        "tool_name": "combine_nutritional_menu",
+        "summary": "营养与偏好组合进行中",
+        "execution_generation": 1,
+        "invocation_id": "dcc3698b90334d8f8ca48c2b37ad6cf8"
+      }
+    },
+    {
+      "id": "ev_tool_9436d9ea-1ee7-4d70-9474-0b5c009f6bc5_g1_dcc3698b90334d8f8ca48c2b37ad6cf8",
+      "event": "tool_trace",
+      "data": {
+        "request_id": "9436d9ea-1ee7-4d70-9474-0b5c009f6bc5",
+        "tool_name": "combine_nutritional_menu",
+        "result_summary": "菜单规划已结束",
+        "node_id": "menu_combination",
+        "duration_ms": 3922,
+        "execution_generation": 1,
+        "invocation_id": "dcc3698b90334d8f8ca48c2b37ad6cf8"
+      }
+    },
+    {
+      "id": "ev_thought_9436d9ea-1ee7-4d70-9474-0b5c009f6bc5_g1_dcc3698b90334d8f8ca48c2b37ad6cf8_done",
+      "event": "thought_node",
+      "data": {
+        "request_id": "9436d9ea-1ee7-4d70-9474-0b5c009f6bc5",
+        "node_id": "menu_combination",
+        "title": "营养与偏好组合",
+        "status": "done",
+        "summary": "营养与偏好组合已完成",
+        "tool_name": "combine_nutritional_menu",
+        "duration_ms": 3922,
+        "execution_generation": 1,
+        "invocation_id": "dcc3698b90334d8f8ca48c2b37ad6cf8"
+      }
+    },
+    {
+      "id": "ev_analysis_9436d9ea-1ee7-4d70-9474-0b5c009f6bc5_g1_dcc3698b90334d8f8ca48c2b37ad6cf8_done",
+      "event": "analysis_ready",
+      "data": {
+        "stage": "menu_planning",
+        "summary": "营养与偏好组合已完成",
+        "evidence_refs": [],
+        "node_id": "menu_combination",
+        "status": "done",
+        "execution_generation": 1,
+        "invocation_id": "dcc3698b90334d8f8ca48c2b37ad6cf8"
+      }
+    },
+    {
+      "id": "ev_thought_9436d9ea-1ee7-4d70-9474-0b5c009f6bc5_g1_55d9e891b4904d7db9b90d5512b87ecb_running",
+      "event": "thought_node",
+      "data": {
+        "request_id": "9436d9ea-1ee7-4d70-9474-0b5c009f6bc5",
+        "node_id": "final_validation",
+        "title": "全流程合规复核",
+        "status": "running",
+        "tool_name": "validate_selected_menu_health",
+        "summary": "全流程合规复核进行中",
+        "execution_generation": 1,
+        "invocation_id": "55d9e891b4904d7db9b90d5512b87ecb"
+      }
+    },
+    {
+      "id": "ev_tool_9436d9ea-1ee7-4d70-9474-0b5c009f6bc5_g1_55d9e891b4904d7db9b90d5512b87ecb",
+      "event": "tool_trace",
+      "data": {
+        "request_id": "9436d9ea-1ee7-4d70-9474-0b5c009f6bc5",
+        "tool_name": "validate_selected_menu_health",
+        "result_summary": "菜单复核已完成",
+        "node_id": "final_validation",
+        "duration_ms": 1572,
+        "execution_generation": 1,
+        "invocation_id": "55d9e891b4904d7db9b90d5512b87ecb"
+      }
+    },
+    {
+      "id": "ev_thought_9436d9ea-1ee7-4d70-9474-0b5c009f6bc5_g1_55d9e891b4904d7db9b90d5512b87ecb_done",
+      "event": "thought_node",
+      "data": {
+        "request_id": "9436d9ea-1ee7-4d70-9474-0b5c009f6bc5",
+        "node_id": "final_validation",
+        "title": "全流程合规复核",
+        "status": "done",
+        "summary": "全流程合规复核已完成",
+        "tool_name": "validate_selected_menu_health",
+        "duration_ms": 1572,
+        "execution_generation": 1,
+        "invocation_id": "55d9e891b4904d7db9b90d5512b87ecb"
+      }
+    },
+    {
+      "id": "ev_thought_9436d9ea-1ee7-4d70-9474-0b5c009f6bc5_g1_bc972d857b1940df98b336f2f12899c6_done",
+      "event": "thought_node",
+      "data": {
+        "request_id": "9436d9ea-1ee7-4d70-9474-0b5c009f6bc5",
+        "node_id": "commit",
+        "title": "结果持久化",
+        "status": "done",
+        "summary": "结果持久化已完成",
+        "execution_generation": 1,
+        "invocation_id": "bc972d857b1940df98b336f2f12899c6"
+      }
+    },
+    {
+      "id": "ev_answer_9436d9ea-1ee7-4d70-9474-0b5c009f6bc5",
+      "event": "answer_ready",
+      "data": {
+        "text": "为您推荐以下 5 道菜：瓦罐牛肉汤、家常烤时蔬、烤冬笋、蛋黄蒸肉、腊味芥蓝炒饭。\n瓦罐牛肉汤、家常烤时蔬、烤冬笋、蛋黄蒸肉、腊味芥蓝炒饭\n菜品已结合当前参与者的饮食约束与健康审查结果筛选，并兼顾口味与菜式多样化。\n按当前步骤估算，预计需要 120 分钟。",
+        "menu_ref": "2ff01a34-c660-48a2-b094-719f1d099dfc",
+        "evidence_refs": [
+          "03fa239c-4df0-4a34-b993-d603f1e9f530"
+        ]
+      }
+    },
+    {
+      "id": "ev_result_9436d9ea-1ee7-4d70-9474-0b5c009f6bc5",
+      "event": "result_committed",
+      "data": {
+        "request_id": "9436d9ea-1ee7-4d70-9474-0b5c009f6bc5",
+        "menu_summary": {
+          "items": [
+            {
+              "name": "瓦罐牛肉汤",
+              "recipe_id": 75
+            },
+            {
+              "name": "家常烤时蔬",
+              "recipe_id": 1531
+            },
+            {
+              "name": "烤冬笋",
+              "recipe_id": 1498
+            },
+            {
+              "name": "蛋黄蒸肉",
+              "recipe_id": 1001
+            },
+            {
+              "name": "腊味芥蓝炒饭",
+              "recipe_id": 719
+            }
+          ],
+          "plan_id": "d5106e18e6811c80516f5eb1087eae83f0294e9c4fd7e85a7e3043bd552ceb8d",
+          "build_id": "98f7cf59-29b2-4c0c-b933-5a8f6ed0e669",
+          "menu_hash": "47b234467658b3222b9365df871776d134883cd25c7507bc3d042830b80df94c",
+          "recipe_ids": [
+            75,
+            1531,
+            1498,
+            1001,
+            719
+          ]
+        }
+      }
+    }
+  ],
+  "dish_kinds": [
+    "soup",
+    "main",
+    "main",
+    "main",
+    "staple"
+  ],
+  "checks": {
+    "completed": true,
+    "exact_five": true,
+    "one_soup": true,
+    "four_main_dishes": false,
+    "mysql_status": true,
+    "menu_consistent": true,
+    "committed_event": true,
+    "fixed_templates": true
+  },
+  "complete": false
+}

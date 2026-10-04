@@ -1,0 +1,144 @@
+{
+  "mock": false,
+  "request": {
+    "session_id": "de4024fc-50c",
+    "participants": [
+      {
+        "participant_ref": "p1"
+      }
+    ],
+    "idempotency_key": "soup-audit-0500e6af88ae4e7daad141ccf5565b8a",
+    "message": "今晚晚餐请安排四菜一汤，家常口味，180分钟内完成"
+  },
+  "state": {
+    "request_id": "2c49bf77-896d-4540-a1e8-5435160e370d",
+    "session_id": "de4024fc-50c",
+    "status": "failed",
+    "created_at": "1791090874.0",
+    "updated_at": "1791090874.0",
+    "stage_events_cursor": 9,
+    "result_summary": {
+      "status": "failed"
+    },
+    "error": {
+      "code": "MODEL_OUTPUT_EMPTY",
+      "message": "Agent 决策模型返回内容为空: {'content': '', 'tool_calls': [], 'usage': {'prompt_tokens': 906, 'completion_tokens': 403, 'elapsed_ms': 4824, 'model': 'deepseek-v4-pro'}}"
+    }
+  },
+  "events": [
+    {
+      "id": "1",
+      "event": "request_accepted",
+      "data": {
+        "request_id": "2c49bf77-896d-4540-a1e8-5435160e370d",
+        "session_id": "de4024fc-50c"
+      }
+    },
+    {
+      "id": "ev_thought_2c49bf77-896d-4540-a1e8-5435160e370d_g1_e7cec869bc7742abb6fa96acc1fdf744_running",
+      "event": "thought_node",
+      "data": {
+        "request_id": "2c49bf77-896d-4540-a1e8-5435160e370d",
+        "node_id": "context_building",
+        "title": "上下文解析与需求对齐",
+        "status": "running",
+        "summary": "上下文解析与需求对齐进行中",
+        "execution_generation": 1,
+        "invocation_id": "e7cec869bc7742abb6fa96acc1fdf744"
+      }
+    },
+    {
+      "id": "ev_thought_2c49bf77-896d-4540-a1e8-5435160e370d_g1_e7cec869bc7742abb6fa96acc1fdf744_done",
+      "event": "thought_node",
+      "data": {
+        "request_id": "2c49bf77-896d-4540-a1e8-5435160e370d",
+        "node_id": "context_building",
+        "title": "上下文解析与需求对齐",
+        "status": "done",
+        "summary": "上下文解析与需求对齐已完成",
+        "execution_generation": 1,
+        "invocation_id": "e7cec869bc7742abb6fa96acc1fdf744"
+      }
+    },
+    {
+      "id": "ev_analysis_2c49bf77-896d-4540-a1e8-5435160e370d_g1_e7cec869bc7742abb6fa96acc1fdf744_done",
+      "event": "analysis_ready",
+      "data": {
+        "stage": "context_ready",
+        "summary": "上下文解析与需求对齐已完成",
+        "evidence_refs": [],
+        "node_id": "context_building",
+        "status": "done",
+        "execution_generation": 1,
+        "invocation_id": "e7cec869bc7742abb6fa96acc1fdf744"
+      }
+    },
+    {
+      "id": "5",
+      "event": "answer_started",
+      "data": {
+        "request_id": "2c49bf77-896d-4540-a1e8-5435160e370d"
+      }
+    },
+    {
+      "id": "ev_thought_2c49bf77-896d-4540-a1e8-5435160e370d_g1_136f4db1326544d2b988c95e012b7018_running",
+      "event": "thought_node",
+      "data": {
+        "request_id": "2c49bf77-896d-4540-a1e8-5435160e370d",
+        "node_id": "query_understanding",
+        "title": "意图分析与查询计划",
+        "status": "running",
+        "summary": "意图分析与查询计划进行中",
+        "execution_generation": 1,
+        "invocation_id": "136f4db1326544d2b988c95e012b7018"
+      }
+    },
+    {
+      "id": "ev_thought_2c49bf77-896d-4540-a1e8-5435160e370d_g1_136f4db1326544d2b988c95e012b7018_done",
+      "event": "thought_node",
+      "data": {
+        "request_id": "2c49bf77-896d-4540-a1e8-5435160e370d",
+        "node_id": "query_understanding",
+        "title": "意图分析与查询计划",
+        "status": "done",
+        "summary": "意图分析与查询计划已完成",
+        "execution_generation": 1,
+        "invocation_id": "136f4db1326544d2b988c95e012b7018"
+      }
+    },
+    {
+      "id": "ev_analysis_2c49bf77-896d-4540-a1e8-5435160e370d_g1_136f4db1326544d2b988c95e012b7018_done",
+      "event": "analysis_ready",
+      "data": {
+        "stage": "query_understanding",
+        "summary": "意图分析与查询计划已完成",
+        "evidence_refs": [],
+        "node_id": "query_understanding",
+        "status": "done",
+        "execution_generation": 1,
+        "invocation_id": "136f4db1326544d2b988c95e012b7018"
+      }
+    },
+    {
+      "id": "9",
+      "event": "request_terminal",
+      "data": {
+        "request_id": "2c49bf77-896d-4540-a1e8-5435160e370d",
+        "status": "failed",
+        "message": "Agent 决策模型返回内容为空: {'content': '', 'tool_calls': [], 'usage': {'prompt_tokens': 906, 'completion_tokens': 403, 'elapsed_ms': 4824, 'model': 'deepseek-v4-pro'}}"
+      }
+    }
+  ],
+  "dish_kinds": [],
+  "checks": {
+    "completed": false,
+    "exact_five": false,
+    "one_soup": false,
+    "four_main_dishes": false,
+    "mysql_status": false,
+    "menu_consistent": false,
+    "committed_event": false,
+    "fixed_templates": true
+  },
+  "complete": false
+}

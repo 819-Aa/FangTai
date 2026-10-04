@@ -1,0 +1,20 @@
+{
+  "date": "2026-10-04",
+  "request_id": "83ec3337-fbee-4092-9660-55d067d52439",
+  "initial_snapshot_missing_result_committed": true,
+  "recovered_without_manual_dispatch": true,
+  "checks": [
+    {
+      "name": "eventual_outbox_delivery",
+      "passed": true
+    },
+    {
+      "name": "eventual_sse_menu_matches_durable_get",
+      "passed": true
+    },
+    {
+      "name": "sse_stable_suffix",
+      "passed": true
+    }
+  ]
+}

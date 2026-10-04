@@ -1,6 +1,13 @@
 from __future__ import annotations
 
-from food_agent_v2.core.config import LLMConfig, load_config
+from food_agent_v2.core.config import LLMConfig, MySQLConfig, load_config
+
+
+def test_mysql_password_requires_explicit_configuration(monkeypatch) -> None:
+    monkeypatch.delenv("MYSQL_PASSWORD", raising=False)
+
+    assert MySQLConfig().password == ""
+    assert load_config().mysql.password == ""
 
 
 def test_load_config_uses_standard_default_ports(monkeypatch) -> None:

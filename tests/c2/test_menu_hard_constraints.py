@@ -69,6 +69,36 @@ def make_typed_planner() -> MenuPlanner:
 
 
 class TestMenuHardConstraints:
+    def test_staple_cannot_fill_a_dish_slot_in_dishes_and_soup(self) -> None:
+        planner = make_planner(count=6)
+        planner._recipe_features[1]["name"] = "瓦罐牛肉汤"
+        planner._recipe_features[2].update(name="腊味芥蓝炒饭", preference_score=1.0)
+        plans = planner.plan(MenuHardConstraints(dish_count=5, require_soup=True))
+        assert plans
+        assert all(2 not in plan.recipe_ids for plan in plans)
+
+    def test_missing_main_dish_is_not_filled_by_unrequested_staple(self) -> None:
+        planner = make_planner(count=5)
+        planner._recipe_features[1]["name"] = "瓦罐牛肉汤"
+        planner._recipe_features[2]["name"] = "腊味芥蓝炒饭"
+        assert planner.plan(MenuHardConstraints(dish_count=5, require_soup=True)) == []
+
+    def test_explicit_staple_and_soup_are_both_retained(self) -> None:
+        planner = make_planner(count=5)
+        planner._recipe_features[1]["name"] = "瓦罐牛肉汤"
+        planner._recipe_features[2]["name"] = "腊味芥蓝炒饭"
+        plans = planner.plan(MenuHardConstraints(dish_count=5, require_soup=True, require_staple=True))
+        assert plans
+        assert all({1, 2}.issubset(plan.recipe_ids) for plan in plans)
+
+    def test_locked_staple_cannot_override_dishes_and_soup_structure(self) -> None:
+        planner = make_planner(count=6)
+        planner._recipe_features[1]["name"] = "瓦罐牛肉汤"
+        planner._recipe_features[2]["name"] = "腊味芥蓝炒饭"
+        assert planner.plan(MenuHardConstraints(
+            dish_count=5, require_soup=True, locked_recipe_ids={2},
+        )) == []
+
     def test_empty_safe_candidates_no_feasible(self) -> None:
         planner = MenuPlanner(b5=FakeB5(), b6=FakeB6())
         planner.set_safe_candidates([])
